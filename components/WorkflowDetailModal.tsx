@@ -1,0 +1,206 @@
+import React, { useState } from 'react';
+import { WorkflowRequest, Priority, User, UserRole, WorkflowStatus } from '../types';
+import WorkflowStatusIndicator from './WorkflowStatusIndicator';
+import { supabase } from '../supabase/client';
+import CommentSection from './CommentSection';
+import { sendApprovalWebhook } from '../services/webhookService';
+
+interface WorkflowDetailModalProps {
+  workflow: WorkflowRequest;
+  user: User;
+  onClose: () => void;
+  onUpdate: () => void;
+}
+
+const getPriorityChip = (priority: Priority) => {
+    const baseClasses = "px-2 py-0.5 text-xs font-medium rounded-full inline-block";
+    switch (priority) {
+        case Priority.Critical: return <span className={`${baseClasses} bg-red-100 text-red-800`}>Critical</span>;
+        case Priority.High: return <span className={`${baseClasses} bg-orange-100 text-orange-800`}>High</span>;
+        case Priority.Medium: return <span className={`${baseClasses} bg-amber-100 text-amber-800`}>Medium</span>;
+        case Priority.Low: return <span className={`${baseClasses} bg-emerald-100 text-emerald-800`}>Low</span>;
+    }
+};
+
+const ActionButton: React.FC<{ onClick: () => void; disabled: boolean; children: React.ReactNode }> = ({ onClick, disabled, children }) => (
+    <button
+        onClick={onClick}
+        disabled={disabled}
+        className="px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 disabled:bg-zinc-300 transition-colors"
+    >
+        {children}
+    </button>
+);
+
+const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, user, onClose, onUpdate }) => {
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleStatusUpdate = async (newStatus: WorkflowStatus) => {
+    setIsUpdating(true);
+    setError(null);
+    try {
+        const { error } = await supabase
+            .from('en_workflow_requests')
+            .update({ current_status: newStatus })
+            .eq('id', workflow.id);
+        if (error) throw error;
+        
+        await sendApprovalWebhook('APPROVAL', workflow, newStatus, user);
+        
+        onUpdate();
+    } catch (err) {
+        setError("Failed to update workflow status.");
+        console.error(err);
+    } finally {
+        setIsUpdating(false);
+    }
+  };
+
+  const renderActions = () => {
+    const { role } = user;
+    const { currentStatus } = workflow;
+    const isAdmin = role === UserRole.Admin;
+    const isOpsManager = role === UserRole.OperationsManager;
+
+    switch (currentStatus) {
+        case WorkflowStatus.REQUEST_SUBMITTED:
+            if (role === UserRole.StockController || isAdmin || isOpsManager) {
+                return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_EQUIP_MANAGER)} disabled={isUpdating}>Approve (Stock Controller)</ActionButton>;
+            }
+            break;
+        case WorkflowStatus.AWAITING_EQUIP_MANAGER:
+             if (role === UserRole.EquipmentManager || isAdmin || isOpsManager) {
+                return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_PICKING)} disabled={isUpdating}>Approve (Equip. Manager)</ActionButton>;
+            }
+            break;
+        case WorkflowStatus.AWAITING_PICKING:
+             if (role === UserRole.StockController || isAdmin || isOpsManager) {
+                return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.PICKED_AND_LOADED)} disabled={isUpdating}>Mark as Picked & Loaded</ActionButton>;
+            }
+            break;
+        case WorkflowStatus.PICKED_AND_LOADED:
+             if (role === UserRole.Security || role === UserRole.Driver || isAdmin || isOpsManager) {
+                return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.DISPATCHED)} disabled={isUpdating}>Confirm Gate Release & Dispatch</ActionButton>;
+            }
+            break;
+        case WorkflowStatus.DISPATCHED:
+             if (role === UserRole.Driver || role === UserRole.SiteManager || isAdmin || isOpsManager) {
+                return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.EPOD_CONFIRMED)} disabled={isUpdating}>Confirm Delivery (EPOD)</ActionButton>;
+            }
+            break;
+        default:
+            return null;
+    }
+    return null;
+  };
+
+  return (
+    <div 
+        className="fixed inset-0 bg-black bg-opacity-50 z-50 flex justify-center items-center p-4 font-sans"
+        onClick={onClose}
+        aria-modal="true"
+        role="dialog"
+    >
+      <div 
+        className="bg-white rounded-lg shadow-xl max-w-3xl w-full m-4 overflow-hidden transform transition-all border border-zinc-200 flex flex-col"
+        onClick={e => e.stopPropagation()} // Prevent click inside from closing modal
+      >
+        <div className="p-6 border-b border-zinc-200 flex justify-between items-start">
+            <div>
+                <h2 className="text-2xl font-bold text-zinc-900">{workflow.requestNumber}</h2>
+                <p className="text-sm text-zinc-500">Project: {workflow.projectCode} &bull; Requested by: {workflow.requester}</p>
+            </div>
+             <button
+                onClick={onClose}
+                className="p-1 rounded-full text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 transition-colors"
+                aria-label="Close modal"
+             >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+             </button>
+        </div>
+
+        <div className="p-6 space-y-6 bg-zinc-50 flex-1 overflow-y-auto max-h-[calc(100vh-250px)]">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="bg-white p-3 rounded-md border border-zinc-200">
+                    <h4 className="text-xs font-semibold text-zinc-500 uppercase">Priority</h4>
+                    <div className="mt-1">{getPriorityChip(workflow.priority)}</div>
+                </div>
+                <div className="bg-white p-3 rounded-md border border-zinc-200">
+                    <h4 className="text-xs font-semibold text-zinc-500 uppercase">Type</h4>
+                    <p className="font-medium text-zinc-800">{workflow.type}</p>
+                </div>
+                 <div className="bg-white p-3 rounded-md border border-zinc-200">
+                    <h4 className="text-xs font-semibold text-zinc-500 uppercase">Created At</h4>
+                    <p className="font-medium text-zinc-800">{new Date(workflow.createdAt).toLocaleString()}</p>
+                </div>
+            </div>
+            
+            <div>
+                <h3 className="text-md font-semibold text-zinc-800 mb-2">Workflow Progress</h3>
+                <div className="p-4 bg-white rounded-md border border-zinc-200">
+                    <WorkflowStatusIndicator steps={workflow.steps} currentStep={workflow.currentStatus} />
+                </div>
+            </div>
+
+            <div>
+                <h3 className="text-md font-semibold text-zinc-800 mb-2">Requested Items ({workflow.items.length})</h3>
+                <div className="border border-zinc-200 rounded-md overflow-hidden">
+                    <table className="min-w-full bg-white text-sm">
+                        <thead className="bg-zinc-50">
+                             <tr>
+                                <th className="py-2 px-4 text-left text-xs font-semibold text-zinc-500 uppercase">Part #</th>
+                                <th className="py-2 px-4 text-left text-xs font-semibold text-zinc-500 uppercase">Description</th>
+                                <th className="py-2 px-4 text-center text-xs font-semibold text-zinc-500 uppercase">Qty</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-200">
+                             {workflow.items.map(item => (
+                                <tr key={item.partNumber}>
+                                    <td className="py-2 px-4 whitespace-nowrap font-mono text-zinc-800">{item.partNumber}</td>
+                                    <td className="py-2 px-4 whitespace-nowrap text-zinc-700">{item.description}</td>
+                                    <td className="py-2 px-4 whitespace-nowrap text-center font-semibold text-zinc-900">{item.quantityRequested}</td>
+                                </tr>
+                             ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {workflow.attachmentUrl && (
+              <div>
+                <h3 className="text-md font-semibold text-zinc-800 mb-2">Attachment</h3>
+                <div className="p-2 bg-white rounded-md border border-zinc-200 inline-block">
+                  <a href={workflow.attachmentUrl} target="_blank" rel="noopener noreferrer" title="Click to view full image">
+                    <img src={workflow.attachmentUrl} alt="Request attachment" className="max-h-40 rounded-md object-contain" />
+                  </a>
+                </div>
+              </div>
+            )}
+            
+            {/* Comments Section */}
+            <div>
+                <h3 className="text-md font-semibold text-zinc-800 mb-2">Comments</h3>
+                <CommentSection workflowId={workflow.id} user={user} />
+            </div>
+
+             {error && <p className="text-sm text-red-600">{error}</p>}
+        </div>
+
+        <div className="p-4 bg-white border-t border-zinc-200 flex justify-end items-center gap-4 flex-shrink-0">
+          {renderActions()}
+          <button
+            onClick={onClose}
+            className="px-4 py-2 bg-zinc-200 text-zinc-800 font-semibold rounded-md hover:bg-zinc-300 transition-colors"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default WorkflowDetailModal;
