@@ -7,7 +7,23 @@ interface WorkflowStatusIndicatorProps {
 }
 
 const WorkflowStatusIndicator: React.FC<WorkflowStatusIndicatorProps> = ({ steps, currentStep }) => {
-  const currentIndex = steps.indexOf(currentStep);
+  const normalizedSteps = steps.map(step => step.toLowerCase());
+  const normalizedCurrent = currentStep.toLowerCase();
+
+  let currentIndex = normalizedSteps.indexOf(normalizedCurrent);
+  let forcedToLast = false;
+  const normalizedEpod = WorkflowStatus.EPOD_CONFIRMED.toLowerCase();
+
+  if (normalizedCurrent === normalizedEpod && steps.length > 0) {
+    if (currentIndex !== steps.length - 1) {
+      currentIndex = steps.length - 1;
+      forcedToLast = true;
+    }
+  }
+
+  if (currentIndex === -1) {
+    currentIndex = 0;
+  }
 
   return (
     <div className="w-full pt-4">
@@ -38,7 +54,15 @@ const WorkflowStatusIndicator: React.FC<WorkflowStatusIndicatorProps> = ({ steps
             <React.Fragment key={step}>
               <div className="flex flex-col items-center relative">
                 <div className={circleClasses} />
-                {isCurrent && <span className={`absolute top-5 text-xs text-center ${textColor}`}>{step}</span>}
+                {isCurrent && (
+                  <span className={`absolute top-5 text-xs text-center ${textColor}`}>
+                    {forcedToLast
+                      ? WorkflowStatus.EPOD_CONFIRMED
+                      : normalizedSteps[index] === normalizedCurrent
+                        ? step
+                        : currentStep}
+                  </span>
+                )}
               </div>
               {index < steps.length - 1 && <div className={lineClasses} />}
             </React.Fragment>
