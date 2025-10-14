@@ -16,12 +16,14 @@ import UndoIcon from './icons/UndoIcon';
 import WrenchIcon from './icons/WrenchIcon';
 import { View, User, UserRole } from '../types';
 import EnprotecLogo from './icons/EnprotecLogo';
-import MindriftLogo from './icons/MindriftLogo';
+import ChevronRightIcon from './icons/ChevronRightIcon';
 
 interface SidebarProps {
   user: User;
   currentView: View;
   setCurrentView: (view: View) => void;
+  collapsed: boolean;
+  onToggle: () => void;
 }
 
 const viewPermissions: Record<UserRole, View[]> = {
@@ -40,7 +42,8 @@ const NavItem: React.FC<{
   label: string; 
   isActive: boolean;
   onClick: () => void;
-}> = ({ icon, label, isActive, onClick }) => (
+  collapsed: boolean;
+}> = ({ icon, label, isActive, onClick, collapsed }) => (
   <li>
     <a
       href="#"
@@ -48,7 +51,7 @@ const NavItem: React.FC<{
         e.preventDefault();
         onClick();
       }}
-      className={`flex items-center px-4 py-3 rounded-md text-sm font-medium transition-colors duration-200 relative ${
+      className={`group relative flex items-center ${collapsed ? 'justify-center px-3' : 'px-4'} py-3 rounded-md text-sm font-medium transition-colors duration-200 ${
         isActive
           ? 'bg-zinc-100 text-zinc-900'
           : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900'
@@ -56,12 +59,18 @@ const NavItem: React.FC<{
     >
       {isActive && <div className="absolute left-0 top-0 bottom-0 w-1 bg-sky-500 rounded-r-full"></div>}
       {icon}
-      <span className="ml-3">{label}</span>
+      {collapsed ? (
+        <span className="pointer-events-none absolute left-full ml-3 rounded-md bg-zinc-900 px-2 py-1 text-xs font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+          {label}
+        </span>
+      ) : (
+        <span className="ml-3">{label}</span>
+      )}
     </a>
   </li>
 );
 
-const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView }) => {
+const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView, collapsed, onToggle }) => {
   const allNavItems: { label: string; view: View; icon: React.ReactNode }[] = [
     { label: 'Dashboard', view: 'Dashboard', icon: <HomeIcon className="w-5 h-5" /> },
     { label: 'Fleet Dashboard', view: 'FleetDashboard', icon: <ReportsIcon className="w-5 h-5" /> },
@@ -87,12 +96,28 @@ const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView }) 
   const visibleNavItems = allNavItems.filter(item => allowedViews.includes(item.view));
 
   return (
-    <aside className="w-64 bg-white text-zinc-800 flex flex-col flex-shrink-0 border-r border-zinc-200">
-      <div className="h-20 flex flex-col items-center justify-center px-6 border-b border-zinc-200 space-y-2 py-2">
-        <MindriftLogo className="h-18 w-auto" />
-        <EnprotecLogo className="h-5 w-auto" />
+    <aside
+      className={`${collapsed ? 'w-20' : 'w-72'} bg-white text-zinc-800 flex flex-col flex-shrink-0 border-r border-zinc-200 transition-all duration-300`}
+    >
+      <div className={`relative border-b border-zinc-200 ${collapsed ? 'px-3 py-4' : 'px-6 py-6'} overflow-visible`}>
+        <div className={`flex flex-col items-center ${collapsed ? 'space-y-3' : 'space-y-4'}`}>
+          <img
+            src="/Mindrift_Logo-06.png"
+            alt="Mindrift"
+            className={`${collapsed ? 'max-h-12 max-w-[88px]' : 'max-h-28 w-full max-w-[260px]'} object-contain`}
+          />
+          <EnprotecLogo className={`${collapsed ? 'h-7' : 'h-12'} w-auto object-contain`} />
+        </div>
+        <button
+          type="button"
+          onClick={onToggle}
+          className="absolute top-3 right-3 inline-flex h-9 w-9 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-500 transition hover:border-sky-200 hover:text-sky-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white"
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          <ChevronRightIcon className={`h-5 w-5 transform transition-transform ${collapsed ? 'rotate-180' : ''}`} />
+        </button>
       </div>
-      <nav className="flex-1 px-4 py-2">
+      <nav className={`flex-1 ${collapsed ? 'px-2' : 'px-4'} py-2`}>
         <ul className="space-y-1">
           {visibleNavItems.map((item) => (
             <NavItem
@@ -101,14 +126,17 @@ const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView }) 
               label={item.label}
               isActive={currentView === item.view}
               onClick={() => setCurrentView(item.view)}
+              collapsed={collapsed}
             />
           ))}
         </ul>
       </nav>
-      <div className="p-4 mt-auto">
-        <p className="text-xs text-zinc-400 text-center">
-          &copy; 2025 MindRift
-        </p>
+      <div className={`${collapsed ? 'px-2' : 'px-4'} py-4 mt-auto`}>
+        {!collapsed && (
+          <p className="text-xs text-zinc-400 text-center">
+            &copy; 2025 MindRift
+          </p>
+        )}
       </div>
     </aside>
   );

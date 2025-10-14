@@ -402,7 +402,7 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
     );
 
     const responseImages = new Map<string, string>();
-    const logoPromise = fetchImageAsDataUrl('/enprotec-1.jpg');
+    const logoPromise = fetchImageAsDataUrl('/Enprotec-logo.jpg');
     const imageFetches: Promise<void>[] = [];
 
     augmentedResponses.forEach(({ response, key }) => {
@@ -446,7 +446,7 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
     let y = 0;
 
     const initPage = (isFirstPage: boolean) => {
-      const headerHeight = isFirstPage ? 38 : 26;
+      const headerHeight = isFirstPage ? 44 : 30;
       doc.setFillColor(colors.primary.r, colors.primary.g, colors.primary.b);
       doc.rect(0, 0, pageWidth, headerHeight, 'F');
 
@@ -454,7 +454,7 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
       if (logoDataUrl) {
         const logoFormat = logoDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
         const { width: logoNativeWidth, height: logoNativeHeight } = doc.getImageProperties(logoDataUrl);
-        let logoWidth = 32;
+        let logoWidth = isFirstPage ? 56 : 40;
         let logoHeight = (logoNativeHeight * logoWidth) / logoNativeWidth;
         if (logoHeight > headerHeight - 10) {
           logoHeight = headerHeight - 10;

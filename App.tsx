@@ -64,6 +64,7 @@ const App: React.FC = () => {
   const [loggedInUser, setLoggedInUser] = useState<User | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
   const [showInspectionToast, setShowInspectionToast] = useState(false);
+  const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const triggerRefresh = () => setDataVersion(v => v + 1);
 
@@ -223,7 +224,13 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-zinc-100 font-sans">
-      <Sidebar user={loggedInUser} currentView={currentView} setCurrentView={navigateTo} />
+      <Sidebar
+        user={loggedInUser}
+        currentView={currentView}
+        setCurrentView={navigateTo}
+        collapsed={isSidebarCollapsed}
+        onToggle={() => setSidebarCollapsed(prev => !prev)}
+      />
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header user={loggedInUser} onLogout={handleLogout} />
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-zinc-100 p-8">
