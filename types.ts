@@ -1,4 +1,22 @@
-export type View = 'Dashboard' | 'Workflows' | 'StockReceipts' | 'Requests' | 'EquipmentManager' | 'RejectedRequests' | 'Picking' | 'Deliveries' | 'Stores' | 'Reports' | 'Users' | 'Sites' | 'MyDeliveries' | 'Returns' | 'Salvage';
+export type View =
+  | 'Dashboard'
+  | 'Workflows'
+  | 'StockReceipts'
+  | 'Requests'
+  | 'EquipmentManager'
+  | 'RejectedRequests'
+  | 'Picking'
+  | 'Deliveries'
+  | 'Stores'
+  | 'Reports'
+  | 'Users'
+  | 'Sites'
+  | 'MyDeliveries'
+  | 'Returns'
+  | 'Salvage'
+  | 'InspectionReport'
+  | 'MyInspections'
+  | 'FleetDashboard';
 
 export type FormType = 'PR' | 'GateRelease' | 'StockRequest' | 'EPOD' | 'StockIntake' | 'SalvageBooking' | 'ReturnIntake';
 

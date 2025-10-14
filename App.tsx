@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
@@ -17,6 +17,9 @@ import StockReceipts from './components/StockReceipts';
 import MyDeliveries from './components/MyDeliveries';
 import Returns from './components/Returns';
 import SalvagePage from './components/SalvagePage';
+import InspectionReport from './components/InspectionReport';
+import MyInspections from './components/MyInspections';
+import FleetDashboard from './components/FleetDashboard';
 import { View, FormType, User, UserRole, WorkflowRequest, StockItem } from './types';
 import PRForm from './components/forms/PRForm';
 import GateReleaseForm from './components/forms/GateReleaseForm';
@@ -27,13 +30,13 @@ import SalvageBookingForm from './components/forms/SalvageBookingForm';
 
 // Role-Based Access Control Configuration
 const viewPermissions: Record<UserRole, View[]> = {
-  [UserRole.Admin]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Returns', 'Salvage', 'Stores', 'Sites', 'Users', 'Reports'],
-  [UserRole.OperationsManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Returns', 'Salvage', 'Stores', 'Sites', 'Reports'],
-  [UserRole.EquipmentManager]: ['Dashboard', 'Workflows', 'EquipmentManager', 'RejectedRequests', 'Salvage', 'Reports'],
-  [UserRole.StockController]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'Returns', 'Salvage', 'Stores'],
-  [UserRole.SiteManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Stores', 'Deliveries'],
-  [UserRole.ProjectManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Stores', 'Deliveries'],
-  [UserRole.Driver]: ['Deliveries'],
+  [UserRole.Admin]: ['Dashboard', 'FleetDashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Returns', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores', 'Sites', 'Users', 'Reports'],
+  [UserRole.OperationsManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Returns', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores', 'Sites', 'Reports'],
+  [UserRole.EquipmentManager]: ['Dashboard', 'FleetDashboard', 'EquipmentManager', 'RejectedRequests', 'InspectionReport', 'MyInspections', 'Salvage', 'Reports'],
+  [UserRole.StockController]: ['Dashboard', 'FleetDashboard', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'Returns', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores'],
+  [UserRole.SiteManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'InspectionReport', 'MyInspections', 'Stores'],
+  [UserRole.ProjectManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'InspectionReport', 'MyInspections', 'Stores'],
+  [UserRole.Driver]: ['Deliveries', 'InspectionReport', 'MyInspections'],
   [UserRole.Security]: ['Deliveries'],
 };
 
@@ -60,15 +63,22 @@ const App: React.FC = () => {
   const [activeForm, setActiveForm] = useState<{ type: FormType; context?: any } | null>(null);
   const [loggedInUser, setLoggedInUser] = useState<User | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
+  const [showInspectionToast, setShowInspectionToast] = useState(false);
 
   const triggerRefresh = () => setDataVersion(v => v + 1);
 
   const handleLoginSuccess = (user: User) => {
     setLoggedInUser(user);
     setCurrentView(getDefaultViewForRole(user.role));
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('enprotec:user', JSON.stringify(user));
+    }
   };
 
   const navigateTo = (view: View) => {
+    if (view !== 'MyInspections') {
+      setShowInspectionToast(false);
+    }
     setCurrentView(view);
   };
   
@@ -89,6 +99,35 @@ const App: React.FC = () => {
   const handleLogout = () => {
     setLoggedInUser(null);
     setCurrentView('Dashboard');
+    setShowInspectionToast(false);
+    if (typeof window !== 'undefined') {
+      window.localStorage.removeItem('enprotec:user');
+    }
+  };
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storedUser = window.localStorage.getItem('enprotec:user');
+    if (!storedUser) return;
+
+    try {
+      const parsedUser = JSON.parse(storedUser) as User;
+      setLoggedInUser(parsedUser);
+      setCurrentView(prev => {
+        if (canAccessView(parsedUser.role, prev)) {
+          return prev;
+        }
+        return getDefaultViewForRole(parsedUser.role);
+      });
+    } catch (error) {
+      console.warn('Failed to restore user session from storage', error);
+      window.localStorage.removeItem('enprotec:user');
+    }
+  }, []);
+
+  const handleInspectionSuccess = () => {
+    setShowInspectionToast(true);
+    setCurrentView('MyInspections');
   };
 
   const renderView = () => {
@@ -131,6 +170,19 @@ const App: React.FC = () => {
         return <Reports user={loggedInUser} />;
       case 'Users':
         return <Users />;
+      case 'InspectionReport':
+        return <InspectionReport user={loggedInUser} onSuccess={handleInspectionSuccess} />;
+      case 'MyInspections':
+        return (
+          <MyInspections
+            user={loggedInUser}
+            showSuccessToast={showInspectionToast}
+            onDismissToast={() => setShowInspectionToast(false)}
+            onCreateNew={() => navigateTo('InspectionReport')}
+          />
+        );
+      case 'FleetDashboard':
+        return <FleetDashboard user={loggedInUser} />;
       default:
         return <Dashboard openForm={openForm} user={loggedInUser} navigateTo={navigateTo} />;
     }

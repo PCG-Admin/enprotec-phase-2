@@ -36,6 +36,151 @@ export interface Database {
           created_at?: string;
         };
       };
+      en_inspection_report_items: {
+        Row: {
+          id: string;
+          category: string | null;
+          question: string;
+          requires_photo: boolean | null;
+        };
+        Insert: {
+          id?: string;
+          category?: string | null;
+          question: string;
+          requires_photo?: boolean | null;
+        };
+        Update: {
+          id?: string;
+          category?: string | null;
+          question?: string;
+          requires_photo?: boolean | null;
+        };
+      };
+      en_inspection_report_vehicles: {
+        Row: {
+          id: string;
+          registration_number: string;
+          make: string | null;
+          model: string | null;
+          license_expiry: string | null;
+          current_odometer: number | null;
+          next_service_km: number | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          registration_number: string;
+          make?: string | null;
+          model?: string | null;
+          license_expiry?: string | null;
+          current_odometer?: number | null;
+          next_service_km?: number | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          registration_number?: string;
+          make?: string | null;
+          model?: string | null;
+          license_expiry?: string | null;
+          current_odometer?: number | null;
+          next_service_km?: number | null;
+          created_at?: string | null;
+        };
+      };
+      en_inspection_report_drivers: {
+        Row: {
+          id: string;
+          full_name: string;
+          email: string | null;
+          phone: string | null;
+          department: string | null;
+          assigned_vehicle: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          full_name: string;
+          email?: string | null;
+          phone?: string | null;
+          department?: string | null;
+          assigned_vehicle?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          full_name?: string;
+          email?: string | null;
+          phone?: string | null;
+          department?: string | null;
+          assigned_vehicle?: string | null;
+          created_at?: string | null;
+        };
+      };
+      en_inspection_report_inspections: {
+        Row: {
+          id: string;
+          driver_id: string | null;
+          vehicle_id: string | null;
+          inspection_date: string | null;
+          odometer: number | null;
+          site: string | null;
+          remarks: string | null;
+          overall_status: string | null;
+          submitted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          driver_id?: string | null;
+          vehicle_id?: string | null;
+          inspection_date?: string | null;
+          odometer?: number | null;
+          site?: string | null;
+          remarks?: string | null;
+          overall_status?: string | null;
+          submitted_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          driver_id?: string | null;
+          vehicle_id?: string | null;
+          inspection_date?: string | null;
+          odometer?: number | null;
+          site?: string | null;
+          remarks?: string | null;
+          overall_status?: string | null;
+          submitted_at?: string | null;
+        };
+      };
+      en_inspection_report_responses: {
+        Row: {
+          id: string;
+          inspection_id: string | null;
+          item_id: string | null;
+          condition: string | null;
+          notes: string | null;
+          photo_url: string | null;
+          storage_bucket: string | null;
+        };
+        Insert: {
+          id?: string;
+          inspection_id?: string | null;
+          item_id?: string | null;
+          condition?: string | null;
+          notes?: string | null;
+          photo_url?: string | null;
+          storage_bucket?: string | null;
+        };
+        Update: {
+          id?: string;
+          inspection_id?: string | null;
+          item_id?: string | null;
+          condition?: string | null;
+          notes?: string | null;
+          photo_url?: string | null;
+          storage_bucket?: string | null;
+        };
+      };
       en_salvage_requests: {
         Row: {
           id: string;
