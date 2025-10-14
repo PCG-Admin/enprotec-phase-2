@@ -4,6 +4,7 @@ export interface InspectionItemLike {
   question?: string | null;
   category?: string | null;
   requires_photo?: boolean | null;
+  correct_answer?: string | null;
 }
 
 const ALWAYS_PHOTO_KEYWORDS = [
@@ -60,6 +61,14 @@ const matchesKeyword = (item: InspectionItemLike, keywords: string[]): boolean =
   return keywords.some(keyword => normalized.includes(keyword));
 };
 
+const expectedAnswerForItem = (item: InspectionItemLike): 'yes' | 'no' | null => {
+  const normalized = normaliseText(item.correct_answer as string);
+  if (normalized === 'yes' || normalized === 'no') {
+    return normalized;
+  }
+  return null;
+};
+
 export const requiresPhotoForItem = (item: InspectionItemLike): boolean => {
   return Boolean(item.requires_photo) || matchesKeyword(item, ALWAYS_PHOTO_KEYWORDS);
 };
@@ -69,15 +78,29 @@ export const failsOnYesForItem = (item: InspectionItemLike): boolean => {
 };
 
 export const failureLabelForItem = (item: InspectionItemLike): 'Yes' | 'No' => {
+  const expected = expectedAnswerForItem(item);
+  if (expected === 'yes') {
+    return 'No';
+  }
+  if (expected === 'no') {
+    return 'Yes';
+  }
   return failsOnYesForItem(item) ? 'Yes' : 'No';
 };
 
 export const isFailureAnswer = (item: InspectionItemLike, answer: InspectionAnswer): boolean => {
-  const normalizedAnswer = normaliseText(answer as string);
+  const normalizedAnswer = normaliseAnswer(answer);
   if (normalizedAnswer !== 'yes' && normalizedAnswer !== 'no') return false;
+
+  const expected = expectedAnswerForItem(item);
+  if (expected) {
+    return normalizedAnswer !== expected;
+  }
+
   if (failsOnYesForItem(item)) {
     return normalizedAnswer === 'yes';
   }
+
   return normalizedAnswer === 'no';
 };
 

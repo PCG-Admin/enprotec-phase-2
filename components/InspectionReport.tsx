@@ -178,6 +178,18 @@ const InspectionReport: React.FC<InspectionReportProps> = ({ user, onSuccess }) 
       .sort((a, b) => a.category.localeCompare(b.category));
   }, [items]);
 
+  const totalItems = items.length;
+
+  const answeredCount = useMemo(() => {
+    if (!items.length) return 0;
+    return items.reduce((count, item) => {
+      const normalizedAnswer = normaliseAnswer(responses[item.id]?.answer);
+      return normalizedAnswer ? count + 1 : count;
+    }, 0);
+  }, [items, responses]);
+
+  const progressPercent = totalItems ? Math.round((answeredCount / totalItems) * 100) : 0;
+
   const isFormValid = useMemo(() => {
     if (!selectedVehicle || !selectedDriver) return false;
     return items.every(item => {
@@ -557,9 +569,20 @@ const InspectionReport: React.FC<InspectionReportProps> = ({ user, onSuccess }) 
 
           <div className="sticky bottom-0 left-0 right-0 mx-[-1rem] border-t border-zinc-200 bg-white/95 px-4 py-4 shadow-[0_-6px_12px_-10px_rgba(15,23,42,0.25)] backdrop-blur sm:mx-0 sm:px-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-zinc-500">
-                {items.length} checklist item{items.length === 1 ? '' : 's'} to review.
-              </p>
+              <div className="flex flex-col gap-2 sm:flex-1">
+                <p className="text-sm font-medium text-zinc-700">
+                  {answeredCount} of {totalItems} checklist item{totalItems === 1 ? '' : 's'} answered
+                </p>
+                <div className="flex items-center gap-3">
+                  <div className="h-2 w-full rounded-full bg-zinc-200 sm:max-w-[240px]">
+                    <div
+                      className="h-full rounded-full bg-sky-500 transition-[width] duration-300 ease-out"
+                      style={{ width: `${progressPercent}%` }}
+                    />
+                  </div>
+                  <span className="text-xs font-semibold text-sky-600">{progressPercent}%</span>
+                </div>
+              </div>
               <button
                 type="submit"
                 disabled={!isFormValid || submitting}

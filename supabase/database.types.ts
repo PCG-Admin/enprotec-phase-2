@@ -42,18 +42,21 @@ export interface Database {
           category: string | null;
           question: string;
           requires_photo: boolean | null;
+          correct_answer: string | null;
         };
         Insert: {
           id?: string;
           category?: string | null;
           question: string;
           requires_photo?: boolean | null;
+          correct_answer?: string | null;
         };
         Update: {
           id?: string;
           category?: string | null;
           question?: string;
           requires_photo?: boolean | null;
+          correct_answer?: string | null;
         };
       };
       en_inspection_report_vehicles: {
