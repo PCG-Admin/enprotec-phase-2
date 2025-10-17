@@ -1,9 +1,6 @@
 import { supabase } from '../supabase/client';
 import type { InspectionDetail } from '../types/inspection';
-import { createInspectionPdfBinary } from '../utils/inspectionPdf';
-
-const INSPECTION_WEBHOOK_URL =
-  'https://hook.eu2.make.com/5gi9xeljl8j5ou61qanvnluk93xukwfx';
+import { createInspectionPdfBase64 } from '../utils/inspectionPdf';
 
 export const fetchInspectionDetail = async (
   inspectionId: string
@@ -86,8 +83,7 @@ export const sendInspectionCompletedWebhook = async (
 ): Promise<void> => {
   const inspection = await fetchInspectionDetail(inspectionId);
 
-  const pdfBytes = await createInspectionPdfBinary(inspection);
-  const pdfData = Array.from(pdfBytes);
+  const { base64, byteLength } = await createInspectionPdfBase64(inspection);
 
   const payload = {
     inspectionId: inspection.id,
@@ -103,12 +99,13 @@ export const sendInspectionCompletedWebhook = async (
     file: {
       name: `inspection-${inspection.id}.pdf`,
       mime: 'application/pdf',
-      data: pdfData,
-      size: pdfBytes.length,
+      data: base64,
+      encoding: 'base64',
+      size: byteLength,
     },
   };
 
-  const response = await fetch(INSPECTION_WEBHOOK_URL, {
+  const response = await fetch('/api/send-inspection', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -119,7 +116,7 @@ export const sendInspectionCompletedWebhook = async (
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
     throw new Error(
-      `Inspection webhook failed with status ${response.status}: ${errorText}`
+      `Inspection webhook proxy failed with status ${response.status}: ${errorText}`
     );
   }
 };

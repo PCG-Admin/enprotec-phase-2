@@ -5,7 +5,9 @@ const WEBHOOK_URL = 'https://hook.eu2.make.com/auxwo8ivmlye45wqwguiwthp78mwpiyc'
 
 export type WebhookActionType = 'APPROVAL' | 'DECLINE' | 'REJECTION' | 'ACCEPTANCE' | 'SALVAGE_DECISION';
 
-interface WebhookPayload {
+type ApproverFieldKey = `approver${number}`;
+
+type WebhookPayload = {
     actionType: WebhookActionType;
     requestNumber: string;
     previousStatus: WorkflowStatus;
@@ -18,8 +20,7 @@ interface WebhookPayload {
     comment?: string | null;
     timestamp: string;
     workflowId: string;
-    nextApprovers: string[];
-}
+} & Partial<Record<ApproverFieldKey, string>>;
 
 /**
  * Determines the email addresses of the next users in the workflow based on the new status.
@@ -154,7 +155,7 @@ export const sendApprovalWebhook = async (
         nextApprovers = await getNextApproverEmailsForSalvage(newStatus);
     }
 
-    const payload: WebhookPayload = {
+    const basePayload = {
         actionType,
         requestNumber: isWorkflowRequest(request) ? request.requestNumber : `SALVAGE-${request.partNumber}`,
         previousStatus: isWorkflowRequest(request) ? request.currentStatus : request.status,
@@ -167,7 +168,18 @@ export const sendApprovalWebhook = async (
         comment: comment,
         timestamp: new Date().toISOString(),
         workflowId: request.id,
-        nextApprovers,
+    };
+
+    const approverFields = nextApprovers.reduce<Partial<Record<ApproverFieldKey, string>>>((fields, email, index) => {
+        if (email) {
+            fields[`approver${index + 1}` as ApproverFieldKey] = email;
+        }
+        return fields;
+    }, {});
+
+    const payload: WebhookPayload = {
+        ...basePayload,
+        ...approverFields,
     };
 
     try {

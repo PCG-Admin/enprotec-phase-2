@@ -10,6 +10,7 @@ import {
 } from '../utils/inspection';
 import CreateVehicleForm from './forms/CreateVehicleForm';
 import CreateDriverForm from './forms/CreateDriverForm';
+import { sendInspectionCompletedWebhook } from '../services/inspectionService';
 
 type InspectionItem = Database['public']['Tables']['en_inspection_report_items']['Row'];
 type Vehicle = Database['public']['Tables']['en_inspection_report_vehicles']['Row'];
@@ -348,6 +349,12 @@ const InspectionReport: React.FC<InspectionReportProps> = ({ user, onSuccess }) 
 
       if (responsesError) {
         throw responsesError;
+      }
+
+      try {
+        await sendInspectionCompletedWebhook(inspectionId);
+      } catch (webhookError) {
+        console.error('Failed to send inspection completion webhook:', webhookError);
       }
 
       setSuccess(true);

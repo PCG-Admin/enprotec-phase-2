@@ -33,18 +33,72 @@ const fetchImageAsDataUrl = async (url: string): Promise<string | null> => {
       throw new Error(`Failed to fetch image: ${response.status}`);
     }
     const blob = await response.blob();
-    return await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = () =>
-        reject(reader.error ?? new Error('Failed to convert inspection image to data URL'));
-      reader.readAsDataURL(blob);
-    });
+    return await compressImageBlob(blob);
   } catch (error) {
     console.error('Unable to embed inspection photo in PDF', error);
     return null;
   }
 };
+
+const compressImageBlob = async (blob: Blob): Promise<string> => {
+  if (typeof document === 'undefined') {
+    return await blobToDataUrl(blob);
+  }
+
+  try {
+    const objectUrl = URL.createObjectURL(blob);
+    const imageElement = await loadImage(objectUrl);
+    URL.revokeObjectURL(objectUrl);
+
+    const maxWidth = 1280;
+    const maxHeight = 960;
+    const { width, height } = imageElement;
+
+    const scale = Math.min(maxWidth / width, maxHeight / height, 1);
+    const targetWidth = Math.max(Math.round(width * scale), 1);
+    const targetHeight = Math.max(Math.round(height * scale), 1);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new Error('Failed to get canvas context for image compression');
+    }
+
+    context.drawImage(imageElement, 0, 0, targetWidth, targetHeight);
+
+    // Prefer JPEG to keep size small; fall back to PNG if JPEG fails.
+    const quality = 0.75;
+    const jpegDataUrl = canvas.toDataURL('image/jpeg', quality);
+    if (jpegDataUrl && jpegDataUrl.length > 0) {
+      return jpegDataUrl;
+    }
+
+    return await blobToDataUrl(blob);
+  } catch (error) {
+    console.warn('Image compression failed, using original', error);
+    return await blobToDataUrl(blob);
+  }
+};
+
+const loadImage = (src: string): Promise<HTMLImageElement> =>
+  new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Failed to load inspection image for compression'));
+    img.src = src;
+  });
+
+const blobToDataUrl = (blob: Blob): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = () =>
+      reject(reader.error ?? new Error('Failed to convert inspection image to data URL'));
+    reader.readAsDataURL(blob);
+  });
 
 export const createInspectionPdfDocument = async (
   inspection: InspectionDetail
@@ -495,4 +549,15 @@ export const createInspectionPdfBinary = async (
   const doc = await createInspectionPdfDocument(inspection);
   const arrayBuffer = doc.output('arraybuffer') as ArrayBuffer;
   return new Uint8Array(arrayBuffer);
+};
+
+export const createInspectionPdfBase64 = async (
+  inspection: InspectionDetail
+): Promise<{ base64: string; byteLength: number }> => {
+  const doc = await createInspectionPdfDocument(inspection);
+  const dataUri = doc.output('datauristring');
+  const base64 = dataUri.split(',', 2)[1] ?? '';
+  const padding = (base64.match(/=+$/) || [''])[0].length;
+  const byteLength = Math.floor((base64.length * 3) / 4) - padding;
+  return { base64, byteLength };
 };

@@ -1,12 +1,20 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { jsPDF } from 'jspdf';
 import { supabase } from '../supabase/client';
 import type { User } from '../types';
+import { fetchInspectionDetail, sendInspectionCompletedWebhook } from '../services/inspectionService';
 import {
   InspectionItemLike,
   isFailureAnswer,
   normaliseAnswer,
 } from '../utils/inspection';
+import {
+  createInspectionPdfDocument,
+} from '../utils/inspectionPdf';
+import type {
+  InspectionDetail,
+  InspectionDriverInfo,
+  InspectionVehicleInfo,
+} from '../types/inspection';
 
 interface InspectionResponseRow {
   condition: string | null;
@@ -19,24 +27,13 @@ interface InspectionResponseRow {
     | null;
 }
 
-interface VehicleInfo {
-  registration_number: string | null;
-  make: string | null;
-  model: string | null;
-}
-
-interface DriverInfo {
-  full_name: string | null;
-  email: string | null;
-}
-
 interface InspectionWithRelations {
   id: string;
   inspection_date: string | null;
   site: string | null;
   overall_status: string | null;
-  driver: DriverInfo | null;
-  vehicle: VehicleInfo | null;
+  driver: InspectionDriverInfo | null;
+  vehicle: InspectionVehicleInfo | null;
   responses: InspectionResponseRow[] | null;
 }
 
@@ -49,38 +46,6 @@ interface InspectionSummary {
   totalItems: number;
   failedItems: number;
   overallStatus: string | null;
-}
-
-interface InspectionDetail {
-  id: string;
-  inspection_date: string | null;
-  site: string | null;
-  overall_status: string | null;
-  odometer: number | null;
-  remarks: string | null;
-  vehicle: {
-    registration_number: string | null;
-    make: string | null;
-    model: string | null;
-  } | null;
-  driver: {
-    full_name: string | null;
-    email: string | null;
-  } | null;
-  responses:
-    | {
-        id: string;
-        condition: string | null;
-        notes: string | null;
-        photo_url: string | null;
-        storage_bucket: string | null;
-        item: {
-          question: string | null;
-          category: string | null;
-          correct_answer: string | null;
-        } | null;
-      }[]
-    | null;
 }
 
 interface MyInspectionsProps {
@@ -120,53 +85,16 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
   const [deviationLoading, setDeviationLoading] = useState(false);
   const [deviationError, setDeviationError] = useState<string | null>(null);
   const [isDeviationModalOpen, setIsDeviationModalOpen] = useState(false);
-  const fetchInspectionDetail = async (inspectionId: string): Promise<InspectionDetail> => {
-    const { data, error: detailError } = await supabase
-      .from('en_inspection_report_inspections')
-      .select(
-        `
-        id,
-        inspection_date,
-        site,
-        overall_status,
-        odometer,
-        remarks,
-        vehicle:en_inspection_report_vehicles (
-          registration_number,
-          make,
-          model
-        ),
-        driver:en_inspection_report_drivers (
-          full_name,
-          email
-        ),
-        responses:en_inspection_report_responses (
-          id,
-          condition,
-          notes,
-          photo_url,
-          storage_bucket,
-          item:en_inspection_report_items (
-            question,
-            category,
-            correct_answer
-          )
-        )
-      `
-      )
-      .eq('id', inspectionId)
-      .maybeSingle();
+  const [sendingInspection, setSendingInspection] = useState(false);
+  const [sendSuccessMessage, setSendSuccessMessage] = useState<string | null>(null);
+  const [sendErrorMessage, setSendErrorMessage] = useState<string | null>(null);
 
-    if (detailError) {
-      throw detailError;
-    }
+  useEffect(() => {
+    setSendingInspection(false);
+    setSendSuccessMessage(null);
+    setSendErrorMessage(null);
+  }, [selectedInspection?.id]);
 
-    if (!data) {
-      throw new Error('Inspection not found.');
-    }
-
-    return data as unknown as InspectionDetail;
-  };
 
   const fetchInspections = async () => {
     setLoading(true);
@@ -224,6 +152,8 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
   const handleViewInspection = async (inspectionId: string) => {
     setDetailLoading(true);
     setDetailError(null);
+    setSendSuccessMessage(null);
+    setSendErrorMessage(null);
 
     try {
       const detail = await fetchInspectionDetail(inspectionId);
@@ -241,6 +171,8 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
     setDeviationLoading(true);
     setDeviationError(null);
     setIsDeviationModalOpen(true);
+    setSendSuccessMessage(null);
+    setSendErrorMessage(null);
 
     try {
       const detail = await fetchInspectionDetail(inspectionId);
@@ -257,6 +189,8 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
   const closeDeviationModal = () => {
     setIsDeviationModalOpen(false);
     setDeviationError(null);
+    setSendSuccessMessage(null);
+    setSendErrorMessage(null);
   };
 
   const siteOptions = useMemo(() => {
@@ -373,482 +307,36 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
       return isFailureAnswer(itemLike, normaliseAnswer(response.condition));
     });
   }, [selectedInspection]);
+
+  const photoResponses = useMemo(() => {
+    if (!selectedInspection?.responses?.length) return [];
+    return selectedInspection.responses.filter(
+      response => Boolean(response.photo_url) && response.photo_url.trim().length > 0
+    );
+  }, [selectedInspection]);
+  const handleSendInspection = async () => {
+    if (!selectedInspection) return;
+    setSendingInspection(true);
+    setSendErrorMessage(null);
+    setSendSuccessMessage(null);
+    try {
+      await sendInspectionCompletedWebhook(selectedInspection.id);
+      setSendSuccessMessage('Inspection sent to webhook successfully.');
+    } catch (sendError: any) {
+      console.error(sendError);
+      setSendErrorMessage(
+        sendError instanceof Error ? sendError.message : 'Failed to send inspection to webhook.'
+      );
+    } finally {
+      setSendingInspection(false);
+    }
+  };
   const handleDownloadPdf = async () => {
     if (!selectedInspection) return;
-
-    type InspectionResponse = NonNullable<InspectionDetail['responses']>[number];
-    interface AugmentedResponse {
-      response: InspectionResponse;
-      index: number;
-      key: string;
-      itemLike: InspectionItemLike;
-      normalizedCondition: string | null;
-      isFail: boolean;
-    }
-
-    const augmentedResponses: AugmentedResponse[] = (selectedInspection.responses ?? []).map(
-      (response, index) => {
-        const itemLike = asItemLike(response.item ?? undefined);
-        const normalizedCondition = normaliseAnswer(response.condition);
-        return {
-          response,
-          index,
-          key: response.id || `${selectedInspection.id}-${index}`,
-          itemLike,
-          normalizedCondition,
-          isFail: isFailureAnswer(itemLike, normalizedCondition),
-        };
-      }
-    );
-
-    const responseImages = new Map<string, string>();
-    const logoPromise = fetchImageAsDataUrl('/Enprotec-logo.jpg');
-    const imageFetches: Promise<void>[] = [];
-
-    augmentedResponses.forEach(({ response, key }) => {
-      if (!response.photo_url) return;
-      imageFetches.push(
-        fetchImageAsDataUrl(response.photo_url).then(dataUrl => {
-          if (dataUrl) {
-            responseImages.set(key, dataUrl);
-          }
-        })
-      );
-    });
-
-    let logoDataUrl: string | null = null;
-    await Promise.all([
-      logoPromise.then(dataUrl => {
-        logoDataUrl = dataUrl;
-      }),
-      ...imageFetches,
-    ]);
-
-    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-    let pageWidth = doc.internal.pageSize.getWidth();
-    let pageHeight = doc.internal.pageSize.getHeight();
-    const marginX = 18;
-    const marginBottom = 20;
-    const lineHeight = 4.8;
-
-    const colors = {
-      primary: { r: 0, g: 84, b: 166 },
-      accent: { r: 14, g: 165, b: 233 },
-      text: { r: 45, g: 55, b: 72 },
-      muted: { r: 100, g: 116, b: 139 },
-      surface: { r: 236, g: 244, b: 252 },
-      surfaceAlt: { r: 248, g: 250, b: 252 },
-      border: { r: 203, g: 213, b: 225 },
-      danger: { r: 220, g: 38, b: 38 },
-      success: { r: 22, g: 163, b: 74 },
-    };
-
-    let y = 0;
-
-    const initPage = (isFirstPage: boolean) => {
-      const headerHeight = isFirstPage ? 44 : 30;
-      doc.setFillColor(colors.primary.r, colors.primary.g, colors.primary.b);
-      doc.rect(0, 0, pageWidth, headerHeight, 'F');
-
-      let headerTextStartX = marginX;
-      if (logoDataUrl) {
-        const logoFormat = logoDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
-        const { width: logoNativeWidth, height: logoNativeHeight } = doc.getImageProperties(logoDataUrl);
-        let logoWidth = isFirstPage ? 56 : 40;
-        let logoHeight = (logoNativeHeight * logoWidth) / logoNativeWidth;
-        if (logoHeight > headerHeight - 10) {
-          logoHeight = headerHeight - 10;
-          logoWidth = (logoNativeWidth * logoHeight) / logoNativeHeight;
-        }
-        const logoY = headerHeight / 2 - logoHeight / 2;
-        doc.addImage(logoDataUrl, logoFormat, marginX, logoY, logoWidth, logoHeight);
-        headerTextStartX = marginX + logoWidth + 8;
-      }
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(isFirstPage ? 16 : 12);
-      const titleY = isFirstPage ? 22 : 17;
-      doc.text('Enprotec Inspection Report', headerTextStartX, titleY);
-
-      if (isFirstPage) {
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
-        doc.text('Professional insights powered by Enprotec workflows', headerTextStartX, titleY + 6);
-      }
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(colors.text.r, colors.text.g, colors.text.b);
-
-      return headerHeight + 14;
-    };
-
-    const startNewPage = (isFirstPage = false) => {
-      if (!isFirstPage) {
-        doc.addPage();
-        pageWidth = doc.internal.pageSize.getWidth();
-        pageHeight = doc.internal.pageSize.getHeight();
-      }
-      y = initPage(isFirstPage);
-    };
-
-    const ensureSpace = (required: number) => {
-      if (y + required > pageHeight - marginBottom) {
-        startNewPage();
-      }
-    };
-
-    const drawSectionHeading = (title: string) => {
-      ensureSpace(14);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(12);
-      doc.setTextColor(colors.primary.r, colors.primary.g, colors.primary.b);
-      doc.text(title, marginX, y);
-      doc.setDrawColor(colors.accent.r, colors.accent.g, colors.accent.b);
-      doc.setLineWidth(0.6);
-      doc.line(marginX, y + 1.5, Math.min(marginX + 42, pageWidth - marginX), y + 1.5);
-      doc.setLineWidth(0.2);
-      doc.setTextColor(colors.text.r, colors.text.g, colors.text.b);
-      y += 9;
-    };
-
-    const drawSubheading = (title: string) => {
-      ensureSpace(10);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.setTextColor(colors.primary.r, colors.primary.g, colors.primary.b);
-      doc.text(title, marginX, y);
-      doc.setDrawColor(colors.border.r, colors.border.g, colors.border.b);
-      doc.setLineWidth(0.3);
-      doc.line(marginX, y + 1.2, pageWidth - marginX, y + 1.2);
-      doc.setLineWidth(0.2);
-      doc.setTextColor(colors.text.r, colors.text.g, colors.text.b);
-      y += 6;
-    };
-
-    const renderResponseTable = (rows: AugmentedResponse[]) => {
-      if (!rows.length) {
-        doc.setFont('helvetica', 'italic');
-        doc.setFontSize(9.5);
-        doc.setTextColor(colors.muted.r, colors.muted.g, colors.muted.b);
-        doc.text('No responses recorded for this category.', marginX, y);
-        doc.setFont('helvetica', 'normal');
-        doc.setTextColor(colors.text.r, colors.text.g, colors.text.b);
-        y += 6;
-        return;
-      }
-
-      const tableColumns = [
-        { header: '#', width: 10 },
-        { header: 'Question', width: 80 },
-        { header: 'Result', width: 32 },
-        { header: 'Notes', width: 52 },
-      ];
-      const tableWidth = tableColumns.reduce((sum, column) => sum + column.width, 0);
-      const paddingX = 2.5;
-      const paddingY = 3;
-      const headerHeight = 8;
-
-      ensureSpace(headerHeight + 2);
-      doc.setFillColor(colors.primary.r, colors.primary.g, colors.primary.b);
-      doc.setTextColor(255, 255, 255);
-      doc.rect(marginX, y, tableWidth, headerHeight, 'F');
-
-      let headerX = marginX + paddingX;
-      tableColumns.forEach(column => {
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(9);
-        doc.text(column.header, headerX, y + headerHeight - 3);
-        headerX += column.width;
-      });
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9.5);
-      doc.setTextColor(colors.text.r, colors.text.g, colors.text.b);
-      y += headerHeight;
-
-      rows.forEach((row, rowIndex) => {
-        const question = row.response.item?.question?.trim() ?? `Checklist item ${rowIndex + 1}`;
-        const resultLabel = (
-          row.response.condition ?? row.normalizedCondition ?? 'N/A'
-        )
-          .toString()
-          .toUpperCase();
-        const notes = row.response.notes?.trim() ? row.response.notes : 'No notes';
-
-        const columnLines = [
-          [String(rowIndex + 1)],
-          doc.splitTextToSize(question, tableColumns[1].width - paddingX * 2),
-          (() => {
-            const lines = doc.splitTextToSize(resultLabel, tableColumns[2].width - paddingX * 2);
-            if (row.isFail) {
-              lines.push('Deviation');
-            } else if (row.normalizedCondition === 'pass') {
-              lines.push('Compliant');
-            }
-            return lines;
-          })(),
-          doc.splitTextToSize(notes, tableColumns[3].width - paddingX * 2),
-        ];
-
-        const maxLineCount = columnLines.reduce((max, lines) => Math.max(max, lines.length), 1);
-        const rowHeight = Math.max(maxLineCount * lineHeight + paddingY * 2, 11);
-
-        ensureSpace(rowHeight + 1);
-        const fillColor = rowIndex % 2 === 0 ? colors.surfaceAlt : { r: 255, g: 255, b: 255 };
-        doc.setFillColor(fillColor.r, fillColor.g, fillColor.b);
-        doc.setDrawColor(colors.border.r, colors.border.g, colors.border.b);
-        doc.rect(marginX, y, tableWidth, rowHeight, 'FD');
-
-        let cellX = marginX;
-        columnLines.forEach((lines, columnIndex) => {
-          const column = tableColumns[columnIndex];
-          let textColor = colors.text;
-          if (column.header === 'Result') {
-            if (row.isFail) {
-              textColor = colors.danger;
-            } else if (row.normalizedCondition === 'pass') {
-              textColor = colors.success;
-            }
-          }
-          doc.setTextColor(textColor.r, textColor.g, textColor.b);
-          lines.forEach((line, lineIndex) => {
-            const lineY = y + paddingY + (lineIndex + 1) * lineHeight;
-            doc.text(line, cellX + paddingX, lineY);
-          });
-          cellX += column.width;
-        });
-
-        doc.setTextColor(colors.text.r, colors.text.g, colors.text.b);
-        y += rowHeight;
-      });
-
-      y += 4;
-    };
-
-    startNewPage(true);
-
-    const vehicleLabel = [
-      selectedInspection.vehicle?.registration_number ?? 'Unknown registration',
-      [selectedInspection.vehicle?.make, selectedInspection.vehicle?.model].filter(Boolean).join(' '),
-    ]
-      .filter(Boolean)
-      .join(' - ');
-
-    const overviewEntries = [
-      { label: 'Inspection ID', value: selectedInspection.id },
-      {
-        label: 'Inspection Date',
-        value: selectedInspection.inspection_date
-          ? new Date(selectedInspection.inspection_date).toLocaleString()
-          : 'Unknown',
-      },
-      { label: 'Vehicle', value: vehicleLabel || 'Not recorded' },
-      {
-        label: 'Driver',
-        value: `${selectedInspection.driver?.full_name ?? 'N/A'} (${selectedInspection.driver?.email ?? 'N/A'})`,
-      },
-      { label: 'Site', value: selectedInspection.site ?? 'N/A' },
-      {
-        label: 'Odometer',
-        value:
-          selectedInspection.odometer != null
-            ? `${selectedInspection.odometer.toLocaleString()} km`
-            : 'N/A',
-      },
-      { label: 'Overall Status', value: selectedInspection.overall_status ?? 'Pending' },
-    ];
-
-    const cardPadding = 8;
-    const cardTitleHeight = 6;
-    const availableCardWidth = pageWidth - marginX * 2 - cardPadding * 2;
-    const overviewContent = overviewEntries.map(entry => ({
-      ...entry,
-      valueLines: doc.splitTextToSize(entry.value, availableCardWidth),
-    }));
-    const cardHeight =
-      cardPadding * 2 +
-      cardTitleHeight +
-      overviewContent.reduce(
-        (acc, entry) => acc + 3.8 + entry.valueLines.length * lineHeight + 2.2,
-        0
-      );
-
-    ensureSpace(cardHeight + 4);
-    doc.setFillColor(colors.surface.r, colors.surface.g, colors.surface.b);
-    doc.roundedRect(marginX, y, pageWidth - marginX * 2, cardHeight, 3, 3, 'F');
-
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(12);
-    doc.setTextColor(colors.primary.r, colors.primary.g, colors.primary.b);
-    doc.text('Inspection Overview', marginX + cardPadding, y + cardPadding + 4);
-
-    let overviewY = y + cardPadding + cardTitleHeight + 4;
-    overviewContent.forEach(entry => {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.setTextColor(colors.muted.r, colors.muted.g, colors.muted.b);
-      doc.text(entry.label.toUpperCase(), marginX + cardPadding, overviewY);
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(colors.text.r, colors.text.g, colors.text.b);
-      entry.valueLines.forEach((line, lineIndex) => {
-        const lineY = overviewY + 4 + lineIndex * lineHeight;
-        doc.text(line, marginX + cardPadding, lineY);
-      });
-
-      overviewY += 3.8 + entry.valueLines.length * lineHeight + 2.2;
-    });
-
-    y += cardHeight + 8;
-
-    if (selectedInspection.remarks?.trim()) {
-      drawSectionHeading('Inspector Remarks');
-      const remarksLines = doc.splitTextToSize(
-        selectedInspection.remarks.trim(),
-        pageWidth - marginX * 2
-      );
-      const remarksHeight = remarksLines.length * lineHeight + 4;
-      ensureSpace(remarksHeight);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(colors.text.r, colors.text.g, colors.text.b);
-      doc.text(remarksLines, marginX, y);
-      y += remarksHeight + 4;
-    }
-
-    drawSectionHeading('Checklist Responses');
-
-    if (!augmentedResponses.length) {
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(9.5);
-      doc.setTextColor(colors.muted.r, colors.muted.g, colors.muted.b);
-      doc.text('No checklist responses were captured for this inspection.', marginX, y);
-      doc.setFont('helvetica', 'normal');
-      doc.setTextColor(colors.text.r, colors.text.g, colors.text.b);
-      y += 6;
-    } else {
-      const groupedByCategory = augmentedResponses.reduce((acc, current) => {
-        const category = current.response.item?.category?.trim() || 'General';
-        if (!acc.has(category)) {
-          acc.set(category, []);
-        }
-        acc.get(category)!.push(current);
-        return acc;
-      }, new Map<string, AugmentedResponse[]>());
-
-      groupedByCategory.forEach((categoryResponses, category) => {
-        drawSubheading(category);
-        renderResponseTable(categoryResponses);
-      });
-    }
-
-    drawSectionHeading('Deviation Summary');
-    const deviationRows = augmentedResponses.filter(entry => entry.isFail);
-    if (!deviationRows.length) {
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(10);
-      doc.setTextColor(colors.success.r, colors.success.g, colors.success.b);
-      doc.text('No deviations were recorded for this inspection.', marginX, y);
-      doc.setTextColor(colors.text.r, colors.text.g, colors.text.b);
-      y += 6;
-    } else {
-      renderResponseTable(deviationRows);
-    }
-
-    const photoEntries = augmentedResponses.filter(entry => entry.response.photo_url);
-    if (photoEntries.length) {
-      drawSectionHeading('Photos & Evidence');
-      photoEntries.forEach(entry => {
-        const questionLabel =
-          entry.response.item?.question?.trim() ?? `Checklist item ${entry.index + 1}`;
-        const questionLines = doc.splitTextToSize(questionLabel, pageWidth - marginX * 2);
-        const notesLines = entry.response.notes?.trim()
-          ? doc.splitTextToSize(entry.response.notes, pageWidth - marginX * 2)
-          : [];
-        const resultLabel = (
-          entry.response.condition ?? entry.normalizedCondition ?? 'N/A'
-        )
-          .toString()
-          .toUpperCase();
-
-        const imageDataUrl = responseImages.get(entry.key);
-        let imageHeight = 0;
-        const maxImageWidth = pageWidth - marginX * 2;
-        let imageFormat: 'PNG' | 'JPEG' = 'JPEG';
-
-        if (imageDataUrl) {
-          imageFormat = imageDataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
-          const { width: imgNativeWidth, height: imgNativeHeight } =
-            doc.getImageProperties(imageDataUrl);
-          const calculatedHeight = (imgNativeHeight * maxImageWidth) / imgNativeWidth || 60;
-          imageHeight = Math.min(calculatedHeight, 90);
-        }
-
-        const blockHeight =
-          questionLines.length * lineHeight +
-          6 +
-          (imageHeight ? imageHeight + 6 : 0) +
-          (notesLines.length ? notesLines.length * lineHeight + 4 : 0);
-        ensureSpace(blockHeight + 6);
-
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(10.5);
-        doc.setTextColor(colors.primary.r, colors.primary.g, colors.primary.b);
-        doc.text(questionLines, marginX, y);
-        y += questionLines.length * lineHeight + 1.5;
-
-        const resultColor = entry.isFail ? colors.danger : colors.success;
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(9.5);
-        doc.setTextColor(resultColor.r, resultColor.g, resultColor.b);
-        const deviationSuffix = entry.isFail
-          ? ' (Deviation)'
-          : entry.normalizedCondition === 'pass'
-            ? ' (Compliant)'
-            : '';
-        doc.text(`Result: ${resultLabel}${deviationSuffix}`, marginX, y + 4);
-        y += 8;
-        doc.setTextColor(colors.text.r, colors.text.g, colors.text.b);
-
-        if (imageDataUrl) {
-          doc.addImage(imageDataUrl, imageFormat, marginX, y, maxImageWidth, imageHeight);
-          y += imageHeight + 4;
-        } else if (entry.response.photo_url) {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(9);
-          doc.setTextColor(colors.muted.r, colors.muted.g, colors.muted.b);
-          const bucketInfo = entry.response.storage_bucket
-            ? ` (${entry.response.storage_bucket})`
-            : '';
-          const fallbackLines = doc.splitTextToSize(
-            `Photo URL${bucketInfo}: ${entry.response.photo_url}`,
-            pageWidth - marginX * 2
-          );
-          doc.text(fallbackLines, marginX, y);
-          y += fallbackLines.length * lineHeight + 2;
-          doc.setTextColor(colors.text.r, colors.text.g, colors.text.b);
-        }
-
-        if (notesLines.length) {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(9.5);
-          doc.setTextColor(colors.text.r, colors.text.g, colors.text.b);
-          doc.text(notesLines, marginX, y);
-          y += notesLines.length * lineHeight + 3;
-        }
-
-        doc.setDrawColor(colors.border.r, colors.border.g, colors.border.b);
-        doc.setLineWidth(0.2);
-        doc.line(marginX, y, pageWidth - marginX, y);
-        y += 6;
-      });
-    }
-
+    const doc = await createInspectionPdfDocument(selectedInspection);
     doc.save(`inspection-${selectedInspection.id}.pdf`);
   };
+
   const renderInspections = () => {
     if (loading) {
       return (
@@ -975,6 +463,10 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
       );
     }
 
+    const normalizedStatus = (selectedInspection.overall_status ?? '').toLowerCase();
+    const isInspectionCompleted =
+      Boolean(normalizedStatus) && normalizedStatus !== 'pending';
+
     const infoBlocks = [
       {
         label: 'Inspection Date',
@@ -1022,6 +514,16 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
               totalItems={selectedInspection.responses?.length ?? 0}
               overallStatus={selectedInspection.overall_status}
             />
+            {isInspectionCompleted && (
+              <button
+                type="button"
+                onClick={handleSendInspection}
+                disabled={sendingInspection}
+                className="inline-flex items-center justify-center rounded-md border border-teal-200 bg-white px-4 py-2 text-sm font-semibold text-teal-700 shadow-sm transition hover:bg-teal-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-400 focus-visible:ring-offset-2 focus-visible:ring-offset-white disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {sendingInspection ? 'Sending...' : 'Send'}
+              </button>
+            )}
             <button
               type="button"
               onClick={handleDownloadPdf}
@@ -1031,6 +533,17 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
             </button>
           </div>
         </div>
+
+        {sendErrorMessage && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {sendErrorMessage}
+          </div>
+        )}
+        {sendSuccessMessage && (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+            {sendSuccessMessage}
+          </div>
+        )}
 
         <div className="grid gap-4 sm:grid-cols-2">
           {infoBlocks.map(block => (
@@ -1045,6 +558,45 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
           <div className="rounded-lg border border-sky-100 bg-sky-50/60 px-4 py-3">
             <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">Inspector Remarks</p>
             <p className="mt-2 text-sm text-zinc-700">{selectedInspection.remarks}</p>
+          </div>
+        )}
+
+        {photoResponses.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-semibold text-zinc-900">Photos & Evidence</h3>
+              <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                {photoResponses.length} photo{photoResponses.length === 1 ? '' : 's'}
+              </span>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {photoResponses.map((response, index) => {
+                const questionLabel =
+                  response.item?.question?.trim() ?? 'Checklist item';
+                const photoKey = response.id ?? `${selectedInspection.id}-photo-${index}`;
+                return (
+                  <figure
+                    key={photoKey}
+                    className="rounded-lg border border-zinc-100 bg-zinc-50/60 p-3 shadow-sm"
+                  >
+                    <div className="relative aspect-[4/3] overflow-hidden rounded-md bg-white">
+                      <img
+                        src={response.photo_url ?? ''}
+                        alt={questionLabel}
+                        className="h-full w-full object-cover"
+                        loading="lazy"
+                      />
+                    </div>
+                    <figcaption className="mt-3 space-y-2">
+                      <p className="text-sm font-semibold text-zinc-800">{questionLabel}</p>
+                      {response.notes?.trim() && (
+                        <p className="text-xs text-zinc-600">{response.notes}</p>
+                      )}
+                    </figcaption>
+                  </figure>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -1322,25 +874,6 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
       {renderDeviationModal()}
     </div>
   );
-};
-const fetchImageAsDataUrl = async (url: string): Promise<string | null> => {
-  try {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch image: ${response.status}`);
-    }
-    const blob = await response.blob();
-    return await new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = () =>
-        reject(reader.error ?? new Error('Failed to convert inspection image to data URL'));
-      reader.readAsDataURL(blob);
-    });
-  } catch (error) {
-    console.error('Unable to embed inspection photo in PDF', error);
-    return null;
-  }
 };
 
 function buildInspectionSummaries(rows: InspectionWithRelations[]): InspectionSummary[] {
