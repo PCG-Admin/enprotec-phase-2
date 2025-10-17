@@ -47,11 +47,22 @@ export const handleSendInspectionWebhook = async (
     console.error('Failed to transform inspection payload:', error);
     return {
       status: 500,
-      body: { error: 'Failed to transform inspection payload.' },
+      body: {
+        error: 'Failed to transform inspection payload.',
+        details:
+          error instanceof Error ? error.message : 'Unknown transformation error',
+      },
     };
   }
 
   try {
+    const payloadSize = Buffer.byteLength(JSON.stringify(forwardPayload), 'utf8');
+    console.log(
+      `[InspectionWebhook] Forwarding payload (~${(
+        payloadSize / 1024
+      ).toFixed(2)} KB) to ${webhookUrl}`
+    );
+
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
@@ -63,6 +74,9 @@ export const handleSendInspectionWebhook = async (
     const responseBody = await response.text().catch(() => '');
 
     if (!response.ok) {
+      console.error(
+        `[InspectionWebhook] Webhook returned ${response.status}: ${responseBody}`
+      );
       return {
         status: response.status,
         body: {
@@ -84,7 +98,10 @@ export const handleSendInspectionWebhook = async (
     console.error('Failed to call inspection webhook:', error);
     return {
       status: 500,
-      body: { error: 'Failed to forward inspection payload to webhook.' },
+      body: {
+        error: 'Failed to forward inspection payload to webhook.',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
     };
   }
 };
