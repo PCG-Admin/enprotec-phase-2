@@ -36,7 +36,7 @@ const inspectionWebhookHandler = async (
 export default inspectionWebhookHandler;
 
 export const config = {
-  runtime: 'nodejs18.x',
+  runtime: 'nodejs',
   api: {
     bodyParser: {
       sizeLimit: '10mb',
