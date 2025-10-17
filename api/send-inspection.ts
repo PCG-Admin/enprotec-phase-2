@@ -17,7 +17,19 @@ const inspectionWebhookHandler = async (
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { status, body } = await handleSendInspectionWebhook(req.body);
+  let requestBody = req.body;
+
+  if (!requestBody || typeof requestBody !== 'object') {
+    try {
+      requestBody = JSON.parse(req.body as string);
+    } catch {
+      return res
+        .status(400)
+        .json({ error: 'Invalid JSON payload for inspection webhook.' });
+    }
+  }
+
+  const { status, body } = await handleSendInspectionWebhook(requestBody);
   res.status(status).json(body);
 };
 
