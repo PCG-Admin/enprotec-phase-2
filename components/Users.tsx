@@ -2,6 +2,8 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabase/client';
 import { User, UserRole, UserStatus, Department } from '../types';
 import UserEditModal from './UserEditModal';
+import { createUserViaFunction, updateUserProfile } from '../services/userAdmin';
+import { mapRawUserToUser } from '../services/userProfile';
 
 const getRoleBadge = (role: UserRole) => {
     const baseClasses = "px-2.5 py-1 text-xs font-medium rounded-full inline-block border";
@@ -39,9 +41,14 @@ const Users: React.FC = () => {
         setLoading(true);
         setError(null);
         try {
+            console.info('[Supabase] fetching user directory');
             const { data, error } = await supabase.from('en_users').select('*');
             if (error) throw error;
-            setUsers((data as any) || []);
+            console.info('[Supabase] fetched user directory count', data?.length ?? 0);
+            const mapped = (data as any[] | null)
+                ?.map(mapRawUserToUser)
+                .filter((u): u is User => Boolean(u));
+            setUsers(mapped ?? []);
         } catch (err) {
             setError('Failed to fetch users.');
             console.error(err);
@@ -73,30 +80,35 @@ const Users: React.FC = () => {
     };
 
     const handleSaveUser = async (userToSave: Partial<User> & { password?: string }) => {
-        if (userToSave.id) { // Update existing user
-            const { id, name, email, role, sites, departments } = userToSave;
-            const { error } = await supabase
-                .from('en_users')
-                .update({ name, email, role, sites, departments })
-                .eq('id', id);
-
-            if (error) {
+        if (userToSave.id) {
+            const { id, password, ...updates } = userToSave;
+            const { error: errorMessage } = await updateUserProfile(id, updates);
+            if (errorMessage) {
                 alert('Failed to update user.');
-                console.error(error);
+                console.error(errorMessage);
             }
-        } else { // Create new user
+        } else {
             const { name, email, role, sites, password, departments } = userToSave;
             if (!password) {
                 alert("Password is required for new users.");
                 return;
             }
-            const { error } = await supabase
-                .from('en_users')
-                .insert({ name: name!, email: email!, role: role!, sites, password, departments, status: UserStatus.Active });
+
+            const { error, user: createdUser } = await createUserViaFunction({
+                name: name!,
+                email: email!,
+                password,
+                role: role!,
+                sites: sites ?? [],
+                departments: departments ?? [],
+                status: UserStatus.Active,
+            });
 
             if (error) {
-                alert('Failed to create user. The email may already be in use.');
+                alert(error);
                 console.error(error);
+            } else if (!createdUser) {
+                alert('Supabase did not return the created user.');
             }
         }
         setIsModalOpen(false);

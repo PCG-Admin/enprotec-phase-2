@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { supabase } from '../supabase/client';
-import { User } from '../types';
+import { User, UserStatus } from '../types';
+import { fetchUserProfile, fetchUserProfileByEmail } from '../services/userProfile';
 import EyeIcon from './icons/EyeIcon';
 import EyeOffIcon from './icons/EyeOffIcon';
 import MindriftLogo from './icons/MindriftLogo';
@@ -15,30 +16,158 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isResetMode, setResetMode] = useState(false);
+  const [resetEmail, setResetEmail] = useState('');
+  const [resetStatus, setResetStatus] = useState<
+    | { kind: 'success'; message: string }
+    | { kind: 'error'; message: string }
+    | null
+  >(null);
+
+  const canSubmitReset = useMemo(
+    () => resetEmail.trim().length > 0 && !loading,
+    [resetEmail, loading]
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
-    const { data, error: queryError } = await supabase
-      .from('en_users')
-      .select('id, name, email, role, sites, status, departments, password')
-      .eq('email', email)
-      .single();
+    try {
+      console.info('[Login] signing in as', email);
+      const { error: signInError, data: authData } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (queryError || !data) {
-      setError('Invalid email or password.');
-    } else if ((data as any).password === password) {
-      // Don't pass the password to the app state
-      const { password, ...userToLogin } = data as any;
-      onLoginSuccess(userToLogin as User);
-    } else {
-      setError('Invalid email or password.');
+      if (signInError || !authData.session) {
+        console.error('[Login] sign-in failed:', signInError);
+        setError('Invalid email or password.');
+        return;
+      }
+
+      console.info('[Login] fetching profile for', authData.session.user.id);
+      const profile = await fetchUserProfile(authData.session.user.id);
+
+      if (!profile || profile.status !== UserStatus.Active) {
+        console.warn('[Login] profile missing or inactive', profile);
+        setError('Your account is inactive or misconfigured.');
+        await supabase.auth.signOut();
+        return;
+      }
+
+      console.info('[Login] profile loaded, completing login');
+      onLoginSuccess(profile);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'An unexpected error occurred.';
+      console.error('Login error:', err);
+      setError(message);
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
+
+  const handleForgotPassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!canSubmitReset) return;
+
+    setResetStatus(null);
+    setLoading(true);
+
+    try {
+      const trimmedEmail = resetEmail.trim().toLowerCase();
+      const profile = await fetchUserProfileByEmail(trimmedEmail);
+
+      if (!profile) {
+        setResetStatus({
+          kind: 'error',
+          message: 'No account found with that email address.',
+        });
+        return;
+      }
+
+      const origin = typeof window !== 'undefined' ? window.location.origin : '';
+      const redirectTo = `${origin}/reset-password`;
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmedEmail, {
+        redirectTo,
+      });
+
+      if (error) {
+        console.error('[Auth] resetPasswordForEmail error', error);
+        setResetStatus({
+          kind: 'error',
+          message: error.message ?? 'Failed to send reset email.',
+        });
+        return;
+      }
+
+      setResetStatus({
+        kind: 'success',
+        message: 'Check your email for a password reset link.',
+      });
+    } catch (err) {
+      console.error('[Auth] forgot password flow error', err);
+      const message =
+        err instanceof Error ? err.message : 'Failed to send reset password email.';
+      setResetStatus({ kind: 'error', message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderForgotPasswordForm = () => (
+    <form className="mt-8 space-y-6" onSubmit={handleForgotPassword}>
+      <div className="space-y-4">
+        <div>
+          <label htmlFor="reset-email" className="sr-only">
+            Email address
+          </label>
+          <input
+            id="reset-email"
+            type="email"
+            autoComplete="email"
+            required
+            value={resetEmail}
+            onChange={event => setResetEmail(event.target.value)}
+            className="appearance-none block w-full px-3 py-3 border border-zinc-300 bg-white placeholder-zinc-500 text-zinc-900 rounded-md focus:outline-none focus:ring-sky-500 focus:border-sky-500 sm:text-sm"
+            placeholder="Enter your email address"
+            disabled={loading}
+          />
+        </div>
+        {resetStatus && (
+          <p
+            className={`text-sm text-center ${
+              resetStatus.kind === 'success' ? 'text-emerald-600' : 'text-red-600'
+            }`}
+          >
+            {resetStatus.message}
+          </p>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <button
+          type="submit"
+          disabled={!canSubmitReset}
+          className="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-sky-500 hover:bg-sky-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-zinc-100 focus:ring-sky-500 transition-colors disabled:bg-zinc-300"
+        >
+          {loading ? 'Sending reset link…' : 'Send reset link'}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setResetMode(false);
+            setResetStatus(null);
+            setResetEmail('');
+          }}
+          className="w-full text-sm font-medium text-sky-600 hover:text-sky-700"
+        >
+          Back to sign in
+        </button>
+      </div>
+    </form>
+  );
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-zinc-100 font-sans">
@@ -52,6 +181,9 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             Workflow Management System
           </p>
         </div>
+        {isResetMode ? (
+          renderForgotPasswordForm()
+        ) : (
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
           <div className="rounded-md shadow-sm -space-y-px">
             <div>
@@ -109,7 +241,21 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               {loading ? 'Signing in...' : 'Sign in'}
             </button>
           </div>
+          <div className="text-sm text-center">
+            <button
+              type="button"
+              onClick={() => {
+                setResetMode(true);
+                setResetStatus(null);
+                setResetEmail(email);
+              }}
+              className="font-medium text-sky-600 hover:text-sky-700"
+            >
+              Forgot your password?
+            </button>
+          </div>
         </form>
+        )}
       </div>
     </div>
   );

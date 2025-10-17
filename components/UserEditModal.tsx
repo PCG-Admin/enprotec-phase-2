@@ -40,10 +40,12 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) 
   useEffect(() => {
     const fetchSites = async () => {
         setSitesLoading(true);
+        console.info('[Supabase] loading site list for user modal');
         const { data, error } = await supabase.from('en_sites').select('name').eq('status', 'Active');
         if (error) {
-            console.error("Failed to fetch sites for modal", error);
+            console.error('[Supabase] site list error', error);
         } else {
+            console.info('[Supabase] site list loaded', data);
             setAvailableSites((data as any[]).map(s => ({ value: s.name, label: s.name })));
         }
         setSitesLoading(false);

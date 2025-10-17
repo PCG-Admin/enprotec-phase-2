@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
@@ -7,6 +7,7 @@ import StockManagement from './components/StockManagement';
 import Reports from './components/Reports';
 import Users from './components/Users';
 import Login from './components/Login';
+import ResetPassword from './components/ResetPassword';
 import Requests from './components/Requests';
 import Picking from './components/Picking';
 import Deliveries from './components/Deliveries';
@@ -27,6 +28,64 @@ import StockRequestForm from './components/forms/StockRequestForm';
 import EPODForm from './components/forms/EPODForm';
 import StockIntakeForm from './components/forms/StockIntakeForm';
 import SalvageBookingForm from './components/forms/SalvageBookingForm';
+import { supabase } from './supabase/client';
+import { fetchUserProfile } from './services/userProfile';
+
+const STORAGE_USER_KEY = 'enprotec:user';
+const STORAGE_VIEW_KEY = 'enprotec:view';
+const FETCH_PROFILE_TIMEOUT_MS = 5000;
+
+const readStoredUser = (): User | null => {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(STORAGE_USER_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as User;
+  } catch (error) {
+    console.warn('[Auth] Failed to parse stored user, clearing cache', error);
+    window.localStorage.removeItem(STORAGE_USER_KEY);
+    return null;
+  }
+};
+
+const readStoredView = (): View | null => {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(STORAGE_VIEW_KEY);
+  return raw ? (raw as View) : null;
+};
+
+type ProfileLoadResult =
+  | { status: 'ok'; profile: User }
+  | { status: 'missing' }
+  | { status: 'timeout' }
+  | { status: 'error' };
+
+const profileTimeoutToken = Symbol('profile-timeout');
+
+const fetchProfileWithTimeout = async (userId: string): Promise<ProfileLoadResult> => {
+  try {
+    const result = await Promise.race<User | null | symbol>([
+      fetchUserProfile(userId),
+      new Promise<symbol>(resolve =>
+        setTimeout(() => resolve(profileTimeoutToken), FETCH_PROFILE_TIMEOUT_MS)
+      ),
+    ]);
+
+    if (result === profileTimeoutToken) {
+      console.warn('[Auth] fetchUserProfile timed out');
+      return { status: 'timeout' };
+    }
+
+    if (!result) {
+      return { status: 'missing' };
+    }
+
+    return { status: 'ok', profile: result };
+  } catch (error) {
+    console.error('[Auth] fetchUserProfile failed', error);
+    return { status: 'error' };
+  }
+};
 
 // Role-Based Access Control Configuration
 const viewPermissions: Record<UserRole, View[]> = {
@@ -59,20 +118,36 @@ const canAccessView = (role: UserRole, view: View): boolean => {
 };
 
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<View>('Dashboard');
+  const [loggedInUser, setLoggedInUser] = useState<User | null>(() => readStoredUser());
+  const [currentView, setCurrentView] = useState<View>(() => {
+    const storedUser = readStoredUser();
+    const storedView = readStoredView();
+
+    if (storedUser && storedView && canAccessView(storedUser.role, storedView)) {
+      return storedView;
+    }
+
+    if (storedUser) {
+      return getDefaultViewForRole(storedUser.role);
+    }
+
+    return storedView ?? 'Dashboard';
+  });
   const [activeForm, setActiveForm] = useState<{ type: FormType; context?: any } | null>(null);
-  const [loggedInUser, setLoggedInUser] = useState<User | null>(null);
   const [dataVersion, setDataVersion] = useState(0);
   const [showInspectionToast, setShowInspectionToast] = useState(false);
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [initialisingAuth, setInitialisingAuth] = useState(() => !readStoredUser());
 
   const triggerRefresh = () => setDataVersion(v => v + 1);
 
   const handleLoginSuccess = (user: User) => {
+    const defaultView = getDefaultViewForRole(user.role);
     setLoggedInUser(user);
-    setCurrentView(getDefaultViewForRole(user.role));
+    setCurrentView(defaultView);
     if (typeof window !== 'undefined') {
-      window.localStorage.setItem('enprotec:user', JSON.stringify(user));
+      window.localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(user));
+      window.localStorage.setItem(STORAGE_VIEW_KEY, defaultView);
     }
   };
 
@@ -97,39 +172,177 @@ const App: React.FC = () => {
   };
 
 
-  const handleLogout = () => {
-    setLoggedInUser(null);
-    setCurrentView('Dashboard');
-    setShowInspectionToast(false);
-    if (typeof window !== 'undefined') {
-      window.localStorage.removeItem('enprotec:user');
+  const handleLogout = async () => {
+    console.info('[Auth] logout requested');
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('[Auth] signOut error', error);
+      } else {
+        console.info('[Auth] signOut succeeded');
+      }
+    } catch (error) {
+      console.error('[Auth] signOut threw', error);
+    } finally {
+      setLoggedInUser(null);
+      setCurrentView('Dashboard');
+      setShowInspectionToast(false);
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem(STORAGE_USER_KEY);
+        window.localStorage.removeItem(STORAGE_VIEW_KEY);
+      }
     }
   };
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const storedUser = window.localStorage.getItem('enprotec:user');
-    if (!storedUser) return;
+    let cancelled = false;
 
-    try {
-      const parsedUser = JSON.parse(storedUser) as User;
-      setLoggedInUser(parsedUser);
+    const initialiseSession = async () => {
+      console.info('[Auth] initialiseSession start');
+      try {
+        const {
+          data: { session },
+          error,
+        } = await supabase.auth.getSession();
+        console.info('[Auth] getSession result', session ? 'session-present' : 'no-session', error);
+
+        if (error) {
+          console.error('[Auth] getSession error', error);
+        }
+
+        if (!session) {
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem(STORAGE_USER_KEY);
+            window.localStorage.removeItem(STORAGE_VIEW_KEY);
+          }
+          setLoggedInUser(null);
+          return;
+        }
+
+        const profileResult = await fetchProfileWithTimeout(session.user.id);
+        if (cancelled) return;
+
+        if (profileResult.status === 'timeout') {
+          console.warn('[Auth] initialiseSession profile lookup timed out');
+          return;
+        }
+
+        if (profileResult.status !== 'ok') {
+          console.warn('[Auth] initialiseSession profile missing or errored, signing out');
+          await supabase.auth.signOut();
+          if (typeof window !== 'undefined') {
+            window.localStorage.removeItem(STORAGE_USER_KEY);
+            window.localStorage.removeItem(STORAGE_VIEW_KEY);
+          }
+          setLoggedInUser(null);
+          return;
+        }
+
+        const profile = profileResult.profile;
+        setLoggedInUser(profile);
+        setCurrentView(prev => {
+          if (canAccessView(profile.role, prev)) {
+            return prev;
+          }
+          return getDefaultViewForRole(profile.role);
+        });
+        if (typeof window !== 'undefined') {
+          window.localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(profile));
+        }
+      } catch (error) {
+        console.error('[Auth] initialiseSession error', error);
+        setLoggedInUser(null);
+      } finally {
+        setInitialisingAuth(false);
+      }
+    };
+
+    initialiseSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.info('[Auth] onAuthStateChange', { event, hasSession: Boolean(session) });
+      if (cancelled) return;
+      if (!session) {
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem(STORAGE_USER_KEY);
+          window.localStorage.removeItem(STORAGE_VIEW_KEY);
+        }
+        setLoggedInUser(null);
+        setCurrentView('Dashboard');
+        setInitialisingAuth(false);
+        return;
+      }
+
+      const profileResult = await fetchProfileWithTimeout(session.user.id);
+      if (profileResult.status === 'timeout') {
+        console.warn('[Auth] auth change profile lookup timed out');
+        return;
+      }
+
+      if (profileResult.status !== 'ok') {
+        console.warn('[Auth] auth change profile missing, signing out');
+        await supabase.auth.signOut();
+        if (typeof window !== 'undefined') {
+          window.localStorage.removeItem(STORAGE_USER_KEY);
+          window.localStorage.removeItem(STORAGE_VIEW_KEY);
+        }
+        setLoggedInUser(null);
+        setCurrentView('Dashboard');
+        setInitialisingAuth(false);
+        return;
+      }
+
+      console.info('[Auth] auth change profile loaded');
+      const profile = profileResult.profile;
+      setLoggedInUser(profile);
       setCurrentView(prev => {
-        if (canAccessView(parsedUser.role, prev)) {
+        if (canAccessView(profile.role, prev)) {
           return prev;
         }
-        return getDefaultViewForRole(parsedUser.role);
+        return getDefaultViewForRole(profile.role);
       });
-    } catch (error) {
-      console.warn('Failed to restore user session from storage', error);
-      window.localStorage.removeItem('enprotec:user');
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(profile));
+      }
+      setInitialisingAuth(false);
+    });
+
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
     }
+
+    if (!loggedInUser) {
+      window.localStorage.removeItem(STORAGE_VIEW_KEY);
+      return;
+    }
+
+    window.localStorage.setItem(STORAGE_VIEW_KEY, currentView);
+  }, [currentView, loggedInUser]);
+
+  const isResetPasswordRoute = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
+    return window.location.pathname === '/reset-password';
   }, []);
 
   const handleInspectionSuccess = () => {
     setShowInspectionToast(true);
     setCurrentView('MyInspections');
   };
+
+  if (isResetPasswordRoute) {
+    return <ResetPassword />;
+  }
 
   const renderView = () => {
     if (!loggedInUser || !canAccessView(loggedInUser.role, currentView)) {
@@ -216,6 +429,14 @@ const App: React.FC = () => {
         default:
             return null;
     }
+  }
+
+  if (initialisingAuth) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-zinc-100 text-zinc-500">
+        <span>Loading…</span>
+      </div>
+    );
   }
 
   if (!loggedInUser) {
