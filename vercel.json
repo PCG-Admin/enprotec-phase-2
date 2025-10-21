@@ -4,5 +4,15 @@
       "source": "/reset-password",
       "destination": "/index.html"
     }
+  ],
+  "redirects": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html",
+      "has": [
+        { "type": "host", "value": "" }
+      ],
+      "permanent": false
+    }
   ]
 }
