@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { handleCreateUser } from '../server/createUserHandler'
+import { handleCreateUser } from './_lib/createUserHandler'
 
 const vercelHandler = async (req: VercelRequest, res: VercelResponse) => {
   if (req.method === 'OPTIONS') {

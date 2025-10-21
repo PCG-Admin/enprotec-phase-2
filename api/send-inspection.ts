@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { handleSendInspectionWebhook } from '../server/sendInspectionWebhookHandler';
+import { handleSendInspectionWebhook } from './_lib/sendInspectionWebhookHandler';
 
 const inspectionWebhookHandler = async (
   req: VercelRequest,
