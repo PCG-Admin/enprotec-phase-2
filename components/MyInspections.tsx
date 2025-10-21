@@ -321,7 +321,7 @@ const MyInspections: React.FC<MyInspectionsProps> = ({
     setSendSuccessMessage(null);
     try {
       await sendInspectionCompletedWebhook(selectedInspection.id);
-      setSendSuccessMessage('Inspection sent to webhook successfully.');
+      setSendSuccessMessage('Inspection report has been sent.');
     } catch (sendError: any) {
       console.error(sendError);
       setSendErrorMessage(
