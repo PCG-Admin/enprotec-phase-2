@@ -1,8 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import type { IncomingHttpHeaders } from 'http';
 
-const INSPECTION_WEBHOOK_URL = process.env.INSPECTION_WEBHOOK_URL;
-
 interface HandlerResult {
   status: number;
   body: Record<string, unknown>;
@@ -14,8 +12,9 @@ interface InspectionWebhookPayload {
 }
 
 const resolveWebhookUrl = (headers: IncomingHttpHeaders): string | null => {
-  if (INSPECTION_WEBHOOK_URL) {
-    return INSPECTION_WEBHOOK_URL;
+  const envUrl = process.env.INSPECTION_WEBHOOK_URL;
+  if (typeof envUrl === 'string' && envUrl.trim().length > 0) {
+    return envUrl.trim();
   }
 
   const headerValue = headers['x-inspection-webhook-url'];

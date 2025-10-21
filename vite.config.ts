@@ -10,7 +10,10 @@ const createUserDevPlugin = (): PluginOption => ({
   configureServer(server) {
     server.middlewares.use('/api/create-user', async (req, res) => {
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type, Authorization, X-Inspection-Webhook-Url'
+      );
       res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
 
       if (req.method === 'OPTIONS') {
@@ -61,7 +64,10 @@ const sendInspectionDevPlugin = (): PluginOption => ({
   configureServer(server) {
     server.middlewares.use('/api/send-inspection', async (req, res) => {
       res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader(
+        'Access-Control-Allow-Headers',
+        'Content-Type, Authorization, X-Inspection-Webhook-Url'
+      );
       res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
 
       if (req.method === 'OPTIONS') {
@@ -86,7 +92,7 @@ const sendInspectionDevPlugin = (): PluginOption => ({
         req.on('end', async () => {
           try {
             const payload = body ? JSON.parse(body) : undefined;
-            const result = await handleSendInspectionWebhook(payload);
+            const result = await handleSendInspectionWebhook(payload, req.headers);
             res.statusCode = result.status;
             res.setHeader('Content-Type', 'application/json');
             res.end(JSON.stringify(result.body));
@@ -112,6 +118,8 @@ export default defineConfig(({ mode }) => {
     process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? env.SUPABASE_SERVICE_ROLE_KEY;
     process.env.VITE_SUPABASE_URL = process.env.VITE_SUPABASE_URL ?? env.VITE_SUPABASE_URL;
     process.env.SUPABASE_URL = process.env.SUPABASE_URL ?? env.SUPABASE_URL;
+    process.env.INSPECTION_WEBHOOK_URL =
+      process.env.INSPECTION_WEBHOOK_URL ?? env.INSPECTION_WEBHOOK_URL;
     return {
       server: {
         port: 3000,
