@@ -2,8 +2,8 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import type { PluginOption } from 'vite';
 import react from '@vitejs/plugin-react';
-import { handleCreateUser } from './api/_lib/createUserHandler';
-import { handleSendInspectionWebhook } from './api/_lib/sendInspectionWebhookHandler';
+import { handleCreateUser } from './api/create-user';
+import { handleSendInspectionWebhook } from './api/send-inspection';
 
 const createUserDevPlugin = (): PluginOption => ({
   name: 'enprotec-create-user-dev-api',

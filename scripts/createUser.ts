@@ -1,4 +1,4 @@
-import { handleCreateUser } from '../api/_lib/createUserHandler'
+import { handleCreateUser } from '../api/create-user'
 
 const run = async () => {
   try {
