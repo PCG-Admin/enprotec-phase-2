@@ -51,9 +51,23 @@ const SalvageBookingForm: React.FC<SalvageBookingFormProps> = ({ user, stockItem
         setError('');
 
         try {
+            // Look up the underlying stock item for this inventory record
+            const { data: originalInventory, error: inventoryLookupError } = await supabase
+                .from('en_inventory')
+                .select('stock_item_id, site_id')
+                .eq('id', stockItem.id)
+                .single();
+            if (inventoryLookupError) throw inventoryLookupError;
+
+            const stockItemId = originalInventory?.stock_item_id;
+            if (!stockItemId) {
+                throw new Error('Unable to locate the linked stock item for this inventory record.');
+            }
+            const siteId = originalInventory?.site_id ?? null;
+
             // Step 1: Create the salvage request record
             const { error: salvageError } = await supabase.from('en_salvage_requests').insert({
-                stock_item_id: stockItem.id,
+                stock_item_id: stockItemId,
                 quantity: salvageQuantity,
                 status: WorkflowStatus.SALVAGE_AWAITING_DECISION,
                 notes: notes,
@@ -70,10 +84,10 @@ const SalvageBookingForm: React.FC<SalvageBookingFormProps> = ({ user, stockItem
             // Step 3: Add or update quantity in the Salvage Store
             const { data: salvageInventory, error: fetchError } = await supabase.from('en_inventory')
                 .select('id, quantity_on_hand')
-                .eq('stock_item_id', stockItem.id)
+                .eq('stock_item_id', stockItemId)
                 .eq('store', StoreType.SalvageYard)
                 .single();
-            
+
             if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
 
             if (salvageInventory) {
@@ -84,10 +98,11 @@ const SalvageBookingForm: React.FC<SalvageBookingFormProps> = ({ user, stockItem
             } else {
                 // Create new record in Salvage Store
                 const { error: insertSalvageError } = await supabase.from('en_inventory').insert({
-                    stock_item_id: stockItem.id,
+                    stock_item_id: stockItemId,
                     store: StoreType.SalvageYard,
                     quantity_on_hand: salvageQuantity,
-                    location: 'Salvage Area'
+                    location: 'Salvage Area',
+                    site_id: siteId
                 });
                 if (insertSalvageError) throw insertSalvageError;
             }
