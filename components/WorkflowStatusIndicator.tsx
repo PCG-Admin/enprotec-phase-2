@@ -7,16 +7,32 @@ interface WorkflowStatusIndicatorProps {
 }
 
 const WorkflowStatusIndicator: React.FC<WorkflowStatusIndicatorProps> = ({ steps, currentStep }) => {
-  const normalizedSteps = steps.map(step => step.toLowerCase());
+  const shouldAppendRejected =
+    currentStep === WorkflowStatus.REJECTED_AT_DELIVERY &&
+    !steps.includes(WorkflowStatus.REJECTED_AT_DELIVERY);
+
+  const effectiveSteps = shouldAppendRejected
+    ? [...steps, WorkflowStatus.REJECTED_AT_DELIVERY]
+    : steps;
+
+  const normalizedSteps = effectiveSteps.map(step => step.toLowerCase());
   const normalizedCurrent = currentStep.toLowerCase();
 
   let currentIndex = normalizedSteps.indexOf(normalizedCurrent);
   let forcedToLast = false;
   const normalizedEpod = WorkflowStatus.EPOD_CONFIRMED.toLowerCase();
+  const normalizedRejected = WorkflowStatus.REJECTED_AT_DELIVERY.toLowerCase();
 
-  if (normalizedCurrent === normalizedEpod && steps.length > 0) {
-    if (currentIndex !== steps.length - 1) {
-      currentIndex = steps.length - 1;
+  if (normalizedCurrent === normalizedEpod && effectiveSteps.length > 0) {
+    if (currentIndex !== normalizedSteps.length - 1) {
+      currentIndex = normalizedSteps.length - 1;
+      forcedToLast = true;
+    }
+  }
+
+  if (normalizedCurrent === normalizedRejected && normalizedSteps.length > 0) {
+    if (currentIndex !== normalizedSteps.length - 1) {
+      currentIndex = normalizedSteps.length - 1;
       forcedToLast = true;
     }
   }
@@ -25,10 +41,17 @@ const WorkflowStatusIndicator: React.FC<WorkflowStatusIndicatorProps> = ({ steps
     currentIndex = 0;
   }
 
+  const forcedLabel =
+    normalizedCurrent === normalizedEpod
+      ? WorkflowStatus.EPOD_CONFIRMED
+      : normalizedCurrent === normalizedRejected
+        ? WorkflowStatus.REJECTED_AT_DELIVERY
+        : currentStep;
+
   return (
     <div className="w-full pt-4">
       <div className="flex items-center" aria-label="Workflow progress">
-        {steps.map((step, index) => {
+        {effectiveSteps.map((step, index) => {
           const isCompleted = index < currentIndex;
           const isCurrent = index === currentIndex;
           const isFuture = index > currentIndex;
@@ -57,14 +80,14 @@ const WorkflowStatusIndicator: React.FC<WorkflowStatusIndicatorProps> = ({ steps
                 {isCurrent && (
                   <span className={`absolute top-5 text-xs text-center ${textColor}`}>
                     {forcedToLast
-                      ? WorkflowStatus.EPOD_CONFIRMED
+                      ? forcedLabel
                       : normalizedSteps[index] === normalizedCurrent
                         ? step
                         : currentStep}
                   </span>
                 )}
               </div>
-              {index < steps.length - 1 && <div className={lineClasses} />}
+              {index < effectiveSteps.length - 1 && <div className={lineClasses} />}
             </React.Fragment>
           );
         })}

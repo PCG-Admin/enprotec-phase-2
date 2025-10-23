@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import Card from './Card';
 import { generateReportSummary } from '../services/geminiService';
 import { supabase } from '../supabase/client';
-import { WorkflowRequest, StockItem, User, UserRole, departmentToStoreMap, Department } from '../types';
+import { WorkflowRequest, StockItem, User, UserRole, departmentToStoreMap, Store } from '../types';
 
 interface ReportsProps {
     user: User;
@@ -19,14 +19,14 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
     setSummary('');
     try {
       const isAdmin = user.role === UserRole.Admin;
-      const userDepartments = user.departments || [];
+      const userStores = user.departments || [];
       
       let workflowsQuery = supabase.from('en_workflows_view').select('*');
-      if (!isAdmin && userDepartments.length > 0) {
-        workflowsQuery = workflowsQuery.in('department', userDepartments);
+      if (!isAdmin && userStores.length > 0) {
+        workflowsQuery = workflowsQuery.in('department', userStores);
       }
 
-      const visibleStores = userDepartments.map(dep => departmentToStoreMap[dep as Department]).filter(Boolean);
+      const visibleStores = userStores.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
       let stockQuery = supabase.from('en_stock_view').select('*');
       if (!isAdmin && visibleStores.length > 0) {
         stockQuery = stockQuery.in('store', visibleStores);

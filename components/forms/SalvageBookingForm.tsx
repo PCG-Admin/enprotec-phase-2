@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import Card from '../Card';
-import { User, StockItem, WorkflowStatus, StoreType, storeToDepartmentMap } from '../../types';
+import { User, StockItem, WorkflowStatus, StoreType, storeToStoreMap } from '../../types';
 import { supabase } from '../../supabase/client';
 
 interface SalvageBookingFormProps {
@@ -72,7 +72,7 @@ const SalvageBookingForm: React.FC<SalvageBookingFormProps> = ({ user, stockItem
                 status: WorkflowStatus.SALVAGE_AWAITING_DECISION,
                 notes: notes,
                 created_by_id: user.id,
-                source_department: storeToDepartmentMap[stockItem.store],
+                source_department: storeToStoreMap[stockItem.store],
             });
             if (salvageError) throw salvageError;
 

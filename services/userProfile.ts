@@ -1,5 +1,5 @@
 import { supabase } from '../supabase/client'
-import { User, UserRole, UserStatus, Department } from '../types'
+import { User, UserRole, UserStatus, Store } from '../types'
 
 export type RawUser = {
   id: string
@@ -19,11 +19,11 @@ const isUserStatus = (value: string): value is UserStatus => {
   return Object.values(UserStatus).includes(value as UserStatus)
 }
 
-export const sanitizeDepartments = (departments: string[] | null): Department[] | null => {
+export const sanitizeStores = (departments: string[] | null): Store[] | null => {
   if (!departments) return null
-  const validDepartments = Object.values(Department)
-  const filtered = departments.filter((dept): dept is Department =>
-    validDepartments.includes(dept as Department)
+  const validStores = Object.values(Store)
+  const filtered = departments.filter((dept): dept is Store =>
+    validStores.includes(dept as Store)
   )
   return filtered.length > 0 ? filtered : null
 }
@@ -46,7 +46,7 @@ export const mapRawUserToUser = (raw: RawUser): User | null => {
     role: raw.role,
     status: raw.status,
     sites: raw.sites ?? null,
-    departments: sanitizeDepartments(raw.departments),
+    departments: sanitizeStores(raw.departments),
   }
 }
 

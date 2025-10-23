@@ -1,5 +1,4 @@
-import { supabase } from '../supabase/client'
-import { User, UserRole, Department, UserStatus } from '../types'
+import { User, UserRole, Store, UserStatus } from '../types'
 import { mapRawUserToUser, RawUser } from './userProfile'
 
 export type CreateUserPayload = {
@@ -8,7 +7,7 @@ export type CreateUserPayload = {
   password: string
   role: UserRole
   sites: string[]
-  departments: Department[]
+  departments: Store[]
   status?: UserStatus
 }
 
@@ -48,27 +47,48 @@ export const createUserViaFunction = async (
 
 export const updateUserProfile = async (
   id: string,
-  updates: Partial<Omit<CreateUserPayload, 'password' | 'email'>> & {
-    status?: UserStatus
-    email?: string
-  }
+  updates: Partial<Omit<CreateUserPayload, 'password'>> & { status?: UserStatus }
 ): Promise<{ error: string | null; user: User | null }> => {
-  const { error, data } = await supabase
-    .from('en_users')
-    .update(updates)
-    .eq('id', id)
-    .select('*')
-    .single<RawUser>()
+  const updateEndpoint =
+    import.meta.env.VITE_UPDATE_USER_ENDPOINT ?? '/api/update-user';
 
-  if (error) {
-    return { error: error.message ?? 'Failed to update user profile', user: null }
+  try {
+    const response = await fetch(updateEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        id,
+        ...updates,
+      }),
+    });
+
+    const contentType = response.headers.get('Content-Type') ?? '';
+    const isJson = contentType.includes('application/json');
+    const result = isJson ? await response.json() : null;
+
+    if (!response.ok) {
+      return {
+        error:
+          result && typeof result.error === 'string'
+            ? result.error
+            : `Failed to update user profile (status ${response.status})`,
+        user: null,
+      };
+    }
+
+    const mapped = result ? mapRawUserToUser(result as RawUser) : null;
+    if (!mapped) {
+      return { error: 'Failed to map updated user', user: null };
+    }
+
+    return { error: null, user: mapped };
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : 'Failed to update user profile',
+      user: null,
+    };
   }
-
-  const mapped = mapRawUserToUser(data)
-  if (!mapped) {
-    return { error: 'Failed to map updated user', user: null }
-  }
-
-  return { error: null, user: mapped }
 }
 

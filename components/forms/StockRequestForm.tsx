@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Card from '../Card';
-import { User, Priority, WorkflowStatus, WorkflowRequest, Department, UserRole, Site } from '../../types';
+import { User, Priority, WorkflowStatus, WorkflowRequest, Store, UserRole, Site } from '../../types';
 import { supabase } from '../../supabase/client';
 import Select from 'react-select';
 import { Database } from '../../supabase/database.types';
@@ -80,7 +80,7 @@ const FormTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement>> 
 );
 
 const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, onCancel }) => {
-    const [department, setDepartment] = useState<Department | ''>('');
+    const [department, setStore] = useState<Store | ''>('');
     const [destinationSite, setDestinationSite] = useState('');
     const [requiredDate, setRequiredDate] = useState('');
     const [priority, setPriority] = useState<Priority>(Priority.Medium);
@@ -96,7 +96,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
     const [allActiveSites, setAllActiveSites] = useState<Site[]>([]);
     const [sitesLoading, setSitesLoading] = useState(true);
     
-    const userDepartments = user.departments || [];
+    const userStores = user.departments || [];
 
     const visibleSites = useMemo(() => {
         const highLevelRoles: UserRole[] = [UserRole.Admin, UserRole.OperationsManager];
@@ -315,10 +315,10 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                         <FormInput id="requesterName" type="text" value={user.name} readOnly />
                     </FormRow>
                     <FormRow>
-                        <FormLabel htmlFor="department">Department</FormLabel>
-                        <FormSelect id="department" value={department} onChange={e => setDepartment(e.target.value as Department)} required disabled={userDepartments.length === 0}>
-                            <option value="">{userDepartments.length === 0 ? 'No departments assigned' : 'Select a department...'}</option>
-                            {userDepartments.map(dep => (
+                        <FormLabel htmlFor="department">Store</FormLabel>
+                        <FormSelect id="department" value={department} onChange={e => setStore(e.target.value as Store)} required disabled={userStores.length === 0}>
+                            <option value="">{userStores.length === 0 ? 'No departments assigned' : 'Select a department...'}</option>
+                            {userStores.map(dep => (
                                 <option key={dep} value={dep}>{dep}</option>
                             ))}
                         </FormSelect>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Card from '../Card';
-import { StoreType, User, WorkflowRequest, UserRole, Department, departmentToStoreMap } from '../../types';
+import { StoreType, User, WorkflowRequest, UserRole, Store, departmentToStoreMap, WorkflowStatus } from '../../types';
 import { supabase } from '../../supabase/client';
 import { Database } from '../../supabase/database.types';
 import Select from 'react-select';
@@ -96,15 +96,19 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
     const [location, setLocation] = useState('');
     const [deliveryNotePO, setDeliveryNotePO] = useState('');
     const [comments, setComments] = useState('');
+    const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+    const [attachmentInputKey, setAttachmentInputKey] = useState(0);
     
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+
+    const isReturnMode = intakeType === 'return';
     
     const visibleStores = useMemo(() => {
         if (user.role === UserRole.Admin || !user.departments || user.departments.length === 0) {
             return Object.values(StoreType);
         }
-        return user.departments.map(dep => departmentToStoreMap[dep as Department]).filter(Boolean);
+        return user.departments.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
     }, [user]);
 
     useEffect(() => {
@@ -112,6 +116,13 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
             setStore(visibleStores[0]);
         }
     }, [visibleStores]);
+
+    useEffect(() => {
+        if (intakeType === 'return' && attachmentFile) {
+            setAttachmentFile(null);
+            setAttachmentInputKey((prev) => prev + 1);
+        }
+    }, [intakeType, attachmentFile]);
 
     useEffect(() => {
         const fetchStockItems = async () => {
@@ -174,6 +185,7 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
         setError('');
 
         try {
+            let attachmentUrl: string | null = null;
             let stockItemId: string;
 
             if (intakeType === 'existing' || intakeType === 'return') {
@@ -205,6 +217,25 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
             }
 
             const quantityReceived = parseInt(quantity, 10);
+
+            if (attachmentFile && !isReturnMode) {
+                const fileExt = attachmentFile.name.split('.').pop() || 'jpg';
+                const filePath = `stock-receipts/${user.id}-${Date.now()}.${fileExt}`;
+                const { error: uploadError } = await supabase.storage
+                    .from('Enprotec')
+                    .upload(filePath, attachmentFile, {
+                        cacheControl: '3600',
+                        upsert: false,
+                        contentType: attachmentFile.type || 'image/jpeg',
+                    });
+
+                if (uploadError) {
+                    throw new Error(`Attachment upload failed: ${uploadError.message}`);
+                }
+
+                const { data: publicData } = supabase.storage.from('Enprotec').getPublicUrl(filePath);
+                attachmentUrl = publicData.publicUrl;
+            }
             
             const { error: receiptError } = await supabase.from('en_stock_receipts').insert({
                 stock_item_id: stockItemId,
@@ -213,6 +244,7 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
                 delivery_note_po: deliveryNotePO,
                 comments: comments,
                 store: store,
+                attachment_url: attachmentUrl,
             });
             if (receiptError) throw receiptError;
 
@@ -246,6 +278,19 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
                 if (insertError) throw insertError;
             }
 
+            if (isReturnMode && returnWorkflow) {
+                const { error: workflowUpdateError } = await supabase
+                    .from('en_workflow_requests')
+                    .update({
+                        current_status: WorkflowStatus.COMPLETED,
+                        rejection_comment: null,
+                    })
+                    .eq('id', returnWorkflow.id);
+                if (workflowUpdateError) throw workflowUpdateError;
+            }
+
+            setAttachmentFile(null);
+            setAttachmentInputKey((prev) => prev + 1);
             onSuccess();
 
         } catch (err) {
@@ -255,8 +300,6 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
             setLoading(false);
         }
     };
-    
-    const isReturnMode = intakeType === 'return';
     
     const renderPartFields = () => {
         if (intakeType === 'existing' || isReturnMode) {
@@ -329,6 +372,46 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
                         <FormLabel htmlFor="deliveryNotePO">Delivery Note / PO #</FormLabel>
                         <FormInput id="deliveryNotePO" type="text" value={deliveryNotePO} onChange={e => setDeliveryNotePO(e.target.value)} placeholder="e.g., DN-12345 or PO-67890" required disabled={isReturnMode} />
                     </FormRow>
+                    {!isReturnMode && (
+                        <FormRow>
+                            <FormLabel htmlFor="receipt-attachment">Receipt Attachment (Optional)</FormLabel>
+                            <div className="md:col-span-2 flex flex-col gap-2">
+                                <input
+                                    key={attachmentInputKey}
+                                    id="receipt-attachment"
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(event) => {
+                                        if (event.target.files && event.target.files[0]) {
+                                            setAttachmentFile(event.target.files[0]);
+                                        } else {
+                                            setAttachmentFile(null);
+                                        }
+                                    }}
+                                    className="w-full text-sm text-zinc-600 file:mr-4 file:rounded-md file:border-0 file:bg-sky-50 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-sky-700 hover:file:bg-sky-100 disabled:file:bg-zinc-200"
+                                    disabled={loading}
+                                />
+                                {attachmentFile ? (
+                                    <div className="flex min-w-0 items-center gap-3 text-xs text-zinc-500">
+                                        <span className="truncate">{attachmentFile.name}</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAttachmentFile(null);
+                                                setAttachmentInputKey((prev) => prev + 1);
+                                            }}
+                                            className="font-semibold text-sky-600 hover:text-sky-500 disabled:text-sky-300"
+                                            disabled={loading}
+                                        >
+                                            Remove
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <span className="text-xs text-zinc-400">Add a photo of the delivery note or received goods (optional).</span>
+                                )}
+                            </div>
+                        </FormRow>
+                    )}
                 </fieldset>
 
                 <fieldset className="space-y-4">

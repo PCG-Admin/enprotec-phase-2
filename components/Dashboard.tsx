@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Card from './Card';
 import { supabase } from '../supabase/client';
 import WorkflowStatusIndicator from './WorkflowStatusIndicator';
-import { Priority, WorkflowRequest, View, FormType, WorkflowStatus, StockItem, User, UserRole, departmentToStoreMap, Department } from '../types';
+import { Priority, WorkflowRequest, View, FormType, WorkflowStatus, StockItem, User, UserRole, departmentToStoreMap, Store } from '../types';
 import ClipboardListIcon from './icons/ClipboardListIcon';
 import ClockIcon from './icons/ClockIcon';
 import AlertTriangleIcon from './icons/AlertTriangleIcon';
@@ -50,14 +50,14 @@ const Dashboard: React.FC<DashboardProps> = ({ openForm, navigateTo, user }) => 
       setError(null);
       try {
         const isAdmin = user.role === UserRole.Admin;
-        const userDepartments = user.departments || [];
+        const userStores = user.departments || [];
 
         let workflowsQuery = supabase.from('en_workflows_view').select('*');
-        if (!isAdmin && userDepartments.length > 0) {
-            workflowsQuery = workflowsQuery.in('department', userDepartments);
+        if (!isAdmin && userStores.length > 0) {
+            workflowsQuery = workflowsQuery.in('department', userStores);
         }
 
-        const visibleStores = userDepartments.map(dep => departmentToStoreMap[dep as Department]).filter(Boolean);
+        const visibleStores = userStores.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
         let stockQuery = supabase.from('en_stock_view').select('*');
         if (!isAdmin && visibleStores.length > 0) {
             stockQuery = stockQuery.in('store', visibleStores);

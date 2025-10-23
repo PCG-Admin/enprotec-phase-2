@@ -277,6 +277,7 @@ export interface Database {
           received_at: string;
           delivery_note_po: string;
           comments: string | null;
+          attachment_url: string | null;
           store: string;
           created_at: string;
         };
@@ -288,6 +289,7 @@ export interface Database {
           received_at?: string;
           delivery_note_po: string;
           comments?: string | null;
+          attachment_url?: string | null;
           store: string;
           created_at?: string;
         };
@@ -299,6 +301,7 @@ export interface Database {
           received_at?: string;
           delivery_note_po?: string;
           comments?: string | null;
+          attachment_url?: string | null;
           store?: string;
           created_at?: string;
         };

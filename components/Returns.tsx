@@ -13,6 +13,11 @@ const Returns: React.FC<ReturnsProps> = ({ user, openForm }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
+    const canManageIntake = useMemo(
+        () => [UserRole.Admin, UserRole.StockController, UserRole.EquipmentManager].includes(user.role),
+        [user.role]
+    );
+
     const fetchRequests = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -87,14 +92,16 @@ const Returns: React.FC<ReturnsProps> = ({ user, openForm }) => {
                             </table>
                         </div>
 
-                        <div className="p-4 bg-zinc-50/50 border-t border-zinc-200 flex justify-end items-center">
-                            <button
-                                onClick={() => openForm('ReturnIntake', req)}
-                                className="px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600"
-                            >
-                                Book Back into Stock
-                            </button>
-                        </div>
+                        {canManageIntake && (
+                            <div className="p-4 bg-zinc-50/50 border-t border-zinc-200 flex justify-end items-center">
+                                <button
+                                    onClick={() => openForm('ReturnIntake', req)}
+                                    className="px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600"
+                                >
+                                    Book Back into Stock
+                                </button>
+                            </div>
+                        )}
                     </Card>
                 ))}
             </div>

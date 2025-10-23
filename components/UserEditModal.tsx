@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Select from 'react-select';
-import { User, UserRole, Department, Site } from '../types';
+import { User, UserRole, Store, Site } from '../types';
 import { supabase } from '../supabase/client';
 import EyeIcon from './icons/EyeIcon';
 import EyeOffIcon from './icons/EyeOffIcon';
@@ -11,7 +11,7 @@ interface UserEditModalProps {
   onSave: (user: Partial<User> & { password?: string }) => void;
 }
 
-const departmentOptions = Object.values(Department).map(d => ({ value: d, label: d }));
+const departmentOptions = Object.values(Store).map(d => ({ value: d, label: d }));
 
 const customSelectStyles = {
   control: (provided: any, state: any) => ({
@@ -30,7 +30,7 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) 
     email: '',
     role: UserRole.SiteManager,
     sites: [] as string[],
-    departments: [] as Department[],
+    departments: [] as Store[],
   });
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -194,7 +194,7 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) 
                     </select>
                 </div>
                  <div>
-                    <label htmlFor="departments" className="block text-sm font-medium text-zinc-700 mb-1">Departments</label>
+                    <label htmlFor="departments" className="block text-sm font-medium text-zinc-700 mb-1">Stores</label>
                     <Select
                         id="departments"
                         isMulti

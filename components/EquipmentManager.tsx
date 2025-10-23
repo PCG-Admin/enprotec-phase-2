@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabase/client';
-import { WorkflowRequest, User, WorkflowStatus, WorkflowItem, StoreType, UserRole, Department, departmentToStoreMap } from '../types';
+import { WorkflowRequest, User, WorkflowStatus, WorkflowItem, StoreType, UserRole, Store, departmentToStoreMap } from '../types';
 import Card from './Card';
 import CommentSection from './CommentSection';
 import { sendApprovalWebhook } from '../services/webhookService';
@@ -188,7 +188,7 @@ const EquipmentManager: React.FC<EquipmentManagerProps> = ({ user, onDataChange 
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-sm mt-2">
                                     <div><div className="text-zinc-500 text-xs">Requester</div><div className="text-zinc-900 font-medium">{req.requester}</div></div>
                                     <div><div className="text-zinc-500 text-xs">Project/Site</div><div className="text-zinc-900 font-medium">{req.projectCode}</div></div>
-                                    <div><div className="text-zinc-500 text-xs">Department</div><div className="text-zinc-900 font-medium">{req.department}</div></div>
+                                    <div><div className="text-zinc-500 text-xs">Store</div><div className="text-zinc-900 font-medium">{req.department}</div></div>
                                     <div><div className="text-zinc-500 text-xs">Priority</div><div className="text-zinc-900 font-medium">{req.priority}</div></div>
                                 </div>
                             </div>

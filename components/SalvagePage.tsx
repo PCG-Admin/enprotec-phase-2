@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabase/client';
-import { SalvageRequest, User, WorkflowStatus, UserRole } from '../types';
+import { SalvageRequest, User, WorkflowStatus, UserRole, Store } from '../types';
 import Card from './Card';
 import { sendApprovalWebhook } from '../services/webhookService';
 
@@ -33,19 +33,50 @@ const SalvagePage: React.FC<SalvagePageProps> = ({ user }) => {
         setLoading(true);
         setError(null);
         try {
-            let query = supabase
+            const { data, error } = await supabase
                 .from('en_salvage_requests_view')
                 .select('*')
-                .not('status', 'eq', WorkflowStatus.SALVAGE_COMPLETE);
-
-            if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
-                query = query.in('sourceDepartment', user.departments);
-            }
-            
-            const { data, error } = await query.order('createdAt', { ascending: true });
+                .not('status', 'eq', WorkflowStatus.SALVAGE_COMPLETE)
+                .order('createdAt', { ascending: true });
 
             if (error) throw error;
-            setRequests((data as any) || []);
+
+            const rawRequests = (data as any[]) ?? [];
+
+            const normalized = rawRequests.map(item => {
+                const sourceStore: Store | undefined = (item.sourceStore ??
+                    item.source_department) as Store | undefined;
+
+                return {
+                    id: item.id,
+                    stock_item_id: item.stock_item_id,
+                    partNumber: item.partNumber ?? item.part_number ?? '',
+                    description: item.description ?? '',
+                    quantity: item.quantity ?? 0,
+                    status: item.status as WorkflowStatus,
+                    notes: item.notes ?? null,
+                    sourceStore,
+                    createdBy: item.createdBy ?? item.created_by ?? '',
+                    createdAt: item.createdAt ?? item.created_at ?? '',
+                    decisionBy: item.decisionBy ?? item.decision_by ?? null,
+                    decisionAt: item.decisionAt ?? item.decision_at ?? null,
+                } satisfies SalvageRequest;
+            });
+
+            const filtered = (() => {
+                if (user.role === UserRole.Admin || !user.departments || user.departments.length === 0) {
+                    return normalized;
+                }
+                const allowedStores = user.departments.filter(store =>
+                    ['OEM', 'Operations', 'Projects', 'SalvageYard'].includes(store)
+                );
+                if (allowedStores.length === 0) {
+                    return normalized;
+                }
+                return normalized.filter(req => !req.sourceStore || allowedStores.includes(req.sourceStore));
+            })();
+
+            setRequests(filtered);
         } catch(err) {
             setError("Failed to fetch salvage requests.");
             console.error(err);

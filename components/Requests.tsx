@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabase/client';
-import { WorkflowRequest, User, WorkflowStatus, WorkflowItem, StoreType, FormType, UserRole, Department, departmentToStoreMap } from '../types';
+import { WorkflowRequest, User, WorkflowStatus, WorkflowItem, FormType, UserRole } from '../types';
 import Card from './Card';
 import CommentSection from './CommentSection';
 import { sendApprovalWebhook } from '../services/webhookService';
 
 interface RequestsProps {
     user: User;
-    openForm: (type: FormType) => void;
+    openForm: (type: FormType, context?: WorkflowRequest | null) => void;
     onDataChange: () => void;
+    dataVersion: number;
 }
 
 const RequestItemRow: React.FC<{ item: WorkflowItem }> = ({ item }) => {
@@ -26,7 +27,7 @@ const RequestItemRow: React.FC<{ item: WorkflowItem }> = ({ item }) => {
     );
 };
 
-const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange }) => {
+const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataVersion }) => {
     const [requests, setRequests] = useState<WorkflowRequest[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -42,6 +43,11 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange }) => 
         UserRole.StockController
     ].includes(user.role), [user.role]);
 
+    const canManageIntake = useMemo(
+        () => [UserRole.Admin, UserRole.StockController, UserRole.EquipmentManager].includes(user.role),
+        [user.role]
+    );
+
     const fetchRequests = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -49,7 +55,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange }) => 
             let requestsQuery = supabase
                 .from('en_workflows_view')
                 .select('*')
-                .eq('currentStatus', WorkflowStatus.REQUEST_SUBMITTED);
+                .in('currentStatus', [WorkflowStatus.REQUEST_SUBMITTED, WorkflowStatus.REJECTED_AT_DELIVERY]);
             
             if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
                 requestsQuery = requestsQuery.in('department', user.departments);
@@ -59,7 +65,8 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange }) => 
 
             if (error) throw error;
 
-            setRequests((data as unknown as WorkflowRequest[]) || []);
+            const fetched = (data as unknown as WorkflowRequest[]) || [];
+            setRequests(fetched);
 
         } catch (err) {
             setError('Failed to fetch requests.');
@@ -71,7 +78,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange }) => 
 
     useEffect(() => {
         fetchRequests();
-    }, [fetchRequests]);
+    }, [fetchRequests, dataVersion]);
 
     const filteredRequests = useMemo(() => {
         if (!searchTerm) return requests;
@@ -81,6 +88,26 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange }) => 
             req.projectCode.toLowerCase().includes(searchTerm.toLowerCase())
         );
     }, [requests, searchTerm]);
+
+    const awaitingApproval = useMemo(
+        () => filteredRequests.filter(req => req.currentStatus === WorkflowStatus.REQUEST_SUBMITTED),
+        [filteredRequests]
+    );
+
+    const returnWorkflows = useMemo(
+        () => filteredRequests.filter(req => req.currentStatus === WorkflowStatus.REJECTED_AT_DELIVERY),
+        [filteredRequests]
+    );
+
+    const pendingCount = useMemo(
+        () => requests.filter(req => req.currentStatus === WorkflowStatus.REQUEST_SUBMITTED).length,
+        [requests]
+    );
+
+    const returnCount = useMemo(
+        () => requests.filter(req => req.currentStatus === WorkflowStatus.REJECTED_AT_DELIVERY).length,
+        [requests]
+    );
 
     const handleApprove = async (requestId: string) => {
         setUpdatingId(requestId);
@@ -161,7 +188,10 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange }) => 
                 <div>
                     <h1 className="text-2xl font-bold text-zinc-900">Incoming Stock Requests</h1>
                     <p className="text-zinc-500 mt-1">
-                        {filteredRequests.length} requests awaiting {canApprove ? 'your' : 'stock controller'} approval.
+                        {pendingCount === 0
+                            ? 'No new requests awaiting review.'
+                            : `${pendingCount} ${pendingCount === 1 ? 'request' : 'requests'} awaiting stock control review.`}
+                        {returnCount > 0 && ` ${returnCount} ${returnCount === 1 ? 'rejected delivery' : 'rejected deliveries'} ready to book back into stock.`}
                     </p>
                 </div>
                 <div className="flex items-center gap-4 w-full md:w-auto">
@@ -189,15 +219,19 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange }) => 
             {loading && <p className="text-zinc-500">Loading requests...</p>}
             {error && <p className="text-red-600">{error}</p>}
             
-            {!loading && !error && filteredRequests.length === 0 && (
+            {!loading && !error && awaitingApproval.length === 0 && returnWorkflows.length === 0 && (
                  <div className="text-center p-12 bg-white rounded-lg border border-zinc-200">
                     <h2 className="text-xl font-semibold text-zinc-900">{searchTerm ? 'No Results Found' : 'All Clear!'}</h2>
-                    <p className="mt-2 text-zinc-500">{searchTerm ? 'Your search did not match any pending requests.' : 'There are no requests awaiting your approval.'}</p>
+                    <p className="mt-2 text-zinc-500">
+                        {searchTerm
+                            ? 'Your search did not match any pending requests or returns.'
+                            : 'There are no requests awaiting review and no rejected deliveries to process.'}
+                    </p>
                 </div>
             )}
             
-            <div className="space-y-4">
-                {filteredRequests.map(req => (
+            <div className="space-y-6">
+                {awaitingApproval.map(req => (
                     <Card key={req.id} title="" padding="p-0">
                         <div className="flex justify-between items-start p-4 border-b border-zinc-200">
                             <div className="flex-grow">
@@ -205,7 +239,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange }) => 
                                 <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-sm mt-2">
                                     <div><div className="text-zinc-500 text-xs">Requester</div><div className="text-zinc-900 font-medium">{req.requester}</div></div>
                                     <div><div className="text-zinc-500 text-xs">Project/Site</div><div className="text-zinc-900 font-medium">{req.projectCode}</div></div>
-                                    <div><div className="text-zinc-500 text-xs">Department</div><div className="text-zinc-900 font-medium">{req.department}</div></div>
+                                    <div><div className="text-zinc-500 text-xs">Store</div><div className="text-zinc-900 font-medium">{req.department}</div></div>
                                     <div><div className="text-zinc-500 text-xs">Priority</div><div className="text-zinc-900 font-medium">{req.priority}</div></div>
                                 </div>
                             </div>
@@ -281,6 +315,80 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange }) => 
                         </div>
                     </Card>
                 ))}
+
+                {returnWorkflows.length > 0 && (
+                    <div className="space-y-4">
+                        <h2 className="text-lg font-semibold text-zinc-900">Rejected deliveries awaiting restock</h2>
+                        {returnWorkflows.map(req => (
+                            <Card key={req.id} title="" padding="p-0">
+                                <div className="p-4 border-b border-zinc-200 flex flex-col md:flex-row md:justify-between md:items-start gap-4">
+                                    <div>
+                                        <h3 className="font-bold text-lg text-zinc-900">Return for: {req.requestNumber}</h3>
+                                        <p className="text-sm text-zinc-500 mt-1">
+                                            Rejected by {req.requester} for site {req.projectCode}
+                                        </p>
+                                        <p className="text-sm text-zinc-700 mt-2">
+                                            <strong className="text-zinc-900">Reason:</strong> {req.rejectionComment || 'No comment provided.'}
+                                        </p>
+                                        <p className="text-xs text-zinc-500 mt-2">
+                                            Original store: {req.department}
+                                        </p>
+                                    </div>
+                                    {req.attachmentUrl && (
+                                        <a href={req.attachmentUrl} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 self-start md:self-center" title="View full attachment">
+                                            <img
+                                                src={req.attachmentUrl}
+                                                alt="Attachment"
+                                                className="h-20 w-20 rounded-md object-cover border border-zinc-200 hover:ring-2 hover:ring-sky-500 transition-all"
+                                            />
+                                        </a>
+                                    )}
+                                </div>
+
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full bg-white text-sm">
+                                        <thead className="bg-zinc-50">
+                                            <tr>
+                                                <th className="py-2 px-4 text-left text-xs font-semibold text-zinc-500 uppercase">Part #</th>
+                                                <th className="py-2 px-4 text-left text-xs font-semibold text-zinc-500 uppercase">Description</th>
+                                                <th className="py-2 px-4 text-center text-xs font-semibold text-zinc-500 uppercase">Qty to return</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-200">
+                                            {req.items.map(item => (
+                                                <tr key={item.partNumber}>
+                                                    <td className="py-2 px-4 font-mono text-zinc-800">{item.partNumber}</td>
+                                                    <td className="py-2 px-4 text-zinc-700">{item.description}</td>
+                                                    <td className="py-2 px-4 text-center font-semibold text-zinc-900">{item.quantityRequested}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {expandedCommentId === req.id && (
+                                    <div className="p-4 bg-zinc-50 border-t border-zinc-200">
+                                        <CommentSection workflowId={req.id} user={user} />
+                                    </div>
+                                )}
+
+                                <div className="p-4 bg-zinc-50/50 border-t border-zinc-200 flex justify-end items-center gap-3">
+                                    <button onClick={() => toggleComments(req.id)} className="mr-auto text-sm text-zinc-500 hover:text-sky-600 transition-colors font-medium">
+                                        {expandedCommentId === req.id ? 'Hide Comments' : 'Show Comments'}
+                                    </button>
+                                    {canManageIntake && (
+                                        <button
+                                            onClick={() => openForm('ReturnIntake', req)}
+                                            className="px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 transition-colors"
+                                        >
+                                            Book Back into Stock
+                                        </button>
+                                    )}
+                                </div>
+                            </Card>
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );

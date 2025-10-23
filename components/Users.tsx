@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabase/client';
-import { User, UserRole, UserStatus, Department } from '../types';
+import { User, UserRole, UserStatus, Store } from '../types';
 import UserEditModal from './UserEditModal';
 import { createUserViaFunction, updateUserProfile } from '../services/userAdmin';
 import { mapRawUserToUser } from '../services/userProfile';
@@ -12,6 +12,7 @@ const getRoleBadge = (role: UserRole) => {
         case UserRole.OperationsManager: return <span className={`${baseClasses} bg-indigo-100 text-indigo-800 border-indigo-200`}>Ops Manager</span>
         case UserRole.EquipmentManager: return <span className={`${baseClasses} bg-purple-100 text-purple-800 border-purple-200`}>Equip. Manager</span>
         case UserRole.StockController: return <span className={`${baseClasses} bg-sky-100 text-sky-800 border-sky-200`}>Stock Controller</span>
+        case UserRole.Storeman: return <span className={`${baseClasses} bg-blue-100 text-blue-800 border-blue-200`}>Storeman</span>
         case UserRole.SiteManager: return <span className={`${baseClasses} bg-amber-100 text-amber-800 border-amber-200`}>Site Manager</span>
         case UserRole.ProjectManager: return <span className={`${baseClasses} bg-cyan-100 text-cyan-800 border-cyan-200`}>Project Manager</span>
         case UserRole.Driver: return <span className={`${baseClasses} bg-teal-100 text-teal-800 border-teal-200`}>Driver</span>

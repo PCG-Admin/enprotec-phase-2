@@ -128,7 +128,7 @@ const Picking: React.FC<PickingProps> = ({ user, onDataChange, dataVersion }) =>
                         <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-4 text-sm border-b border-zinc-200">
                             <div><div className="text-zinc-500 text-xs">Requester</div><div className="text-zinc-900 font-medium">{req.requester}</div></div>
                             <div><div className="text-zinc-500 text-xs">Project/Site</div><div className="text-zinc-900 font-medium">{req.projectCode}</div></div>
-                            <div><div className="text-zinc-500 text-xs">Department</div><div className="text-zinc-900 font-medium">{req.department}</div></div>
+                            <div><div className="text-zinc-500 text-xs">Store</div><div className="text-zinc-900 font-medium">{req.department}</div></div>
                             <div><div className="text-zinc-500 text-xs">Priority</div><div className="text-zinc-900 font-medium">{req.priority}</div></div>
                         </div>
 

@@ -130,7 +130,7 @@ const CreateDriverForm: React.FC<CreateDriverFormProps> = ({ onSuccess, onCancel
       </div>
 
       <div>
-        <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Department</label>
+        <label className="text-xs font-semibold uppercase tracking-wide text-zinc-500">Store</label>
         <input
           type="text"
           value={form.department ?? ''}

@@ -12,7 +12,6 @@ import XCircleIcon from './icons/XCircleIcon';
 import PinIcon from './icons/PinIcon';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
-import UndoIcon from './icons/UndoIcon';
 import WrenchIcon from './icons/WrenchIcon';
 import { View, User, UserRole } from '../types';
 import EnprotecLogo from './icons/EnprotecLogo';
@@ -27,10 +26,11 @@ interface SidebarProps {
 }
 
 const viewPermissions: Record<UserRole, View[]> = {
-  [UserRole.Admin]: ['Dashboard', 'FleetDashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Returns', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores', 'Sites', 'Users', 'Reports'],
-  [UserRole.OperationsManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Returns', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores', 'Sites', 'Reports'],
+  [UserRole.Admin]: ['Dashboard', 'FleetDashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores', 'Sites', 'Users', 'Reports'],
+  [UserRole.OperationsManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores', 'Sites', 'Reports'],
   [UserRole.EquipmentManager]: ['Dashboard', 'FleetDashboard', 'EquipmentManager', 'RejectedRequests', 'InspectionReport', 'MyInspections', 'Salvage', 'Reports'],
-  [UserRole.StockController]: ['Dashboard', 'FleetDashboard', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'Returns', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores'],
+  [UserRole.StockController]: ['Dashboard', 'FleetDashboard', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores'],
+  [UserRole.Storeman]: ['Dashboard', 'Stores', 'Picking'],
   [UserRole.SiteManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'InspectionReport', 'MyInspections', 'Stores'],
   [UserRole.ProjectManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'InspectionReport', 'MyInspections', 'Stores'],
   [UserRole.Driver]: ['Deliveries', 'InspectionReport', 'MyInspections'],
@@ -81,7 +81,6 @@ const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView, co
     { label: 'Picking', view: 'Picking', icon: <PackageIcon className="w-5 h-5" /> },
     { label: 'Deliveries', view: 'Deliveries', icon: <TruckIcon className="w-5 h-5" /> },
     { label: 'My Deliveries', view: 'MyDeliveries', icon: <CheckCircleIcon className="w-5 h-5" /> },
-    { label: 'Returns', view: 'Returns', icon: <UndoIcon className="w-5 h-5" /> },
     { label: 'Vehicle Inspection', view: 'InspectionReport', icon: <ClipboardCheckIcon className="w-5 h-5" /> },
     { label: 'My Inspections', view: 'MyInspections', icon: <CheckCircleIcon className="w-5 h-5" /> },
     { label: 'Salvage Store', view: 'Salvage', icon: <WrenchIcon className="w-5 h-5" /> },

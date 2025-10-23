@@ -12,7 +12,6 @@ export type View =
   | 'Users'
   | 'Sites'
   | 'MyDeliveries'
-  | 'Returns'
   | 'Salvage'
   | 'InspectionReport'
   | 'MyInspections'
@@ -20,11 +19,12 @@ export type View =
 
 export type FormType = 'PR' | 'GateRelease' | 'StockRequest' | 'EPOD' | 'StockIntake' | 'SalvageBooking' | 'ReturnIntake';
 
-export enum Department {
+export enum Store {
     OEM = 'OEM',
     Operations = 'Operations',
     Projects = 'Projects',
-    SalvageYard = 'SalvageYard'
+    SalvageYard = 'SalvageYard',
+    Satellite = 'Satellite'
 }
 
 export enum StoreType {
@@ -32,20 +32,23 @@ export enum StoreType {
   Operations = 'Operations',
   Projects = 'Projects',
   SalvageYard = 'SalvageYard',
+  Satellite = 'Satellite',
 }
 
-export const departmentToStoreMap: Record<Department, StoreType> = {
-    [Department.OEM]: StoreType.OEM,
-    [Department.Operations]: StoreType.Operations,
-    [Department.Projects]: StoreType.Projects,
-    [Department.SalvageYard]: StoreType.SalvageYard
+export const departmentToStoreMap: Record<Store, StoreType> = {
+    [Store.OEM]: StoreType.OEM,
+    [Store.Operations]: StoreType.Operations,
+    [Store.Projects]: StoreType.Projects,
+    [Store.SalvageYard]: StoreType.SalvageYard,
+    [Store.Satellite]: StoreType.Satellite,
 };
 
-export const storeToDepartmentMap: Record<StoreType, Department> = {
-    [StoreType.OEM]: Department.OEM,
-    [StoreType.Operations]: Department.Operations,
-    [StoreType.Projects]: Department.Projects,
-    [StoreType.SalvageYard]: Department.SalvageYard,
+export const storeToStoreMap: Record<StoreType, Store> = {
+    [StoreType.OEM]: Store.OEM,
+    [StoreType.Operations]: Store.Operations,
+    [StoreType.Projects]: Store.Projects,
+    [StoreType.SalvageYard]: Store.SalvageYard,
+    [StoreType.Satellite]: Store.Satellite,
 };
 
 export enum WorkflowStatus {
@@ -101,7 +104,7 @@ export interface WorkflowRequest {
   requester: string;
   requester_id: string;
   projectCode: string;
-  department: Department;
+  department: Store;
   currentStatus: WorkflowStatus;
   priority: Priority;
   createdAt: string;
@@ -128,6 +131,7 @@ export enum UserRole {
     OperationsManager = 'Operations Manager',
     EquipmentManager = 'Equipment Manager',
     StockController = 'Stock Controller',
+    Storeman = 'Storeman',
     SiteManager = 'Site Manager',
     ProjectManager = 'Project Manager',
     Driver = 'Driver',
@@ -146,7 +150,7 @@ export interface User {
     role: UserRole;
     sites: string[] | null;
     status: UserStatus;
-    departments: Department[] | null;
+    departments: Store[] | null;
 }
 
 export enum SiteStatus {
@@ -170,6 +174,7 @@ export interface StockReceipt {
   store: StoreType;
   deliveryNotePO: string;
   comments?: string | null;
+  attachmentUrl?: string | null;
 }
 
 export interface WorkflowComment {
@@ -187,7 +192,7 @@ export interface SalvageRequest {
     quantity: number;
     status: WorkflowStatus;
     notes: string | null;
-    sourceDepartment?: Department;
+    sourceStore?: Store;
     createdBy: string;
     createdAt: string;
     decisionBy: string | null;

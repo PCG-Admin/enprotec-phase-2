@@ -5,6 +5,7 @@ import { fetchUserProfile, fetchUserProfileByEmail } from '../services/userProfi
 import EyeIcon from './icons/EyeIcon';
 import EyeOffIcon from './icons/EyeOffIcon';
 import MindriftLogo from './icons/MindriftLogo';
+import EnprotecLogo from './icons/EnprotecLogo';
 
 interface LoginProps {
   onLoginSuccess: (user: User) => void;
@@ -172,12 +173,15 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   return (
     <div className="flex items-center justify-center min-h-screen bg-zinc-100 font-sans">
       <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-lg border border-zinc-200 shadow-sm">
-        <div className="text-center">
-          <MindriftLogo className="h-56 mx-auto" />
-          <h2 className="mt-6 text-2xl font-bold text-zinc-900">
+        <div className="text-center space-y-6">
+          <div className="flex flex-col items-center justify-center gap-4">
+            <MindriftLogo className="h-32 w-auto max-w-xs" />
+            <EnprotecLogo className="h-20 w-auto max-w-sm" />
+          </div>
+          <h2 className="text-2xl font-bold text-zinc-900">
             Sign in to your account
           </h2>
-          <p className="mt-2 text-sm text-zinc-500">
+          <p className="text-sm text-zinc-500">
             Workflow Management System
           </p>
         </div>

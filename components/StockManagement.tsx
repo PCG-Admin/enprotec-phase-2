@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../supabase/client';
-import { StockItem, StoreType, FormType, User, Department, departmentToStoreMap } from '../types';
+import { StockItem, StoreType, FormType, User, Store, departmentToStoreMap, UserRole } from '../types';
 
 interface StockManagementProps {
     openForm: (type: FormType, context?: any) => void;
@@ -14,6 +14,7 @@ const getStoreBadge = (store: StoreType) => {
         case StoreType.Operations: return <span className={`${baseClasses} bg-indigo-100 text-indigo-800`}>{store}</span>
         case StoreType.Projects: return <span className={`${baseClasses} bg-rose-100 text-rose-800`}>{store}</span>
         case StoreType.SalvageYard: return <span className={`${baseClasses} bg-amber-100 text-amber-800`}>{store}</span>
+        case StoreType.Satellite: return <span className={`${baseClasses} bg-purple-100 text-purple-800`}>{store}</span>
         default: return null;
     }
 }
@@ -24,6 +25,14 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [activeStore, setActiveStore] = useState<StoreType | 'All'>('All');
+
+    const canReceiveStock = useMemo(
+        () =>
+            [UserRole.Admin, UserRole.StockController, UserRole.EquipmentManager].includes(
+                user.role
+            ),
+        [user.role]
+    );
     
     const fetchStock = async () => {
         setLoading(true);
@@ -50,7 +59,7 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
         if (user.role === 'Admin' || !user.departments || user.departments.length === 0) {
             return Object.values(StoreType);
         }
-        const stores = user.departments.map(dep => departmentToStoreMap[dep as Department]).filter(Boolean);
+        const stores = user.departments.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
         return [...new Set(stores)]; // Remove duplicates
     }, [user]);
 
@@ -79,23 +88,34 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
                 <h1 className="text-2xl font-bold text-zinc-900 self-start md:self-center">Stores & Inventory</h1>
                 <div className="flex items-center gap-4 w-full md:w-auto">
                     <div className="w-full md:w-64 relative">
-                        <input 
-                            type="text" 
-                            placeholder="Search in this store..." 
+                        <input
+                            type="text"
+                            placeholder="Search in this store..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                             className="w-full p-2 pl-10 bg-white border border-zinc-300 rounded-md focus:ring-2 focus:ring-sky-500 focus:border-sky-500 text-zinc-900"
                         />
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" viewBox="0 0 20 20" fill="currentColor">
-                            <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-5 w-5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400"
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                        >
+                            <path
+                                fillRule="evenodd"
+                                d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                                clipRule="evenodd"
+                            />
                         </svg>
                     </div>
-                    <button
-                        onClick={() => openForm('StockIntake')}
-                        className="flex-shrink-0 px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 transition-colors"
-                    >
-                        Receive Stock
-                    </button>
+                    {canReceiveStock && (
+                        <button
+                            onClick={() => openForm('StockIntake')}
+                            className="flex-shrink-0 px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 transition-colors"
+                        >
+                            Receive Stock
+                        </button>
+                    )}
                 </div>
             </div>
 

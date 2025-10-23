@@ -1,5 +1,5 @@
 import React from 'react';
-import { FormType, User, WorkflowRequest, View } from '../types';
+import { FormType, User, WorkflowRequest, View, UserRole } from '../types';
 import PRForm from './forms/PRForm';
 import GateReleaseForm from './forms/GateReleaseForm';
 import StockRequestForm from './forms/StockRequestForm';
@@ -17,6 +17,23 @@ interface FormsProps {
 }
 
 const Forms: React.FC<FormsProps> = ({ user, activeForm, setActiveForm, navigateTo, workflow }) => {
+    const canReceiveStock = [UserRole.Admin, UserRole.StockController, UserRole.EquipmentManager].includes(user.role);
+
+    const renderRestrictedMessage = () => (
+        <div className="p-12 text-center bg-white border border-zinc-200 rounded-lg space-y-3">
+            <h2 className="text-xl font-semibold text-zinc-900">Access Restricted</h2>
+            <p className="text-sm text-zinc-500">
+                Only Admin, Stock Controller, or Equipment Manager roles can process stock intake.
+            </p>
+            <button
+                onClick={() => setActiveForm(null)}
+                className="mt-2 inline-flex items-center justify-center rounded-md bg-sky-500 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-600"
+            >
+                Close
+            </button>
+        </div>
+    );
+
     const renderForm = () => {
         const handleSuccess = (formType: FormType, navigateBackTo: View | null = null) => {
             alert(`${formType.replace(/([A-Z])/g, ' $1').trim()} submitted successfully!`);
@@ -38,9 +55,11 @@ const Forms: React.FC<FormsProps> = ({ user, activeForm, setActiveForm, navigate
             case 'EPOD':
                 return <EPODForm user={user} workflow={workflow} onSuccess={() => handleSuccess('EPOD', 'Deliveries')} onCancel={handleCancel} />;
             case 'StockIntake':
+                if (!canReceiveStock) return renderRestrictedMessage();
                 return <StockIntakeForm user={user} onSuccess={() => handleSuccess('StockIntake')} onCancel={handleCancel} />;
             case 'ReturnIntake':
-                 return <StockIntakeForm user={user} onSuccess={() => handleSuccess('StockIntake', 'Returns')} onCancel={() => navigateTo('Returns')} returnWorkflow={workflow} />;
+                if (!canReceiveStock) return renderRestrictedMessage();
+                 return <StockIntakeForm user={user} onSuccess={() => handleSuccess('StockIntake', 'Requests')} onCancel={handleCancel} returnWorkflow={workflow} />;
             case 'SalvageBooking':
                  // This form needs a stock item context, not a workflow context.
                  // This would be handled differently in a real app, but for now we'll assume context is managed outside.
@@ -56,7 +75,9 @@ const Forms: React.FC<FormsProps> = ({ user, activeForm, setActiveForm, navigate
                             Select a form to begin, or use a "Quick Action" from the dashboard.
                         </p>
                          <div className="mt-6 flex flex-wrap justify-center gap-4">
-                            <button onClick={() => setActiveForm('StockIntake')} className="px-4 py-2 bg-zinc-700 text-zinc-200 font-semibold rounded-md hover:bg-zinc-600 transition-colors">Receive New Stock</button>
+                            {canReceiveStock && (
+                                <button onClick={() => setActiveForm('StockIntake')} className="px-4 py-2 bg-zinc-700 text-zinc-200 font-semibold rounded-md hover:bg-zinc-600 transition-colors">Receive New Stock</button>
+                            )}
                             <button onClick={() => setActiveForm('StockRequest')} className="px-4 py-2 bg-zinc-700 text-zinc-200 font-semibold rounded-md hover:bg-zinc-600 transition-colors">New Stock Request</button>
                             <button onClick={() => setActiveForm('GateRelease')} className="px-4 py-2 bg-zinc-700 text-zinc-200 font-semibold rounded-md hover:bg-zinc-600 transition-colors">New Gate Release</button>
                             <button onClick={() => setActiveForm('EPOD')} className="px-4 py-2 bg-zinc-700 text-zinc-200 font-semibold rounded-md hover:bg-zinc-600 transition-colors">Submit EPOD</button>

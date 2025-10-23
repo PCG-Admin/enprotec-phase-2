@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import MindriftLogo from './icons/MindriftLogo';
+import EnprotecLogo from './icons/EnprotecLogo';
 import { supabase } from '../supabase/client';
 
 type StatusState =
@@ -101,8 +102,11 @@ const ResetPassword: React.FC = () => {
   return (
     <div className="flex items-center justify-center min-h-screen bg-zinc-100 font-sans">
       <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-lg border border-zinc-200 shadow-sm">
-        <div className="text-center space-y-4">
-          <MindriftLogo className="h-44 mx-auto" />
+        <div className="text-center space-y-6">
+          <div className="flex flex-col items-center justify-center gap-4">
+            <MindriftLogo className="h-28 w-auto max-w-xs" />
+            <EnprotecLogo className="h-16 w-auto max-w-sm" />
+          </div>
           <h2 className="text-2xl font-bold text-zinc-900">Reset your password</h2>
           <p className="text-sm text-zinc-500">
             {sessionReady

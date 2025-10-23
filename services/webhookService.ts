@@ -43,7 +43,7 @@ async function getNextApproverEmails(
             targetRoles = [UserRole.EquipmentManager, UserRole.OperationsManager, UserRole.Admin];
             break;
         case WorkflowStatus.AWAITING_PICKING:
-            targetRoles = [UserRole.StockController, UserRole.OperationsManager, UserRole.Admin];
+            targetRoles = [UserRole.StockController, UserRole.Storeman, UserRole.OperationsManager, UserRole.Admin];
             break;
         case WorkflowStatus.PICKED_AND_LOADED:
             targetRoles = [UserRole.Driver, UserRole.Security];
