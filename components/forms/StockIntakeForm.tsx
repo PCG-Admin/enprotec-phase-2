@@ -253,7 +253,7 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
                 .select('id, quantity_on_hand')
                 .eq('stock_item_id', stockItemId)
                 .eq('store', store)
-                .single();
+                .maybeSingle();
 
             if (inventoryFetchError && inventoryFetchError.code !== 'PGRST116') {
                 throw inventoryFetchError;

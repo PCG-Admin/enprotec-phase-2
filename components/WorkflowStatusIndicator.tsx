@@ -6,6 +6,17 @@ interface WorkflowStatusIndicatorProps {
   currentStep: WorkflowStatus;
 }
 
+const formatStatusLabel = (status: WorkflowStatus): string => {
+  switch (status) {
+    case WorkflowStatus.COMPLETED:
+      return 'Completed - Accepted';
+    case WorkflowStatus.REJECTED_AT_DELIVERY:
+      return 'Completed - Rejected';
+    default:
+      return status;
+  }
+};
+
 const WorkflowStatusIndicator: React.FC<WorkflowStatusIndicatorProps> = ({ steps, currentStep }) => {
   const shouldAppendRejected =
     currentStep === WorkflowStatus.REJECTED_AT_DELIVERY &&
@@ -80,10 +91,10 @@ const WorkflowStatusIndicator: React.FC<WorkflowStatusIndicatorProps> = ({ steps
                 {isCurrent && (
                   <span className={`absolute top-5 text-xs text-center ${textColor}`}>
                     {forcedToLast
-                      ? forcedLabel
+                      ? formatStatusLabel(forcedLabel)
                       : normalizedSteps[index] === normalizedCurrent
-                        ? step
-                        : currentStep}
+                        ? formatStatusLabel(step)
+                        : formatStatusLabel(currentStep)}
                   </span>
                 )}
               </div>

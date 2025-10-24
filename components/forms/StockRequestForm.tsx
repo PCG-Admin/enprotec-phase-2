@@ -11,6 +11,8 @@ type WorkflowRequestInsert = Database['public']['Tables']['en_workflow_requests'
 type WorkflowItemInsert = Database['public']['Tables']['en_workflow_items']['Insert'];
 type WorkflowCommentInsert = Database['public']['Tables']['en_workflow_comments']['Insert'];
 
+const STOCK_ITEMS_ERROR_MESSAGE = 'Could not load stock items for the selected store.';
+
 
 interface StockRequestFormProps {
     user: User;
@@ -91,7 +93,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
     const [error, setError] = useState('');
     
     const [availableStockItems, setAvailableStockItems] = useState<{ value: string; label: string; }[]>([]);
-    const [stockLoading, setStockLoading] = useState(true);
+    const [stockLoading, setStockLoading] = useState(false);
 
     const [allActiveSites, setAllActiveSites] = useState<Site[]>([]);
     const [sitesLoading, setSitesLoading] = useState(true);
@@ -115,46 +117,63 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
 
 
     useEffect(() => {
-        const fetchInitialData = async () => {
-            setStockLoading(true);
+        const fetchSites = async () => {
             setSitesLoading(true);
-            
-            const [stockItemsRes, sitesRes] = await Promise.all([
-                 supabase
-                    .from('en_stock_items')
-                    .select('part_number, description')
-                    .order('part_number'),
-                 supabase
-                    .from('en_sites')
-                    .select('id, name')
-                    .eq('status', 'Active')
-                    .order('name')
-            ]);
-            
-            if (stockItemsRes.error) {
-                console.error("Failed to fetch stock items", stockItemsRes.error);
-                setError("Could not load stock items for selection.");
-            } else {
-                const formattedStock = (stockItemsRes.data as any[]).map(item => ({
-                    value: item.part_number,
-                    label: `${item.part_number} (${item.description || 'No description'})`
-                }));
-                setAvailableStockItems(formattedStock || []);
-            }
+
+            const sitesRes = await supabase
+                .from('en_sites')
+                .select('id, name')
+                .eq('status', 'Active')
+                .order('name');
 
             if (sitesRes.error) {
                 console.error("Failed to fetch sites", sitesRes.error);
-                setError(prev => prev + " Could not load destination sites.");
+                setError(prev => (prev ? `${prev} Could not load destination sites.` : "Could not load destination sites."));
             } else {
                 setAllActiveSites((sitesRes.data as any[]) || []);
             }
 
-            setStockLoading(false);
             setSitesLoading(false);
         };
 
-        fetchInitialData();
+        fetchSites();
     }, []);
+
+    useEffect(() => {
+        if (!department) {
+            setAvailableStockItems([]);
+            setStockLoading(false);
+            setError(prev => (prev === STOCK_ITEMS_ERROR_MESSAGE ? '' : prev));
+            return;
+        }
+
+        const fetchStockItems = async () => {
+            setStockLoading(true);
+            setAvailableStockItems([]);
+
+            const stockItemsRes = await supabase
+                .from('en_stock_view')
+                .select('partNumber, description')
+                .eq('store', department)
+                .order('partNumber');
+
+            if (stockItemsRes.error) {
+                console.error("Failed to fetch stock items for store", stockItemsRes.error);
+                setError(prev => (prev ? prev : STOCK_ITEMS_ERROR_MESSAGE));
+            } else {
+                const formattedStock = (stockItemsRes.data as any[]).map(item => ({
+                    value: item.partNumber,
+                    label: `${item.partNumber} (${item.description || 'No description'})`
+                }));
+                setAvailableStockItems(formattedStock || []);
+                setError(prev => (prev === STOCK_ITEMS_ERROR_MESSAGE ? '' : prev));
+            }
+
+            setStockLoading(false);
+        };
+
+        fetchStockItems();
+    }, [department]);
 
     const handleItemChange = (index: number, field: 'partNumber' | 'quantity', value: string) => {
         const newItems = [...items];
@@ -207,7 +226,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                  throw new Error("Please add at least one item to the request.");
             }
             if (!department) {
-                throw new Error("Please select a department for this request.");
+                throw new Error("Please select a store for this request.");
             }
             const { data: stockItems, error: stockError } = await supabase
                 .from('en_stock_items')
@@ -317,7 +336,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                     <FormRow>
                         <FormLabel htmlFor="department">Store</FormLabel>
                         <FormSelect id="department" value={department} onChange={e => setStore(e.target.value as Store)} required disabled={userStores.length === 0}>
-                            <option value="">{userStores.length === 0 ? 'No departments assigned' : 'Select a department...'}</option>
+                            <option value="">{userStores.length === 0 ? 'No stores assigned' : 'Select a store...'}</option>
                             {userStores.map(dep => (
                                 <option key={dep} value={dep}>{dep}</option>
                             ))}
@@ -366,8 +385,16 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                                             value={availableStockItems.find(opt => opt.value === item.partNumber) || null}
                                             onChange={(selectedOption) => handleItemChange(index, 'partNumber', selectedOption ? selectedOption.value : '')}
                                             isLoading={stockLoading}
-                                            isDisabled={stockLoading}
-                                            placeholder={stockLoading ? 'Loading parts...' : 'Select or search for a part...'}
+                                            isDisabled={!department || stockLoading}
+                                            placeholder={
+                                                !department
+                                                    ? 'Select a store to load parts...'
+                                                    : stockLoading
+                                                        ? 'Loading parts...'
+                                                        : (availableStockItems.length === 0
+                                                            ? 'No parts available for this store'
+                                                            : 'Select or search for a part...')
+                                            }
                                             styles={customSelectStyles}
                                             required
                                         />

@@ -32,7 +32,7 @@ import { fetchUserProfile } from './services/userProfile';
 
 const STORAGE_USER_KEY = 'enprotec:user';
 const STORAGE_VIEW_KEY = 'enprotec:view';
-const FETCH_PROFILE_TIMEOUT_MS = 5000;
+const FETCH_PROFILE_TIMEOUT_MS = 15000;
 
 const readStoredUser = (): User | null => {
   if (typeof window === 'undefined') return null;
