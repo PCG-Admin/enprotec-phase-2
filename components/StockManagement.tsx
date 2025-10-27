@@ -38,9 +38,30 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
         setLoading(true);
         setError(null);
         try {
-            const { data, error } = await supabase.from('en_stock_view').select('*');
-            if (error) throw error;
-            setStock((data as any) || []);
+            const pageSize = 1000;
+            let from = 0;
+            let aggregated: StockItem[] = [];
+
+            // Supabase limits select queries to 1000 rows by default, so we page through the view.
+            while (true) {
+                const { data, error, count } = await supabase
+                    .from('en_stock_view')
+                    .select('*', { count: 'exact' })
+                    .range(from, from + pageSize - 1);
+
+                if (error) throw error;
+
+                const batch = (data as any) || [];
+                aggregated = aggregated.concat(batch);
+
+                if (!count || aggregated.length >= count || batch.length < pageSize) {
+                    break;
+                }
+
+                from += pageSize;
+            }
+
+            setStock(aggregated);
         } catch (err) {
             setError('Failed to fetch stock data.');
             console.error(err);
