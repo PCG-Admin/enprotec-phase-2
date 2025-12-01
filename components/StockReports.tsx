@@ -455,7 +455,7 @@ const maxBar = Math.max(inboundQty, outboundQty, 1);
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-zinc-900">AI Stock Q&A</h2>
         </div>
-        {!aiAvailable ? (
+        {!aiAvailable() ? (
           <div className="p-4 bg-amber-50 text-amber-800 border border-amber-200 rounded-md text-sm">
             This assistant is currently unavailable. Please contact your administrator.
           </div>

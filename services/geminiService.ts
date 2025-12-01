@@ -1,15 +1,25 @@
 import { GoogleGenAI } from "@google/genai";
 import { WorkflowRequest, StockItem } from '../types';
 
-// Accept multiple env names; prefer Vite-style if present
-const API_KEY =
-  (import.meta as any)?.env?.VITE_GEMINI_API_KEY ??
-  (import.meta as any)?.env?.GEMINI_API_KEY ??
-  (typeof process !== 'undefined' ? (process as any).env?.GEMINI_API_KEY : undefined) ??
-  (typeof process !== 'undefined' ? (process as any).env?.API_KEY : undefined);
+// Resolve API key at runtime so deployments can supply either VITE_GEMINI_API_KEY or GEMINI_API_KEY.
+const getApiKey = (): string | undefined => {
+  const metaEnv = (import.meta as any)?.env || {};
+  return (
+    metaEnv.VITE_GEMINI_API_KEY ||
+    metaEnv.GEMINI_API_KEY ||
+    (typeof window !== 'undefined' ? (window as any).GEMINI_API_KEY : undefined) ||
+    (typeof process !== 'undefined' ? (process as any).env?.GEMINI_API_KEY : undefined) ||
+    (typeof process !== 'undefined' ? (process as any).env?.API_KEY : undefined)
+  );
+};
 
-export const aiAvailable = !!API_KEY;
-const ai = aiAvailable ? new GoogleGenAI({ apiKey: API_KEY as string }) : null;
+export const aiAvailable = () => !!getApiKey();
+
+const getClient = (): GoogleGenAI | null => {
+  const key = getApiKey();
+  if (!key) return null;
+  return new GoogleGenAI({ apiKey: key });
+};
 
 const extractText = (result: any): string | null => {
   // Try helper
@@ -29,6 +39,7 @@ const extractText = (result: any): string | null => {
 };
 
 export const generateReportSummary = async (workflows: WorkflowRequest[], stock: StockItem[]): Promise<string> => {
+  const ai = getClient();
   if (!ai) {
     return "This feature is currently unavailable.";
   }
@@ -79,6 +90,7 @@ export const askStockQuestion = async (
   question: string,
   context: { receipts: any[]; issues: any[] }
 ): Promise<string> => {
+  const ai = getClient();
   if (!ai) {
     return "This feature is currently unavailable.";
   }

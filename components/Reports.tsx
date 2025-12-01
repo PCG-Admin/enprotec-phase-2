@@ -117,7 +117,7 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
             <p className="text-zinc-400">
                 Generate a real-time summary of current workflows and stock levels.
             </p>
-            {!aiAvailable ? (
+            {!aiAvailable() ? (
               <div className="p-4 bg-amber-50 text-amber-800 border border-amber-200 rounded-md text-sm">
                 This assistant is currently unavailable. Please contact your administrator.
               </div>
@@ -155,7 +155,7 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
       <Card title="AI Questions">
         <div className="space-y-4">
           <p className="text-zinc-400">Ask natural-language questions about recent receipts and issues (last 50 of each in your scope).</p>
-          {!aiAvailable ? (
+          {!aiAvailable() ? (
             <div className="p-4 bg-amber-50 text-amber-800 border border-amber-200 rounded-md text-sm">
               This assistant is currently unavailable. Please contact your administrator.
             </div>
