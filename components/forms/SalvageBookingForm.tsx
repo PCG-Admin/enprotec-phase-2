@@ -6,6 +6,8 @@ import { supabase } from '../../supabase/client';
 interface SalvageBookingFormProps {
     user: User;
     stockItem: StockItem | null;
+    maxQuantity?: number;
+    workflowId?: string;
     onSuccess: () => void;
     onCancel: () => void;
 }
@@ -27,8 +29,8 @@ const FormTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement>> 
 );
 
 
-const SalvageBookingForm: React.FC<SalvageBookingFormProps> = ({ user, stockItem, onSuccess, onCancel }) => {
-    const [quantity, setQuantity] = useState('');
+const SalvageBookingForm: React.FC<SalvageBookingFormProps> = ({ user, stockItem, maxQuantity, workflowId, onSuccess, onCancel }) => {
+    const [quantity, setQuantity] = useState(() => (maxQuantity && maxQuantity > 0 ? String(maxQuantity) : ''));
     const [notes, setNotes] = useState('');
     const [photoFile, setPhotoFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
@@ -38,13 +40,16 @@ const SalvageBookingForm: React.FC<SalvageBookingFormProps> = ({ user, stockItem
         return <Card title="Error"><p>No stock item selected for salvage booking.</p></Card>;
     }
     
-    const maxQuantity = stockItem.quantityOnHand;
+    const allowedMax = Math.min(
+        stockItem.quantityOnHand,
+        Number.isFinite(maxQuantity ?? Infinity) ? (maxQuantity as number) : stockItem.quantityOnHand
+    );
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         const salvageQuantity = parseInt(quantity, 10);
-        if (isNaN(salvageQuantity) || salvageQuantity <= 0 || salvageQuantity > maxQuantity) {
-            setError(`Please enter a valid quantity between 1 and ${maxQuantity}.`);
+        if (isNaN(salvageQuantity) || salvageQuantity <= 0 || salvageQuantity > allowedMax) {
+            setError(`Please enter a valid quantity between 1 and ${allowedMax}.`);
             return;
         }
         
@@ -85,12 +90,42 @@ const SalvageBookingForm: React.FC<SalvageBookingFormProps> = ({ user, stockItem
                 stock_item_id: stockItemId,
                 quantity: salvageQuantity,
                 status: WorkflowStatus.SALVAGE_AWAITING_DECISION,
-                notes: notes,
+                notes: photoUrl ? `${notes ? notes + '\n' : ''}Photo: ${photoUrl}` : notes,
                 created_by_id: user.id,
                 source_department: storeToStoreMap[stockItem.store],
-                photo_url: photoUrl,
             });
             if (salvageError) throw salvageError;
+
+            if (workflowId) {
+                await supabase
+                    .from('en_workflow_requests')
+                    .update({ current_status: WorkflowStatus.SALVAGE_COMPLETE })
+                    .eq('id', workflowId);
+            }
+
+            // Log movement: transfer out of original store and into SalvageYard
+            const movements = [
+                {
+                    stock_item_id: stockItemId,
+                    store: stockItem.store,
+                    movement_type: 'transfer_out',
+                    quantity: salvageQuantity,
+                    site_id: siteId,
+                    user_id: user.id,
+                    note: 'Booked to salvage'
+                },
+                {
+                    stock_item_id: stockItemId,
+                    store: StoreType.SalvageYard,
+                    movement_type: 'transfer_in',
+                    quantity: salvageQuantity,
+                    site_id: siteId,
+                    user_id: user.id,
+                    note: 'Booked to salvage'
+                },
+            ];
+            const { error: movementError } = await supabase.from('en_stock_movements').insert(movements);
+            if (movementError) throw movementError;
 
             // Step 2: Deduct quantity from the original store
             const newOriginalQuantity = stockItem.quantityOnHand - salvageQuantity;
@@ -159,10 +194,10 @@ const SalvageBookingForm: React.FC<SalvageBookingFormProps> = ({ user, stockItem
                             id="quantity" 
                             type="number" 
                             value={quantity}
-                            onChange={e => setQuantity(e.target.value)}
-                            max={maxQuantity}
+                            readOnly
+                            max={allowedMax}
                             min="1"
-                            placeholder={`Max: ${maxQuantity}`}
+                            placeholder={`Max: ${allowedMax}`}
                             required 
                         />
                     </FormRow>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabase/client';
-import { WorkflowRequest, User, WorkflowStatus, WorkflowItem, FormType, UserRole } from '../types';
+import { WorkflowRequest, User, WorkflowStatus, WorkflowItem, FormType, UserRole, Store, StoreType, StockItem, departmentToStoreMap } from '../types';
 import Card from './Card';
 import CommentSection from './CommentSection';
 import { sendApprovalWebhook, sendDenialWebhook } from '../services/webhookService';
@@ -44,6 +44,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
     const [expandedCommentId, setExpandedCommentId] = useState<string | null>(null);
     const [rejectingId, setRejectingId] = useState<string | null>(null);
     const [rejectionComment, setRejectionComment] = useState('');
+    const [actionError, setActionError] = useState<string | null>(null);
 
     const hasSiteAccess = useCallback(
         (siteName?: string | null) => {
@@ -255,6 +256,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             
             {loading && <p className="text-zinc-500">Loading requests...</p>}
             {error && <p className="text-red-600">{error}</p>}
+            {actionError && <p className="text-red-600">{actionError}</p>}
             
             {!loading && !error && awaitingApproval.length === 0 && returnWorkflows.length === 0 && (
                  <div className="text-center p-12 bg-white rounded-lg border border-zinc-200">
@@ -382,6 +384,24 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                         {returnWorkflows.map(req => {
                             const attachments = normalizeAttachments(req);
                             const nextStepInfo = getNextStepInfo(req.currentStatus);
+                            const bookToSalvage = async (item: WorkflowItem) => {
+                                setActionError(null);
+                                try {
+                                    const store: StoreType = departmentToStoreMap[req.department as Store] || (req.department as unknown as StoreType);
+                                    const { data, error } = await supabase
+                                        .from('en_stock_view')
+                                        .select('*')
+                                        .eq('partNumber', item.partNumber)
+                                        .eq('store', store)
+                                        .limit(1)
+                                        .single();
+                                    if (error || !data) throw new Error('Matching stock record not found for salvage.');
+                                    openForm('SalvageBooking', { stockItem: data as StockItem, maxQuantity: item.quantityRequested, workflowId: req.id });
+                                    } catch (err) {
+                                    const msg = err instanceof Error ? err.message : 'Could not start salvage booking.';
+                                    setActionError(msg);
+                                    }
+                                    };
                             return (
                             <Card key={req.id} title="" padding="p-0">
                                 <div className="p-4 border-b border-zinc-200 flex flex-col md:flex-row md:justify-between md:items-start gap-4">
@@ -438,12 +458,28 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                                                 <tr key={item.partNumber}>
                                                     <td className="py-2 px-4 font-mono text-zinc-800">{item.partNumber}</td>
                                                     <td className="py-2 px-4 text-zinc-700">{item.description}</td>
-                                                    <td className="py-2 px-4 text-center font-semibold text-zinc-900">{item.quantityRequested}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                                <td className="py-2 px-4 text-center font-semibold text-zinc-900">{item.quantityRequested}</td>
+                                                {canManageIntake && (
+                                                    <td className="py-2 px-4 text-right space-x-2">
+                                                        <button
+                                                            onClick={() => openForm('ReturnIntake', req)}
+                                                            className="px-3 py-1.5 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 transition-colors"
+                                                        >
+                                                            Book Back into Stock
+                                                        </button>
+                                                        <button
+                                                            onClick={() => bookToSalvage(item)}
+                                                            className="px-3 py-1.5 bg-amber-500 text-white font-semibold rounded-md hover:bg-amber-600 transition-colors"
+                                                        >
+                                                            Book to Salvage
+                                                        </button>
+                                                    </td>
+                                                )}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
 
                                 {expandedCommentId === req.id && (
                                     <div className="p-4 bg-zinc-50 border-t border-zinc-200">
@@ -451,18 +487,10 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                                     </div>
                                 )}
 
-                                <div className="p-4 bg-zinc-50/50 border-t border-zinc-200 flex justify-end items-center gap-3">
-                                    <button onClick={() => toggleComments(req.id)} className="mr-auto text-sm text-zinc-500 hover:text-sky-600 transition-colors font-medium">
+                                <div className="p-4 bg-zinc-50/50 border-t border-zinc-200 flex justify-between items-center gap-3">
+                                    <button onClick={() => toggleComments(req.id)} className="text-sm text-zinc-500 hover:text-sky-600 transition-colors font-medium">
                                         {expandedCommentId === req.id ? 'Hide Comments' : 'Show Comments'}
                                     </button>
-                                    {canManageIntake && (
-                                        <button
-                                            onClick={() => openForm('ReturnIntake', req)}
-                                            className="px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 transition-colors"
-                                        >
-                                            Book Back into Stock
-                                        </button>
-                                    )}
                                 </div>
                             </Card>
                         )})}

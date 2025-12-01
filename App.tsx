@@ -418,8 +418,20 @@ const App: React.FC = () => {
             return <GateReleaseForm {...formProps} workflow={activeForm.context as WorkflowRequest} />;
         case 'EPOD':
             return <EPODForm {...formProps} workflow={activeForm.context as WorkflowRequest} />;
-        case 'SalvageBooking':
-            return <SalvageBookingForm {...formProps} stockItem={activeForm.context as StockItem} />;
+        case 'SalvageBooking': {
+            const ctx = activeForm.context as
+                | StockItem
+                | { stockItem: StockItem; maxQuantity?: number; workflowId?: string };
+            if ((ctx as any)?.stockItem) {
+                const { stockItem, maxQuantity, workflowId } = ctx as {
+                    stockItem: StockItem;
+                    maxQuantity?: number;
+                    workflowId?: string;
+                };
+                return <SalvageBookingForm {...formProps} stockItem={stockItem} maxQuantity={maxQuantity} workflowId={workflowId} />;
+            }
+            return <SalvageBookingForm {...formProps} stockItem={ctx as StockItem} />;
+        }
         case 'ReturnIntake':
             return <StockIntakeForm {...formProps} returnWorkflow={activeForm.context as WorkflowRequest} />;
         case 'PR':
