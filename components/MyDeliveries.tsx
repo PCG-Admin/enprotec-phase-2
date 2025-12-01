@@ -4,6 +4,13 @@ import { WorkflowRequest, User, WorkflowStatus } from '../types';
 import Card from './Card';
 import { sendApprovalWebhook } from '../services/webhookService';
 
+const getAttachments = (req: WorkflowRequest) => {
+    if (req.attachments && req.attachments.length > 0) {
+        return req.attachments;
+    }
+    return req.attachmentUrl ? [{ id: 'legacy-attachment', url: req.attachmentUrl, fileName: 'Attachment' }] : [];
+};
+
 interface MyDeliveriesProps {
     user: User;
     onDataChange: () => void;
@@ -130,7 +137,9 @@ const MyDeliveries: React.FC<MyDeliveriesProps> = ({ user, onDataChange, dataVer
             )}
             
             <div className="space-y-4">
-                {requests.map(req => (
+                {requests.map(req => {
+                    const attachments = getAttachments(req);
+                    return (
                     // FIX: Added a `title` prop to the `Card` component to satisfy its required props. An empty string is used to prevent the card's default header from rendering, as this component uses a custom header as a child.
                     <Card key={req.id} title="" padding="p-0">
                          <div className="flex justify-between items-start p-4 border-b border-zinc-200">
@@ -139,13 +148,25 @@ const MyDeliveries: React.FC<MyDeliveriesProps> = ({ user, onDataChange, dataVer
                                 <p className="text-sm text-zinc-700 mt-1">Project: {req.projectCode}</p>
                                 <p className="text-sm text-zinc-500 mt-2">Items from this request have been delivered. Please inspect the items and confirm receipt.</p>
                             </div>
-                            {req.attachmentUrl && (
-                                <a href={req.attachmentUrl} target="_blank" rel="noopener noreferrer" className="ml-4 flex-shrink-0" title="View full attachment">
-                                    <img 
-                                        src={req.attachmentUrl} 
-                                        alt="Attachment" 
-                                        className="h-20 w-20 rounded-md object-cover border border-zinc-200 hover:ring-2 hover:ring-sky-500 transition-all" />
-                                </a>
+                            {attachments.length > 0 && (
+                                <div className="ml-4 flex-shrink-0 flex flex-wrap gap-2 justify-end">
+                                    {attachments.map(att => (
+                                        <a
+                                            key={att.id}
+                                            href={att.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex-shrink-0"
+                                            title={att.fileName || 'View attachment'}
+                                        >
+                                            <img
+                                                src={att.url}
+                                                alt={att.fileName || 'Attachment'}
+                                                className="h-20 w-20 rounded-md object-cover border border-zinc-200 hover:ring-2 hover:ring-sky-500 transition-all"
+                                            />
+                                        </a>
+                                    ))}
+                                </div>
                             )}
                         </div>
                          <div className="overflow-x-auto">
@@ -204,7 +225,7 @@ const MyDeliveries: React.FC<MyDeliveriesProps> = ({ user, onDataChange, dataVer
                             </button>
                         </div>
                     </Card>
-                ))}
+                )})}
             </div>
         </div>
     );

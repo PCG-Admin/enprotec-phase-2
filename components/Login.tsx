@@ -4,7 +4,6 @@ import { User, UserStatus } from '../types';
 import { fetchUserProfile, fetchUserProfileByEmail } from '../services/userProfile';
 import EyeIcon from './icons/EyeIcon';
 import EyeOffIcon from './icons/EyeOffIcon';
-import MindriftLogo from './icons/MindriftLogo';
 import EnprotecLogo from './icons/EnprotecLogo';
 
 interface LoginProps {
@@ -175,7 +174,6 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
       <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-lg border border-zinc-200 shadow-sm">
         <div className="text-center space-y-6">
           <div className="flex flex-col items-center justify-center gap-4">
-            <MindriftLogo className="h-32 w-auto max-w-xs" />
             <EnprotecLogo className="h-20 w-auto max-w-sm" />
           </div>
           <h2 className="text-2xl font-bold text-zinc-900">

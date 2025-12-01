@@ -26,14 +26,14 @@ interface SidebarProps {
 }
 
 const viewPermissions: Record<UserRole, View[]> = {
-  [UserRole.Admin]: ['Dashboard', 'FleetDashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores', 'Sites', 'Users', 'Reports'],
-  [UserRole.OperationsManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores', 'Sites', 'Reports'],
-  [UserRole.EquipmentManager]: ['Dashboard', 'FleetDashboard', 'StockReceipts', 'EquipmentManager', 'RejectedRequests', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores', 'Reports'],
-  [UserRole.StockController]: ['Dashboard', 'FleetDashboard', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores'],
+  [UserRole.Admin]: ['Dashboard', 'FleetDashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stores', 'Sites', 'Users', 'Reports', 'StockReports'],
+  [UserRole.OperationsManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stores', 'Sites', 'Reports'],
+  [UserRole.EquipmentManager]: ['Dashboard', 'FleetDashboard', 'StockReceipts', 'EquipmentManager', 'RejectedRequests', 'Salvage', 'Stores', 'Reports'],
+  [UserRole.StockController]: ['Dashboard', 'FleetDashboard', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'Salvage', 'Stores', 'StockReports'],
   [UserRole.Storeman]: ['Dashboard', 'Stores', 'Picking'],
-  [UserRole.SiteManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'InspectionReport', 'MyInspections', 'Stores'],
-  [UserRole.ProjectManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'InspectionReport', 'MyInspections', 'Stores'],
-  [UserRole.Driver]: ['Deliveries', 'InspectionReport', 'MyInspections'],
+  [UserRole.SiteManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'Stores'],
+  [UserRole.ProjectManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'Stores'],
+  [UserRole.Driver]: ['Deliveries'],
   [UserRole.Security]: ['Deliveries'],
 };
 
@@ -81,14 +81,13 @@ const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView, co
     { label: 'Picking', view: 'Picking', icon: <PackageIcon className="w-5 h-5" /> },
     { label: 'Deliveries', view: 'Deliveries', icon: <TruckIcon className="w-5 h-5" /> },
     { label: 'My Deliveries', view: 'MyDeliveries', icon: <CheckCircleIcon className="w-5 h-5" /> },
-    { label: 'Vehicle Inspection', view: 'InspectionReport', icon: <ClipboardCheckIcon className="w-5 h-5" /> },
-    { label: 'My Inspections', view: 'MyInspections', icon: <CheckCircleIcon className="w-5 h-5" /> },
     { label: 'Salvage Store', view: 'Salvage', icon: <WrenchIcon className="w-5 h-5" /> },
     { label: 'Stores', view: 'Stores', icon: <StoreIcon className="w-5 h-5" /> },
     { label: 'Sites', view: 'Sites', icon: <PinIcon className="w-5 h-5" /> },
     { label: 'Users', view: 'Users', icon: <UsersIcon className="w-5 h-5" /> },
     { label: 'Rejected', view: 'RejectedRequests', icon: <XCircleIcon className="w-5 h-5" /> },
     { label: 'Reports', view: 'Reports', icon: <ReportsIcon className="w-5 h-5" /> },
+    { label: 'Stock Reports', view: 'StockReports', icon: <ReportsIcon className="w-5 h-5" /> },
   ];
 
   const allowedViews = viewPermissions[user.role] || [];
@@ -99,13 +98,8 @@ const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView, co
       className={`${collapsed ? 'w-20' : 'w-72'} bg-white text-zinc-800 flex flex-col flex-shrink-0 border-r border-zinc-200 transition-all duration-300`}
     >
       <div className={`relative border-b border-zinc-200 ${collapsed ? 'px-3 py-4' : 'px-6 py-6'} overflow-visible`}>
-        <div className={`flex flex-col items-center ${collapsed ? 'space-y-3' : 'space-y-4'}`}>
-          <img
-            src="/Mindrift_Logo-06.png"
-            alt="Mindrift"
-            className={`${collapsed ? 'max-h-12 max-w-[88px]' : 'max-h-28 w-full max-w-[260px]'} object-contain`}
-          />
-          <EnprotecLogo className={`${collapsed ? 'h-7' : 'h-12'} w-auto object-contain`} />
+        <div className={`flex flex-col items-center ${collapsed ? 'space-y-2' : 'space-y-4'}`}>
+          <EnprotecLogo className={`${collapsed ? 'h-8' : 'h-12'} w-auto object-contain`} />
         </div>
         <button
           type="button"
@@ -133,7 +127,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView, co
       <div className={`${collapsed ? 'px-2' : 'px-4'} py-4 mt-auto`}>
         {!collapsed && (
           <p className="text-xs text-zinc-400 text-center">
-            &copy; 2025 MindRift
+            &copy; 2025 Enprotec
           </p>
         )}
       </div>

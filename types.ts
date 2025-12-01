@@ -15,7 +15,8 @@ export type View =
   | 'Salvage'
   | 'InspectionReport'
   | 'MyInspections'
-  | 'FleetDashboard';
+  | 'FleetDashboard'
+  | 'StockReports';
 
 export type FormType = 'PR' | 'GateRelease' | 'StockRequest' | 'EPOD' | 'StockIntake' | 'SalvageBooking' | 'ReturnIntake';
 
@@ -97,6 +98,13 @@ export interface WorkflowItem {
   quantityOnHand?: number;
 }
 
+export interface WorkflowAttachment {
+  id: string;
+  url: string;
+  fileName?: string | null;
+  uploadedAt?: string;
+}
+
 export interface WorkflowRequest {
   id: string;
   requestNumber: string;
@@ -112,6 +120,9 @@ export interface WorkflowRequest {
   steps: WorkflowStatus[];
   attachmentUrl?: string | null;
   rejectionComment?: string | null;
+  driverName?: string | null;
+  vehicleRegistration?: string | null;
+  attachments?: WorkflowAttachment[];
 }
 
 export interface StockItem {
@@ -197,4 +208,5 @@ export interface SalvageRequest {
     createdAt: string;
     decisionBy: string | null;
     decisionAt: string | null;
+    photoUrl?: string | null;
 }

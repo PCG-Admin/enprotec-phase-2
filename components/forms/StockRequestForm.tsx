@@ -92,7 +92,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     
-    const [availableStockItems, setAvailableStockItems] = useState<{ value: string; label: string; }[]>([]);
+    const [availableStockItems, setAvailableStockItems] = useState<{ value: string; label: string; quantityOnHand: number | null; }[]>([]);
     const [stockLoading, setStockLoading] = useState(false);
 
     const [allActiveSites, setAllActiveSites] = useState<Site[]>([]);
@@ -101,7 +101,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
     const userStores = user.departments || [];
 
     const visibleSites = useMemo(() => {
-        const highLevelRoles: UserRole[] = [UserRole.Admin, UserRole.OperationsManager];
+        const highLevelRoles: UserRole[] = [UserRole.Admin, UserRole.OperationsManager, UserRole.StockController];
         if (highLevelRoles.includes(user.role)) {
             return allActiveSites; // Show all sites for high-level roles
         }
@@ -153,7 +153,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
 
             const stockItemsRes = await supabase
                 .from('en_stock_view')
-                .select('partNumber, description')
+                .select('partNumber, description, quantityOnHand')
                 .eq('store', department)
                 .order('partNumber');
 
@@ -163,7 +163,8 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
             } else {
                 const formattedStock = (stockItemsRes.data as any[]).map(item => ({
                     value: item.partNumber,
-                    label: `${item.partNumber} (${item.description || 'No description'})`
+                    label: `${item.partNumber} (${item.description || 'No description'})`,
+                    quantityOnHand: typeof item.quantityOnHand === 'number' ? item.quantityOnHand : null,
                 }));
                 setAvailableStockItems(formattedStock || []);
                 setError(prev => (prev === STOCK_ITEMS_ERROR_MESSAGE ? '' : prev));
@@ -179,6 +180,11 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
         const newItems = [...items];
         newItems[index][field] = value;
         setItems(newItems);
+    };
+
+    const getQuantityOnHandForPart = (partNumber: string) => {
+        const option = availableStockItems.find(opt => opt.value === partNumber);
+        return option?.quantityOnHand ?? null;
     };
 
     const handleAddItem = () => {
@@ -265,6 +271,17 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
             if (requestError) throw requestError;
             if (!requestData) throw new Error("Workflow request creation failed.");
             const requestId = (requestData as any).id;
+
+            if (attachmentUrl) {
+                const { error: attachmentError } = await supabase
+                    .from('en_workflow_attachments')
+                    .insert({
+                        workflow_request_id: requestId,
+                        attachment_url: attachmentUrl,
+                        file_name: attachmentFile?.name || 'Attachment',
+                    });
+                if (attachmentError) throw attachmentError;
+            }
 
             // 3. Create the workflow items
             const workflowItems: WorkflowItemInsert[] = items.map(item => ({
@@ -376,7 +393,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                                     </button>
                                 )}
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-2 items-center">
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-2 items-start">
                                     <FormLabel htmlFor={`partNumber${index}`}>Part Number</FormLabel>
                                     <div className="md:col-span-2">
                                        <Select
@@ -398,6 +415,11 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                                             styles={customSelectStyles}
                                             required
                                         />
+                                        {item.partNumber && (
+                                            <p className="text-xs text-zinc-500 mt-1">
+                                                Qty on Hand: {getQuantityOnHandForPart(item.partNumber) ?? 'N/A'}
+                                            </p>
+                                        )}
                                     </div>
                                 </div>
                                  <FormRow>

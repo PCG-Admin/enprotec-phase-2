@@ -4,6 +4,14 @@ import { WorkflowRequest, User, WorkflowStatus, WorkflowItem, FormType, UserRole
 import Card from './Card';
 import CommentSection from './CommentSection';
 import { sendApprovalWebhook } from '../services/webhookService';
+import { getNextStepInfo } from '../utils/workflowSteps';
+
+const normalizeAttachments = (req: WorkflowRequest) => {
+    if (req.attachments && req.attachments.length > 0) {
+        return req.attachments;
+    }
+    return req.attachmentUrl ? [{ id: 'legacy-attachment', url: req.attachmentUrl, fileName: 'Attachment' }] : [];
+};
 
 interface RequestsProps {
     user: User;
@@ -231,22 +239,45 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             )}
             
             <div className="space-y-6">
-                {awaitingApproval.map(req => (
+                {awaitingApproval.map(req => {
+                    const attachments = normalizeAttachments(req);
+                    const nextStepInfo = getNextStepInfo(req.currentStatus);
+                    return (
                     <Card key={req.id} title="" padding="p-0">
                         <div className="flex justify-between items-start p-4 border-b border-zinc-200">
                             <div className="flex-grow">
                                 <h3 className="font-bold text-lg text-zinc-900">{req.requestNumber}</h3>
-                                <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-sm mt-2">
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-x-4 gap-y-2 text-sm mt-2">
                                     <div><div className="text-zinc-500 text-xs">Requester</div><div className="text-zinc-900 font-medium">{req.requester}</div></div>
                                     <div><div className="text-zinc-500 text-xs">Project/Site</div><div className="text-zinc-900 font-medium">{req.projectCode}</div></div>
                                     <div><div className="text-zinc-500 text-xs">Store</div><div className="text-zinc-900 font-medium">{req.department}</div></div>
                                     <div><div className="text-zinc-500 text-xs">Priority</div><div className="text-zinc-900 font-medium">{req.priority}</div></div>
+                                    <div>
+                                        <div className="text-zinc-500 text-xs">Next Step</div>
+                                        <div className="text-zinc-900 font-medium">
+                                            {nextStepInfo ? nextStepInfo.title : 'N/A'}
+                                        </div>
+                                        {nextStepInfo?.actor && (
+                                            <p className="text-xs text-zinc-500">{nextStepInfo.actor}</p>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
-                            {req.attachmentUrl && (
-                                <a href={req.attachmentUrl} target="_blank" rel="noopener noreferrer" className="ml-4 flex-shrink-0" title="View full attachment">
-                                    <img src={req.attachmentUrl} alt="Attachment" className="h-20 w-20 rounded-md object-cover border border-zinc-200 hover:ring-2 hover:ring-sky-500 transition-all" />
-                                </a>
+                            {attachments.length > 0 && (
+                                <div className="ml-4 flex-shrink-0 flex flex-wrap gap-2 justify-end">
+                                    {attachments.map(att => (
+                                        <a
+                                            key={att.id}
+                                            href={att.url}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="flex-shrink-0"
+                                            title={att.fileName || 'View attachment'}
+                                        >
+                                            <img src={att.url} alt={att.fileName || 'Attachment'} className="h-20 w-20 rounded-md object-cover border border-zinc-200 hover:ring-2 hover:ring-sky-500 transition-all" />
+                                        </a>
+                                    ))}
+                                </div>
                             )}
                         </div>
 
@@ -314,12 +345,15 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                             )}
                         </div>
                     </Card>
-                ))}
+                )})}
 
                 {returnWorkflows.length > 0 && (
                     <div className="space-y-4">
                         <h2 className="text-lg font-semibold text-zinc-900">Rejected deliveries awaiting restock</h2>
-                        {returnWorkflows.map(req => (
+                        {returnWorkflows.map(req => {
+                            const attachments = normalizeAttachments(req);
+                            const nextStepInfo = getNextStepInfo(req.currentStatus);
+                            return (
                             <Card key={req.id} title="" padding="p-0">
                                 <div className="p-4 border-b border-zinc-200 flex flex-col md:flex-row md:justify-between md:items-start gap-4">
                                     <div>
@@ -333,15 +367,31 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                                         <p className="text-xs text-zinc-500 mt-2">
                                             Original store: {req.department}
                                         </p>
+                                        {nextStepInfo && (
+                                            <p className="text-xs text-amber-600 mt-2 font-semibold">
+                                                Next: {nextStepInfo.title} ({nextStepInfo.actor})
+                                            </p>
+                                        )}
                                     </div>
-                                    {req.attachmentUrl && (
-                                        <a href={req.attachmentUrl} target="_blank" rel="noopener noreferrer" className="flex-shrink-0 self-start md:self-center" title="View full attachment">
-                                            <img
-                                                src={req.attachmentUrl}
-                                                alt="Attachment"
-                                                className="h-20 w-20 rounded-md object-cover border border-zinc-200 hover:ring-2 hover:ring-sky-500 transition-all"
-                                            />
-                                        </a>
+                                    {attachments.length > 0 && (
+                                        <div className="flex flex-wrap gap-2 self-start md:self-center">
+                                            {attachments.map(att => (
+                                                <a
+                                                    key={att.id}
+                                                    href={att.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex-shrink-0"
+                                                    title={att.fileName || 'View attachment'}
+                                                >
+                                                    <img
+                                                        src={att.url}
+                                                        alt={att.fileName || 'Attachment'}
+                                                        className="h-20 w-20 rounded-md object-cover border border-zinc-200 hover:ring-2 hover:ring-sky-500 transition-all"
+                                                    />
+                                                </a>
+                                            ))}
+                                        </div>
                                     )}
                                 </div>
 
@@ -386,7 +436,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                                     )}
                                 </div>
                             </Card>
-                        ))}
+                        )})}
                     </div>
                 )}
             </div>

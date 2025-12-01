@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { WorkflowRequest, Priority, User, UserRole, WorkflowStatus } from '../types';
+import React, { useMemo, useState } from 'react';
+import { WorkflowRequest, Priority, User, UserRole, WorkflowStatus, WorkflowAttachment } from '../types';
 import WorkflowStatusIndicator from './WorkflowStatusIndicator';
 import { supabase } from '../supabase/client';
 import CommentSection from './CommentSection';
@@ -35,6 +35,19 @@ const ActionButton: React.FC<{ onClick: () => void; disabled: boolean; children:
 const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, user, onClose, onUpdate }) => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const attachments: WorkflowAttachment[] = useMemo(() => {
+    if (workflow.attachments && workflow.attachments.length > 0) {
+        return workflow.attachments;
+    }
+    if (workflow.attachmentUrl) {
+        return [{
+            id: 'legacy-attachment',
+            url: workflow.attachmentUrl,
+            fileName: 'Attachment',
+        }];
+    }
+    return [];
+  }, [workflow.attachments, workflow.attachmentUrl]);
 
   const handleStatusUpdate = async (newStatus: WorkflowStatus) => {
     setIsUpdating(true);
@@ -137,6 +150,19 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
                     <p className="font-medium text-zinc-800">{new Date(workflow.createdAt).toLocaleString()}</p>
                 </div>
             </div>
+
+            {(workflow.driverName || workflow.vehicleRegistration) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-white p-3 rounded-md border border-zinc-200">
+                        <h4 className="text-xs font-semibold text-zinc-500 uppercase">Driver Name</h4>
+                        <p className="font-medium text-zinc-800">{workflow.driverName || 'Pending'}</p>
+                    </div>
+                    <div className="bg-white p-3 rounded-md border border-zinc-200">
+                        <h4 className="text-xs font-semibold text-zinc-500 uppercase">Vehicle Registration</h4>
+                        <p className="font-medium text-zinc-800">{workflow.vehicleRegistration || 'Pending'}</p>
+                    </div>
+                </div>
+            )}
             
             <div>
                 <h3 className="text-md font-semibold text-zinc-800 mb-2">Workflow Progress</h3>
@@ -169,15 +195,36 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
                 </div>
             </div>
 
-            {workflow.attachmentUrl && (
-              <div>
-                <h3 className="text-md font-semibold text-zinc-800 mb-2">Attachment</h3>
-                <div className="p-2 bg-white rounded-md border border-zinc-200 inline-block">
-                  <a href={workflow.attachmentUrl} target="_blank" rel="noopener noreferrer" title="Click to view full image">
-                    <img src={workflow.attachmentUrl} alt="Request attachment" className="max-h-40 rounded-md object-contain" />
-                  </a>
+            {attachments.length > 0 && (
+                <div>
+                    <h3 className="text-md font-semibold text-zinc-800 mb-2">Attachments ({attachments.length})</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {attachments.map(att => {
+                            const isImage = /\.(png|jpe?g|gif|bmp|webp)$/i.test(att.url);
+                            return (
+                                <a
+                                    key={att.id}
+                                    href={att.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="border border-zinc-200 rounded-md p-3 bg-white hover:border-sky-300 transition-colors"
+                                >
+                                    <p className="text-sm font-medium text-zinc-800 truncate">{att.fileName || 'Attachment'}</p>
+                                    {att.uploadedAt && (
+                                        <p className="text-xs text-zinc-500 mb-2">
+                                            Uploaded {new Date(att.uploadedAt).toLocaleString()}
+                                        </p>
+                                    )}
+                                    {isImage ? (
+                                        <img src={att.url} alt={att.fileName ?? 'Attachment'} className="max-h-40 w-full object-contain rounded" />
+                                    ) : (
+                                        <div className="mt-2 text-xs text-sky-600">Click to download</div>
+                                    )}
+                                </a>
+                            );
+                        })}
+                    </div>
                 </div>
-              </div>
             )}
             
             {/* Comments Section */}

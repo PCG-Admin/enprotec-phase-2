@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Card from './Card';
 import { supabase } from '../supabase/client';
 import WorkflowStatusIndicator from './WorkflowStatusIndicator';
@@ -7,6 +7,7 @@ import ClipboardListIcon from './icons/ClipboardListIcon';
 import ClockIcon from './icons/ClockIcon';
 import AlertTriangleIcon from './icons/AlertTriangleIcon';
 import TrendingUpIcon from './icons/TrendingUpIcon';
+import WorkflowDetailModal from './WorkflowDetailModal';
 
 interface DashboardProps {
     openForm: (type: FormType) => void;
@@ -43,46 +44,48 @@ const Dashboard: React.FC<DashboardProps> = ({ openForm, navigateTo, user }) => 
   const [stock, setStock] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const isAdmin = user.role === UserRole.Admin;
-        const userStores = user.departments || [];
+  const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowRequest | null>(null);
 
-        let workflowsQuery = supabase.from('en_workflows_view').select('*');
-        if (!isAdmin && userStores.length > 0) {
-            workflowsQuery = workflowsQuery.in('department', userStores);
-        }
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const isAdmin = user.role === UserRole.Admin;
+      const userStores = user.departments || [];
 
-        const visibleStores = userStores.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
-        let stockQuery = supabase.from('en_stock_view').select('*');
-        if (!isAdmin && visibleStores.length > 0) {
-            stockQuery = stockQuery.in('store', visibleStores);
-        }
-
-        const [workflowsRes, stockRes] = await Promise.all([
-          workflowsQuery,
-          stockQuery,
-        ]);
-
-        if (workflowsRes.error) throw workflowsRes.error;
-        if (stockRes.error) throw stockRes.error;
-
-        setWorkflows((workflowsRes.data as unknown as WorkflowRequest[]) || []);
-        setStock((stockRes.data as unknown as StockItem[]) || []);
-
-      } catch (err) {
-        setError("Failed to fetch dashboard data. Please try again later.");
-        console.error(err);
-      } finally {
-        setLoading(false);
+      let workflowsQuery = supabase.from('en_workflows_view').select('*');
+      if (!isAdmin && userStores.length > 0) {
+          workflowsQuery = workflowsQuery.in('department', userStores);
       }
-    };
-    fetchData();
+
+      const visibleStores = userStores.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
+      let stockQuery = supabase.from('en_stock_view').select('*');
+      if (!isAdmin && visibleStores.length > 0) {
+          stockQuery = stockQuery.in('store', visibleStores);
+      }
+
+      const [workflowsRes, stockRes] = await Promise.all([
+        workflowsQuery,
+        stockQuery,
+      ]);
+
+      if (workflowsRes.error) throw workflowsRes.error;
+      if (stockRes.error) throw stockRes.error;
+
+      setWorkflows((workflowsRes.data as unknown as WorkflowRequest[]) || []);
+      setStock((stockRes.data as unknown as StockItem[]) || []);
+
+    } catch (err) {
+      setError("Failed to fetch dashboard data. Please try again later.");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   if (loading) return <div className="text-center p-8 text-zinc-500">Loading Dashboard...</div>;
   if (error) return <div className="text-center p-8 text-red-600">{error}</div>;
@@ -109,6 +112,7 @@ const Dashboard: React.FC<DashboardProps> = ({ openForm, navigateTo, user }) => 
   ) : null;
 
   return (
+    <>
     <div className="space-y-8">
       {/* Metrics Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -128,7 +132,13 @@ const Dashboard: React.FC<DashboardProps> = ({ openForm, navigateTo, user }) => 
                         <div key={wf.id} className="p-6 hover:bg-zinc-50 transition-colors">
                             <div className="flex justify-between items-start mb-3">
                                 <div>
-                                    <p className="font-bold text-zinc-900">{wf.requestNumber}</p>
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedWorkflow(wf)}
+                                        className="font-bold text-sky-600 hover:underline focus:outline-none"
+                                    >
+                                        {wf.requestNumber}
+                                    </button>
                                     <p className="text-sm text-zinc-500">
                                         Requested by {wf.requester} for {wf.projectCode}
                                     </p>
@@ -147,6 +157,18 @@ const Dashboard: React.FC<DashboardProps> = ({ openForm, navigateTo, user }) => 
         </div>
       </div>
     </div>
+      {selectedWorkflow && (
+        <WorkflowDetailModal
+            user={user}
+            workflow={selectedWorkflow}
+            onClose={() => setSelectedWorkflow(null)}
+            onUpdate={() => {
+                setSelectedWorkflow(null);
+                fetchData();
+            }}
+        />
+      )}
+    </>
   );
 };
 

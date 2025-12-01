@@ -30,6 +30,7 @@ const FormTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement>> 
 const SalvageBookingForm: React.FC<SalvageBookingFormProps> = ({ user, stockItem, onSuccess, onCancel }) => {
     const [quantity, setQuantity] = useState('');
     const [notes, setNotes] = useState('');
+    const [photoFile, setPhotoFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
@@ -51,6 +52,20 @@ const SalvageBookingForm: React.FC<SalvageBookingFormProps> = ({ user, stockItem
         setError('');
 
         try {
+            let photoUrl: string | null = null;
+            if (photoFile) {
+                const safeName = photoFile.name.replace(/\s+/g, '-');
+                const filePath = `salvage/${stockItem.id}/${Date.now()}-${safeName}`;
+                const { error: uploadError } = await supabase.storage
+                    .from('Enprotec')
+                    .upload(filePath, photoFile);
+                if (uploadError) {
+                    throw new Error(`Photo upload failed: ${uploadError.message}`);
+                }
+                const { data } = supabase.storage.from('Enprotec').getPublicUrl(filePath);
+                photoUrl = data.publicUrl;
+            }
+
             // Look up the underlying stock item for this inventory record
             const { data: originalInventory, error: inventoryLookupError } = await supabase
                 .from('en_inventory')
@@ -73,6 +88,7 @@ const SalvageBookingForm: React.FC<SalvageBookingFormProps> = ({ user, stockItem
                 notes: notes,
                 created_by_id: user.id,
                 source_department: storeToStoreMap[stockItem.store],
+                photo_url: photoUrl,
             });
             if (salvageError) throw salvageError;
 
@@ -150,15 +166,28 @@ const SalvageBookingForm: React.FC<SalvageBookingFormProps> = ({ user, stockItem
                             required 
                         />
                     </FormRow>
-                     <FormRow>
-                        <FormLabel htmlFor="notes">Reason / Notes</FormLabel>
-                        <FormTextarea
-                            id="notes"
-                            value={notes}
+                    <FormRow>
+                       <FormLabel htmlFor="notes">Reason / Notes</FormLabel>
+                       <FormTextarea
+                           id="notes"
+                           value={notes}
                             onChange={(e) => setNotes(e.target.value)}
                             rows={3}
                             placeholder="e.g., Damaged during transit, obsolete model..."
                         />
+                    </FormRow>
+                    <FormRow>
+                        <FormLabel htmlFor="photo">Add Photo</FormLabel>
+                        <div className="md:col-span-2">
+                            <input
+                                id="photo"
+                                type="file"
+                                accept="image/*"
+                                onChange={(e) => setPhotoFile(e.target.files?.[0] ?? null)}
+                                className="w-full text-sm text-zinc-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-zinc-100 file:text-zinc-700 hover:file:bg-zinc-200"
+                            />
+                            {photoFile && <p className="text-xs text-zinc-500 mt-2">Selected: {photoFile.name}</p>}
+                        </div>
                     </FormRow>
                 </fieldset>
 

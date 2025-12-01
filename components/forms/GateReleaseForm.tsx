@@ -27,15 +27,25 @@ const FormInput: React.FC<React.InputHTMLAttributes<HTMLInputElement>> = (props)
 const GateReleaseForm: React.FC<GateReleaseFormProps> = ({ user, workflow, onSuccess, onCancel }) => {
     const [driverName, setDriverName] = useState('');
     const [vehicleReg, setVehicleReg] = useState('');
+    const [documents, setDocuments] = useState<File[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
     useEffect(() => {
-        if (workflow?.requester) {
-            // A simple assumption that the requester might be the driver in some cases
-            // Can be made more sophisticated if driver info is stored separately
+        if (workflow) {
+            setDriverName(workflow.driverName || '');
+            setVehicleReg(workflow.vehicleRegistration || '');
+        } else {
+            setDriverName('');
+            setVehicleReg('');
         }
+        setDocuments([]);
     }, [workflow]);
+
+    const handleDocumentChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const files = event.target.files ? Array.from(event.target.files) : [];
+        setDocuments(files);
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -44,26 +54,64 @@ const GateReleaseForm: React.FC<GateReleaseFormProps> = ({ user, workflow, onSuc
             setError("No associated workflow request found.");
             return;
         }
+        const trimmedDriver = driverName.trim();
+        const trimmedReg = vehicleReg.trim();
+        if (!trimmedDriver || !trimmedReg) {
+            setError('Please provide both driver name and vehicle registration.');
+            return;
+        }
 
         setLoading(true);
 
         try {
+            const uploadedDocs: { url: string; fileName: string }[] = [];
+            for (const [index, doc] of documents.entries()) {
+                const safeName = doc.name.replace(/\s+/g, '-');
+                const filePath = `deliveries/${workflow.id}/${Date.now()}-${index}-${safeName}`;
+                const { error: uploadError } = await supabase.storage
+                    .from('Enprotec')
+                    .upload(filePath, doc);
+                if (uploadError) {
+                    throw new Error(`Failed to upload ${doc.name}: ${uploadError.message}`);
+                }
+                const { data } = supabase.storage.from('Enprotec').getPublicUrl(filePath);
+                uploadedDocs.push({ url: data.publicUrl, fileName: doc.name });
+            }
+
             const newStatus = WorkflowStatus.DISPATCHED;
             const { error: updateError } = await supabase
                 .from('en_workflow_requests')
-                .update({ current_status: newStatus })
+                .update({
+                    current_status: newStatus,
+                    driver_name: trimmedDriver,
+                    vehicle_registration: trimmedReg,
+                })
                 .eq('id', workflow.id);
 
             if (updateError) throw updateError;
+
+            if (uploadedDocs.length > 0) {
+                const { error: attachmentError } = await supabase
+                    .from('en_workflow_attachments')
+                    .insert(
+                        uploadedDocs.map(doc => ({
+                            workflow_request_id: workflow.id,
+                            attachment_url: doc.url,
+                            file_name: doc.fileName,
+                        }))
+                    );
+                if (attachmentError) throw attachmentError;
+            }
 
             await sendApprovalWebhook(
                 'APPROVAL', 
                 workflow, 
                 newStatus, 
                 user, 
-                `Dispatched by ${driverName} in vehicle ${vehicleReg}.`
+                `Dispatched by ${trimmedDriver} in vehicle ${trimmedReg}.`
             );
             
+            setDocuments([]);
             onSuccess();
 
         } catch (err) {
@@ -91,6 +139,26 @@ const GateReleaseForm: React.FC<GateReleaseFormProps> = ({ user, workflow, onSuc
                     <FormRow>
                         <FormLabel htmlFor="vehicleReg">Vehicle Registration</FormLabel>
                         <FormInput id="vehicleReg" type="text" value={vehicleReg} onChange={e => setVehicleReg(e.target.value)} placeholder="e.g., AB12 CDE" required />
+                    </FormRow>
+                    <FormRow>
+                        <FormLabel htmlFor="delivery-docs">Delivery Documents</FormLabel>
+                        <div className="md:col-span-2">
+                            <input
+                                id="delivery-docs"
+                                type="file"
+                                multiple
+                                onChange={handleDocumentChange}
+                                className="w-full text-sm text-zinc-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-zinc-100 file:text-zinc-700 hover:file:bg-zinc-200"
+                                accept=".pdf,image/*"
+                            />
+                            {documents.length > 0 && (
+                                <ul className="mt-2 text-xs text-zinc-500 list-disc list-inside space-y-1">
+                                    {documents.map(file => (
+                                        <li key={file.name}>{file.name}</li>
+                                    ))}
+                                </ul>
+                            )}
+                        </div>
                     </FormRow>
                 </fieldset>
 

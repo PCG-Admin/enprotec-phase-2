@@ -159,18 +159,18 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
                     </nav>
                 </div>
 
-                <div className="overflow-x-auto">
-                    <table className="min-w-full text-sm">
+                <div className="overflow-x-auto w-full">
+                    <table className="min-w-[1100px] w-full table-fixed text-sm">
                         <thead className="bg-zinc-50">
                             <tr>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Part Number</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Description</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Store</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider">Qty on Hand</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider">Min Stock</th>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Location</th>
-                                <th className="px-6 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider">Status</th>
-                                <th className="px-6 py-3"></th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider w-40">Part Number</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider w-64">Description</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider w-32">Store</th>
+                                <th className="px-6 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider w-28">Qty on Hand</th>
+                                <th className="px-6 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider w-28">Min Stock</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider w-56">Location</th>
+                                <th className="px-6 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider w-32">Status</th>
+                                <th className="px-6 py-3 w-32"></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -186,12 +186,12 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
                               )}
                             {!loading && !error && filteredStock.map((item: StockItem) => (
                                 <tr key={item.id} className={`border-b border-zinc-200 ${isLowStock(item) ? 'bg-red-50' : ''} hover:bg-zinc-50 transition-colors`}>
-                                    <td className="px-6 py-4 whitespace-nowrap font-mono text-zinc-900">{item.partNumber}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-zinc-700">{item.description}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap font-mono text-zinc-900 truncate">{item.partNumber}</td>
+                                    <td className="px-6 py-4 text-zinc-700 truncate">{item.description}</td>
                                     <td className="px-6 py-4 whitespace-nowrap">{getStoreBadge(item.store)}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-center font-semibold text-zinc-900">{item.quantityOnHand}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-center text-zinc-500">{item.minStockLevel}</td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-zinc-700">{item.location}</td>
+                                    <td className="px-6 py-4 text-zinc-700 truncate">{item.location}</td>
                                     <td className="px-6 py-4 whitespace-nowrap text-center">
                                         {isLowStock(item) ? (
                                             <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">Low Stock</span>
@@ -199,16 +199,7 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
                                             <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800">OK</span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                                        {item.store !== StoreType.SalvageYard && (
-                                            <button 
-                                                onClick={() => openForm('SalvageBooking', item)}
-                                                className="text-amber-600 hover:text-amber-500 text-xs font-semibold"
-                                            >
-                                                Book to Salvage
-                                            </button>
-                                        )}
-                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right"></td>
                                 </tr>
                             ))}
                         </tbody>

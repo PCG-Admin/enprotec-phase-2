@@ -60,6 +60,7 @@ const SalvagePage: React.FC<SalvagePageProps> = ({ user }) => {
                     createdAt: item.createdAt ?? item.created_at ?? '',
                     decisionBy: item.decisionBy ?? item.decision_by ?? null,
                     decisionAt: item.decisionAt ?? item.decision_at ?? null,
+                    photoUrl: item.photoUrl ?? item.photo_url ?? null,
                 } satisfies SalvageRequest;
             });
 
@@ -151,7 +152,25 @@ const SalvagePage: React.FC<SalvagePageProps> = ({ user }) => {
                         <div className="p-4 text-sm text-zinc-700 border-b border-zinc-200">
                            <strong>Notes:</strong> {req.notes || "No notes provided."}
                         </div>
-                        
+
+                        {req.photoUrl && (
+                            <div className="p-4 border-b border-zinc-200 bg-white">
+                                <div className="text-sm font-semibold text-zinc-800 mb-2">Photo</div>
+                                <a
+                                    href={req.photoUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-block"
+                                >
+                                    <img
+                                        src={req.photoUrl}
+                                        alt="Salvage"
+                                        className="max-h-40 rounded-md border border-zinc-200 object-contain"
+                                    />
+                                </a>
+                            </div>
+                        )}
+
                         <div className="p-4 bg-zinc-50/50 flex justify-end items-center gap-3">
                             {req.status === WorkflowStatus.SALVAGE_AWAITING_DECISION && isManager && (
                                 <>

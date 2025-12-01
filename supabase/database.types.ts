@@ -196,6 +196,7 @@ export interface Database {
           decision_by_id: string | null;
           decision_at: string | null;
           source_department: string | null;
+          photo_url: string | null;
         };
         Insert: {
           id?: string;
@@ -208,6 +209,7 @@ export interface Database {
           decision_by_id?: string | null;
           decision_at?: string | null;
           source_department?: string | null;
+          photo_url?: string | null;
         };
         Update: {
           id?: string;
@@ -220,6 +222,7 @@ export interface Database {
           decision_by_id?: string | null;
           decision_at?: string | null;
           source_department?: string | null;
+          photo_url?: string | null;
         };
       };
       en_sites: {
@@ -364,6 +367,29 @@ export interface Database {
           created_at?: string;
         };
       };
+      en_workflow_attachments: {
+        Row: {
+          id: string;
+          workflow_request_id: string;
+          file_name: string | null;
+          attachment_url: string;
+          uploaded_at: string;
+        };
+        Insert: {
+          id?: string;
+          workflow_request_id: string;
+          file_name?: string | null;
+          attachment_url: string;
+          uploaded_at?: string;
+        };
+        Update: {
+          id?: string;
+          workflow_request_id?: string;
+          file_name?: string | null;
+          attachment_url?: string;
+          uploaded_at?: string;
+        };
+      };
       en_workflow_items: {
         Row: {
           id: string;
@@ -400,6 +426,8 @@ export interface Database {
           created_at: string;
           attachment_url: string | null;
           rejection_comment: string | null;
+          driver_name: string | null;
+          vehicle_registration: string | null;
         };
         Insert: {
           id?: string;
@@ -413,6 +441,8 @@ export interface Database {
           created_at?: string;
           attachment_url?: string | null;
           rejection_comment?: string | null;
+          driver_name?: string | null;
+          vehicle_registration?: string | null;
         };
         Update: {
           id?: string;
@@ -426,6 +456,8 @@ export interface Database {
           created_at?: string;
           attachment_url?: string | null;
           rejection_comment?: string | null;
+          driver_name?: string | null;
+          vehicle_registration?: string | null;
         };
       };
     };

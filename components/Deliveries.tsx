@@ -25,6 +25,8 @@ const DeliveryRequestCard: React.FC<{
                 <div><div className="text-zinc-500 text-xs">Project/Site</div><div className="text-zinc-900 font-medium">{req.projectCode}</div></div>
                 <div><div className="text-zinc-500 text-xs">Store</div><div className="text-zinc-900 font-medium">{req.department}</div></div>
                 <div><div className="text-zinc-500 text-xs">Priority</div><div className="text-zinc-900 font-medium">{req.priority}</div></div>
+                <div><div className="text-zinc-500 text-xs">Driver</div><div className="text-zinc-900 font-medium">{req.driverName || 'Pending'}</div></div>
+                <div><div className="text-zinc-500 text-xs">Vehicle Reg</div><div className="text-zinc-900 font-medium">{req.vehicleRegistration || 'Pending'}</div></div>
             </div>
             <div className="overflow-x-auto">
                 <table className="min-w-full bg-white text-sm">

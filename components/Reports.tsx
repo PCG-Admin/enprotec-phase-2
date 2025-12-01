@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import Card from './Card';
-import { generateReportSummary } from '../services/geminiService';
+import { generateReportSummary, askStockQuestion } from '../services/geminiService';
 import { supabase } from '../supabase/client';
 import { WorkflowRequest, StockItem, User, UserRole, departmentToStoreMap, Store } from '../types';
 
@@ -12,6 +12,9 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
   const [summary, setSummary] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
+  const [question, setQuestion] = useState('');
+  const [answer, setAnswer] = useState<string | null>(null);
+  const [isAsking, setIsAsking] = useState(false);
 
   const handleGenerateSummary = useCallback(async () => {
     setIsLoading(true);
@@ -55,6 +58,52 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
     }
   }, [user]);
 
+  const handleAskQuestion = useCallback(async () => {
+    if (!question.trim()) return;
+    setIsAsking(true);
+    setError('');
+    setAnswer(null);
+
+    try {
+      const isAdmin = user.role === UserRole.Admin;
+      const userStores = user.departments || [];
+      const visibleStores = userStores.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
+
+      const receiptsQuery = supabase
+        .from('en_stock_receipts_view')
+        .select('*')
+        .order('receivedAt', { ascending: false })
+        .limit(50);
+      const receiptsRes = user.role === UserRole.Admin || visibleStores.length === 0
+        ? await receiptsQuery
+        : await receiptsQuery.in('store', visibleStores);
+      if (receiptsRes.error) throw receiptsRes.error;
+
+      let issuesQuery = supabase
+        .from('en_workflows_view')
+        .select('*')
+        .order('createdAt', { ascending: false })
+        .limit(50);
+      if (!isAdmin && userStores.length > 0) {
+        issuesQuery = issuesQuery.in('department', userStores);
+      }
+      const issuesRes = await issuesQuery;
+      if (issuesRes.error) throw issuesRes.error;
+
+      const aiResult = await askStockQuestion(question.trim(), {
+        receipts: receiptsRes.data || [],
+        issues: (issuesRes.data as unknown as WorkflowRequest[]) || [],
+      });
+      setAnswer(aiResult);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to ask AI.';
+      setError(message);
+      console.error(err);
+    } finally {
+      setIsAsking(false);
+    }
+  }, [question, user]);
+
   return (
     <div className="space-y-6">
       <Card title="Reporting & Analytics">
@@ -66,7 +115,7 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
       <Card title="AI-Powered Operational Summary">
         <div className="space-y-4">
             <p className="text-zinc-400">
-                Click the button below to use Gemini AI to generate a real-time summary of your current operations based on active workflows and stock levels in your departments.
+                Click the button below to generate a real-time summary of your current operations based on active workflows and stock levels in your departments.
             </p>
             <button
                 onClick={handleGenerateSummary}
@@ -92,6 +141,34 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
                     <div className="prose prose-sm max-w-none text-zinc-300 whitespace-pre-wrap">{summary}</div>
                 </div>
             )}
+        </div>
+      </Card>
+
+      <Card title="AI Questions">
+        <div className="space-y-4">
+          <p className="text-zinc-400">Ask natural-language questions about recent receipts and issues (last 50 of each in your scope).</p>
+          <textarea
+            value={question}
+            onChange={e => setQuestion(e.target.value)}
+            rows={3}
+            className="w-full p-3 border border-zinc-300 rounded-md text-sm bg-white text-zinc-900"
+            placeholder={`Example: "Who booked out the last squeeze pipes?" or "Do we have spare pumps in stock?"`}
+          />
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleAskQuestion}
+              disabled={isAsking || !question.trim()}
+              className="px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 disabled:bg-zinc-300"
+            >
+              {isAsking ? 'Asking...' : 'Ask AI'}
+            </button>
+            {answer && <span className="text-xs text-zinc-500">Answer generated</span>}
+          </div>
+          {answer && (
+            <div className="p-4 bg-zinc-50 border border-zinc-200 rounded-md text-sm whitespace-pre-wrap text-zinc-800">
+              {answer}
+            </div>
+          )}
         </div>
       </Card>
     </div>

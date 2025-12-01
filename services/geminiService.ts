@@ -1,19 +1,39 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { WorkflowRequest, StockItem } from '../types';
 
-// Ensure the API key is available in the environment variables
-const API_KEY = process.env.API_KEY;
+// Accept multiple env names; prefer Vite-style if present
+const API_KEY =
+  (import.meta as any)?.env?.VITE_GEMINI_API_KEY ??
+  (import.meta as any)?.env?.GEMINI_API_KEY ??
+  (typeof process !== 'undefined' ? (process as any).env?.GEMINI_API_KEY : undefined) ??
+  (typeof process !== 'undefined' ? (process as any).env?.API_KEY : undefined);
 
 if (!API_KEY) {
-  console.warn("API_KEY environment variable not set for Gemini service. AI features will be disabled.");
+  console.warn("AI key not set (VITE_GEMINI_API_KEY / GEMINI_API_KEY / API_KEY). AI features will be disabled.");
 }
 
-const ai = new GoogleGenAI({ apiKey: API_KEY! });
+const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
+
+const extractText = (result: any): string | null => {
+  // Try helper
+  const resp = result?.response ?? result;
+  if (resp && typeof resp.text === 'function') {
+    const txt = resp.text();
+    if (txt) return txt;
+  }
+  // Try legacy property
+  if (typeof resp?.text === 'string' && resp.text.length > 0) {
+    return resp.text;
+  }
+  // Stitch candidate parts
+  const parts = resp?.candidates?.[0]?.content?.parts ?? [];
+  const stitched = parts.map((p: any) => p?.text || '').join(' ').trim();
+  return stitched || null;
+};
 
 export const generateReportSummary = async (workflows: WorkflowRequest[], stock: StockItem[]): Promise<string> => {
-  if (!API_KEY) {
-    return "Gemini API key not configured. Cannot generate summary.";
+  if (!ai) {
+    return "AI key not configured. Cannot generate summary.";
   }
 
   const prompt = `
@@ -46,13 +66,49 @@ export const generateReportSummary = async (workflows: WorkflowRequest[], stock:
   `;
 
   try {
-    const response = await ai.models.generateContent({
+    const result = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: prompt,
     });
-    return response.text;
+    const text = extractText(result);
+    return text || "No AI response was returned.";
   } catch (error) {
-    console.error("Error generating report summary with Gemini:", error);
+    console.error("Error generating report summary with AI service:", error);
     return "An error occurred while generating the AI summary. Please check the console for details.";
+  }
+};
+
+export const askStockQuestion = async (
+  question: string,
+  context: { receipts: any[]; issues: any[] }
+): Promise<string> => {
+  if (!ai) {
+    return "AI key not configured. Please add VITE_GEMINI_API_KEY or GEMINI_API_KEY.";
+  }
+
+  const prompt = `
+  You are an assistant answering operational inventory questions.
+  Use ONLY the supplied JSON data to answer concisely.
+
+  Receipts (inbound):
+  ${JSON.stringify(context.receipts, null, 2)}
+
+  Outbound / Issues:
+  ${JSON.stringify(context.issues, null, 2)}
+
+  Question: "${question}"
+  Return a short, factual answer. If the data is insufficient, say so.
+  `;
+
+  try {
+    const result = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+    const text = extractText(result);
+    return text || "No AI response was returned.";
+  } catch (error) {
+    console.error("Error answering stock question with AI service:", error);
+    return "Could not generate an answer. Please try again.";
   }
 };
