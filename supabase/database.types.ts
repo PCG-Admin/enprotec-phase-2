@@ -271,6 +271,44 @@ export interface Database {
           created_at?: string;
         };
       };
+      en_stock_movements: {
+        Row: {
+          id: string;
+          stock_item_id: string;
+          store: string;
+          movement_type: string;
+          quantity: number;
+          created_at: string;
+          site_id: string | null;
+          workflow_request_id: string | null;
+          user_id: string | null;
+          note: string | null;
+        };
+        Insert: {
+          id?: string;
+          stock_item_id: string;
+          store: string;
+          movement_type: string;
+          quantity: number;
+          created_at?: string;
+          site_id?: string | null;
+          workflow_request_id?: string | null;
+          user_id?: string | null;
+          note?: string | null;
+        };
+        Update: {
+          id?: string;
+          stock_item_id?: string;
+          store?: string;
+          movement_type?: string;
+          quantity?: number;
+          created_at?: string;
+          site_id?: string | null;
+          workflow_request_id?: string | null;
+          user_id?: string | null;
+          note?: string | null;
+        };
+      };
       en_stock_receipts: {
         Row: {
           id: string;
@@ -463,6 +501,9 @@ export interface Database {
     };
     Views: {
       en_salvage_requests_view: {
+        Row: { [key: string]: any };
+      };
+      en_stock_movements_view: {
         Row: { [key: string]: any };
       };
       en_stock_receipts_view: {

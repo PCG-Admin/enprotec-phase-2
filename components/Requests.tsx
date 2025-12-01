@@ -3,7 +3,7 @@ import { supabase } from '../supabase/client';
 import { WorkflowRequest, User, WorkflowStatus, WorkflowItem, FormType, UserRole } from '../types';
 import Card from './Card';
 import CommentSection from './CommentSection';
-import { sendApprovalWebhook } from '../services/webhookService';
+import { sendApprovalWebhook, sendDenialWebhook } from '../services/webhookService';
 import { getNextStepInfo } from '../utils/workflowSteps';
 
 const normalizeAttachments = (req: WorkflowRequest) => {
@@ -45,6 +45,16 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
     const [rejectingId, setRejectingId] = useState<string | null>(null);
     const [rejectionComment, setRejectionComment] = useState('');
 
+    const hasSiteAccess = useCallback(
+        (siteName?: string | null) => {
+            if (user.role === UserRole.Admin) return true;
+            const sites = user.sites || [];
+            if (!siteName || sites.length === 0) return false;
+            return sites.map(s => s.toLowerCase()).includes(siteName.toLowerCase());
+        },
+        [user]
+    );
+
     const canApprove = useMemo(() => [
         UserRole.Admin,
         UserRole.OperationsManager,
@@ -67,6 +77,14 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             
             if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
                 requestsQuery = requestsQuery.in('department', user.departments);
+            }
+            if (user.role !== UserRole.Admin && user.sites && user.sites.length > 0) {
+                requestsQuery = requestsQuery.in('projectCode', user.sites);
+            }
+            if (user.role !== UserRole.Admin && (!user.sites || user.sites.length === 0)) {
+                setRequests([]);
+                setLoading(false);
+                return;
             }
 
             const { data, error } = await requestsQuery.order('createdAt', { ascending: true });
@@ -125,6 +143,11 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             setUpdatingId(null);
             return;
         }
+        if (!hasSiteAccess(requestToUpdate.projectCode)) {
+            alert('You are not allowed to approve requests for this site.');
+            setUpdatingId(null);
+            return;
+        }
 
         try {
             const newStatus = WorkflowStatus.AWAITING_EQUIP_MANAGER;
@@ -159,6 +182,11 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             setUpdatingId(null);
             return;
         }
+        if (!hasSiteAccess(requestToUpdate.projectCode)) {
+            alert('You are not allowed to decline requests for this site.');
+            setUpdatingId(null);
+            return;
+        }
 
         try {
             const newStatus = WorkflowStatus.REQUEST_DECLINED;
@@ -173,6 +201,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             if (error) throw error;
             
             await sendApprovalWebhook('DECLINE', requestToUpdate, newStatus, user, rejectionComment.trim());
+            await sendDenialWebhook(requestToUpdate, rejectionComment.trim());
 
             setRequests(prev => prev.filter(req => req.id !== requestId));
             setRejectingId(null);

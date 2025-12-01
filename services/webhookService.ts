@@ -2,6 +2,7 @@ import { User, WorkflowRequest, WorkflowStatus, SalvageRequest, UserRole } from 
 import { supabase } from '../supabase/client';
 
 const WEBHOOK_URL = 'https://hook.eu2.make.com/auxwo8ivmlye45wqwguiwthp78mwpiyc';
+const DENIAL_WEBHOOK_URL = 'https://hook.eu2.make.com/gew2qe8azxbg884131aa8ynd8gcycrmj';
 
 export type WebhookActionType = 'APPROVAL' | 'DECLINE' | 'REJECTION' | 'ACCEPTANCE' | 'SALVAGE_DECISION';
 
@@ -21,6 +22,13 @@ type WebhookPayload = {
     timestamp: string;
     workflowId: string;
 } & Partial<Record<ApproverFieldKey, string>>;
+
+type DenialWebhookPayload = {
+    requesterName: string;
+    requesterEmail: string;
+    subject: string;
+    body: string;
+};
 
 /**
  * Determines the email addresses of the next users in the workflow based on the new status.
@@ -199,5 +207,91 @@ export const sendApprovalWebhook = async (
         }
     } catch (error) {
         console.error('Error sending webhook notification:', error);
+    }
+};
+
+export const sendDenialWebhook = async (request: WorkflowRequest, comment: string | null): Promise<void> => {
+    try {
+        const { data: requester, error } = await supabase
+            .from('en_users')
+            .select('email, name')
+            .eq('id', request.requester_id)
+            .single();
+
+        if (error || !requester?.email || !requester?.name) {
+            console.error('Denial webhook: could not load requester email/name', error);
+            return;
+        }
+
+        const subject = `${request.requestNumber} Denied`;
+        const safeComment = comment && comment.trim().length > 0 ? comment.trim() : 'No additional comments were provided.';
+        const body = `
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>${subject}</title>
+  </head>
+  <body style="margin:0;padding:0;background:#f6f7fb;font-family:Arial,Helvetica,sans-serif;">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f6f7fb;padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="640" cellspacing="0" cellpadding="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,0.08);">
+            <tr>
+              <td style="background:#0f172a;color:#ffffff;padding:20px 24px;font-size:20px;font-weight:700;">
+                ${subject}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:24px;">
+                <p style="margin:0 0 12px 0;color:#0f172a;font-size:16px;">Hi ${requester.name},</p>
+                <p style="margin:0 0 16px 0;color:#334155;font-size:14px;line-height:1.6;">
+                  Your request <strong>${request.requestNumber}</strong> for <strong>${request.projectCode}</strong> has been <span style="color:#dc2626;font-weight:700;">denied</span>.
+                </p>
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 16px 0;">
+                  <tr>
+                    <td style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:16px;">
+                      <p style="margin:0 0 8px 0;color:#0f172a;font-size:14px;font-weight:700;">Comments</p>
+                      <p style="margin:0;color:#475569;font-size:14px;line-height:1.6;">${safeComment}</p>
+                    </td>
+                  </tr>
+                </table>
+                <p style="margin:0 0 8px 0;color:#0f172a;font-size:14px;font-weight:700;">Summary</p>
+                <ul style="margin:0 0 16px 18px;color:#475569;font-size:14px;line-height:1.6;padding:0;">
+                  <li><strong>Request #:</strong> ${request.requestNumber}</li>
+                  <li><strong>Site/Project:</strong> ${request.projectCode || 'N/A'}</li>
+                  <li><strong>Department/Store:</strong> ${request.department}</li>
+                  <li><strong>Priority:</strong> ${request.priority}</li>
+                  <li><strong>Status:</strong> Denied</li>
+                </ul>
+                <p style="margin:0;color:#94a3b8;font-size:12px;">This is an automated notification.</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+`.trim();
+
+        const payload: DenialWebhookPayload = {
+            requesterName: requester.name,
+            requesterEmail: requester.email,
+            subject,
+            body,
+        };
+
+        const response = await fetch(DENIAL_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            console.error(`Denial webhook failed with status ${response.status}`);
+        }
+    } catch (err) {
+        console.error('Error sending denial webhook:', err);
     }
 };

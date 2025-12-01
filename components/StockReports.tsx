@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '../supabase/client';
 import { WorkflowAttachment, WorkflowRequest, WorkflowStatus, User, WorkflowItem } from '../types';
-import { askStockQuestion } from '../services/geminiService';
+import { askStockQuestion, aiAvailable } from '../services/geminiService';
 
 interface StockReportsProps {
   user: User;
@@ -217,7 +217,7 @@ const maxBar = Math.max(inboundQty, outboundQty, 1);
       setAiAnswer(answer);
     } catch (err) {
       console.error(err);
-      setAiAnswer('Failed to generate an answer. Please try again.');
+      setAiAnswer('We could not generate an answer right now. Please try again later.');
     } finally {
       setAiLoading(false);
     }
@@ -455,27 +455,35 @@ const maxBar = Math.max(inboundQty, outboundQty, 1);
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold text-zinc-900">AI Stock Q&A</h2>
         </div>
-        <textarea
-          value={aiQuestion}
-          onChange={e => setAiQuestion(e.target.value)}
-          rows={3}
-          className="w-full border border-zinc-300 rounded-md p-2 text-sm"
-          placeholder={`Ask anything like "Who booked out the last squeeze pipes?" or "Do we have spare pumps in stock?"`}
-        />
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleAskAi}
-            disabled={aiLoading || !aiQuestion.trim()}
-            className="px-4 py-2 bg-sky-500 text-white rounded-md hover:bg-sky-600 disabled:bg-zinc-300"
-          >
-            {aiLoading ? 'Asking...' : 'Ask AI'}
-          </button>
-          {aiAnswer && <span className="text-xs text-zinc-500">Answer generated</span>}
-        </div>
-        {aiAnswer && (
-          <div className="bg-zinc-50 border border-zinc-200 rounded-md p-3 text-sm whitespace-pre-wrap">
-            {aiAnswer}
+        {!aiAvailable ? (
+          <div className="p-4 bg-amber-50 text-amber-800 border border-amber-200 rounded-md text-sm">
+            This assistant is currently unavailable. Please contact your administrator.
           </div>
+        ) : (
+          <>
+            <textarea
+              value={aiQuestion}
+              onChange={e => setAiQuestion(e.target.value)}
+              rows={3}
+              className="w-full border border-zinc-300 rounded-md p-2 text-sm"
+              placeholder={`Ask anything like "Who booked out the last squeeze pipes?" or "Do we have spare pumps in stock?"`}
+            />
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handleAskAi}
+                disabled={aiLoading || !aiQuestion.trim()}
+                className="px-4 py-2 bg-sky-500 text-white rounded-md hover:bg-sky-600 disabled:bg-zinc-300"
+              >
+                {aiLoading ? 'Asking...' : 'Ask AI'}
+              </button>
+              {aiAnswer && <span className="text-xs text-zinc-500">Answer generated</span>}
+            </div>
+            {aiAnswer && (
+              <div className="bg-zinc-50 border border-zinc-200 rounded-md p-3 text-sm whitespace-pre-wrap">
+                {aiAnswer}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

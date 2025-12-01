@@ -1,10 +1,22 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../supabase/client';
 import { StockItem, StoreType, FormType, User, Store, departmentToStoreMap, UserRole } from '../types';
 
 interface StockManagementProps {
     openForm: (type: FormType, context?: any) => void;
     user: User;
+}
+
+interface MovementRow {
+    id: string;
+    movementType: string;
+    quantityDelta: number;
+    store: StoreType;
+    createdAt: string;
+    siteName?: string | null;
+    actionedBy?: string | null;
+    requestNumber?: string | null;
+    note?: string | null;
 }
 
 const getStoreBadge = (store: StoreType) => {
@@ -24,7 +36,16 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [activeStore, setActiveStore] = useState<StoreType | 'All'>('All');
+    const [page, setPage] = useState(1);
+    const pageSize = 50;
+    const [totalCount, setTotalCount] = useState(0);
+    const [historyItem, setHistoryItem] = useState<StockItem | null>(null);
+    const [history, setHistory] = useState<MovementRow[]>([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [historyError, setHistoryError] = useState<string | null>(null);
+    const historyRef = useRef<HTMLDivElement | null>(null);
 
     const canReceiveStock = useMemo(
         () =>
@@ -33,49 +54,7 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
             ),
         [user.role]
     );
-    
-    const fetchStock = async () => {
-        setLoading(true);
-        setError(null);
-        try {
-            const pageSize = 1000;
-            let from = 0;
-            let aggregated: StockItem[] = [];
 
-            // Supabase limits select queries to 1000 rows by default, so we page through the view.
-            while (true) {
-                const { data, error, count } = await supabase
-                    .from('en_stock_view')
-                    .select('*', { count: 'exact' })
-                    .range(from, from + pageSize - 1);
-
-                if (error) throw error;
-
-                const batch = (data as any) || [];
-                aggregated = aggregated.concat(batch);
-
-                if (!count || aggregated.length >= count || batch.length < pageSize) {
-                    break;
-                }
-
-                from += pageSize;
-            }
-
-            setStock(aggregated);
-        } catch (err) {
-            setError('Failed to fetch stock data.');
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        fetchStock();
-    }, []);
-
-    const isLowStock = (item: StockItem) => item.quantityOnHand < item.minStockLevel;
-    
     const visibleStores = useMemo(() => {
         if (user.role === 'Admin' || !user.departments || user.departments.length === 0) {
             return Object.values(StoreType);
@@ -83,8 +62,67 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
         const stores = user.departments.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
         return [...new Set(stores)]; // Remove duplicates
     }, [user]);
+    
+    const fetchStock = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        try {
+            if (visibleStores.length === 0) {
+                setStock([]);
+                setTotalCount(0);
+                return;
+            }
 
+            const from = (page - 1) * pageSize;
+            const to = from + pageSize - 1;
+
+            let query = supabase
+                .from('en_stock_view')
+                .select('*', { count: 'exact' })
+                .order('partNumber', { ascending: true })
+                .range(from, to);
+
+            if (activeStore === 'All') {
+                query = query.in('store', visibleStores);
+            } else {
+                query = query.eq('store', activeStore);
+            }
+
+            if (debouncedSearch) {
+                const term = `%${debouncedSearch}%`;
+                query = query.or(`partNumber.ilike.${term},description.ilike.${term}`);
+            }
+
+            const { data, error, count } = await query;
+            if (error) throw error;
+
+            setStock((data as any) || []);
+            setTotalCount(count || 0);
+        } catch (err) {
+            setError('Failed to fetch stock data.');
+            console.error(err);
+        } finally {
+            setLoading(false);
+        }
+    }, [activeStore, debouncedSearch, page, pageSize, visibleStores]);
+
+    useEffect(() => {
+        const handle = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 250);
+        return () => clearTimeout(handle);
+    }, [searchTerm]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [activeStore, debouncedSearch]);
+
+    useEffect(() => {
+        fetchStock();
+    }, [fetchStock]);
+
+    const isLowStock = (item: StockItem) => item.quantityOnHand < item.minStockLevel;
+    
     const tabs: (StoreType | 'All')[] = ['All', ...visibleStores.sort()];
+    const totalPages = useMemo(() => Math.max(1, Math.ceil(totalCount / pageSize)), [totalCount, pageSize]);
     
     useEffect(() => {
         // If the current active store is not in the visible tabs, reset to 'All'
@@ -95,13 +133,50 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
 
 
     const filteredStock = useMemo(() => {
-        return stock
-            .filter(item => activeStore === 'All' ? visibleStores.includes(item.store) : item.store === activeStore)
-            .filter(item => 
-                item.partNumber.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                item.description.toLowerCase().includes(searchTerm.toLowerCase())
-            );
-    }, [searchTerm, activeStore, stock, visibleStores]);
+        return stock;
+    }, [stock]);
+
+    const loadHistory = async (item: StockItem) => {
+        setHistoryItem(item);
+        setHistory([]);
+        setHistoryError(null);
+        setHistoryLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('en_stock_movements_view')
+                .select('id, movementType, quantityDelta, store, createdAt, siteName, actionedBy, requestNumber, note')
+                .eq('partNumber', item.partNumber)
+                .eq('store', item.store)
+                .order('createdAt', { ascending: false })
+                .limit(50);
+
+            if (error) throw error;
+            setHistory((data as MovementRow[]) || []);
+        } catch (err) {
+            console.error(err);
+            setHistoryError('Could not load movement history for this item.');
+        } finally {
+            setHistoryLoading(false);
+        }
+    };
+
+    const closeHistory = () => {
+        setHistoryItem(null);
+        setHistory([]);
+        setHistoryError(null);
+    };
+
+    const renderDelta = (qty: number) => {
+        const sign = qty > 0 ? '+' : '';
+        const color = qty < 0 ? 'text-red-700' : 'text-emerald-700';
+        return <span className={`font-semibold ${color}`}>{`${sign}${qty}`}</span>;
+    };
+
+    useEffect(() => {
+        if (historyItem && historyRef.current) {
+            historyRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    }, [historyItem]);
 
     return (
         <div className="space-y-6">
@@ -170,7 +245,7 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
                                 <th className="px-6 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider w-28">Min Stock</th>
                                 <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider w-56">Location</th>
                                 <th className="px-6 py-3 text-center text-xs font-medium text-zinc-500 uppercase tracking-wider w-32">Status</th>
-                                <th className="px-6 py-3 w-32"></th>
+                                <th className="px-6 py-3 w-40 text-right text-xs font-medium text-zinc-500 uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -199,7 +274,14 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
                                             <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-emerald-100 text-emerald-800">OK</span>
                                         )}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-right"></td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                                        <button
+                                            onClick={() => loadHistory(item)}
+                                            className="text-sm text-sky-600 hover:text-sky-700 font-semibold"
+                                        >
+                                            View history
+                                        </button>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -209,8 +291,97 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
                             <p className="text-zinc-500">No stock items match your criteria.</p>
                         </div>
                     )}
+                    {filteredStock.length > 0 && (
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-6 py-4 border-t border-zinc-200 text-sm text-zinc-700">
+                            <div>
+                                Showing {(page - 1) * pageSize + 1}-
+                                {Math.min(page * pageSize, totalCount)} of {totalCount} items
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPage(p => Math.max(1, p - 1))}
+                                    disabled={page === 1}
+                                    className="px-3 py-1 rounded-md border border-zinc-300 text-zinc-700 disabled:text-zinc-400 disabled:border-zinc-200 disabled:cursor-not-allowed bg-white hover:bg-zinc-50"
+                                >
+                                    Previous
+                                </button>
+                                <span className="text-xs text-zinc-500">Page {page} of {totalPages}</span>
+                                <button
+                                    onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={page >= totalPages}
+                                    className="px-3 py-1 rounded-md border border-zinc-300 text-zinc-700 disabled:text-zinc-400 disabled:border-zinc-200 disabled:cursor-not-allowed bg-white hover:bg-zinc-50"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
+
+            {historyItem && (
+                <div
+                    className="fixed inset-0 z-40 flex items-start md:items-center justify-center bg-black/40 px-4 py-8"
+                    onClick={closeHistory}
+                >
+                    <div
+                        ref={historyRef}
+                        className="w-full max-w-5xl bg-white rounded-lg border border-zinc-200 shadow-xl max-h-[90vh] overflow-hidden"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-200">
+                            <div>
+                                <p className="text-xs uppercase text-zinc-500">Movement History</p>
+                                <h3 className="text-lg font-semibold text-zinc-900">
+                                    {historyItem.partNumber} - {historyItem.description}
+                                </h3>
+                                <p className="text-sm text-zinc-500">Store: {historyItem.store}</p>
+                            </div>
+                            <button onClick={closeHistory} className="text-sm text-zinc-600 hover:text-zinc-800">Close</button>
+                        </div>
+                        <div className="p-6 space-y-3">
+                            {historyLoading ? (
+                                <p className="text-sm text-zinc-500">Loading history...</p>
+                            ) : historyError ? (
+                                <p className="text-sm text-red-600">{historyError}</p>
+                            ) : history.length === 0 ? (
+                                <p className="text-sm text-zinc-500">No movements recorded for this item yet.</p>
+                            ) : (
+                                <div className="overflow-auto max-h-[60vh]">
+                                    <table className="min-w-full text-sm">
+                                        <thead className="bg-zinc-50">
+                                            <tr>
+                                                <th className="px-4 py-2 text-left">Date</th>
+                                                <th className="px-4 py-2 text-left">Type</th>
+                                                <th className="px-4 py-2 text-center">Qty</th>
+                                                <th className="px-4 py-2 text-left">Site</th>
+                                                <th className="px-4 py-2 text-left">Store</th>
+                                                <th className="px-4 py-2 text-left">Actioned By</th>
+                                                <th className="px-4 py-2 text-left">Request #</th>
+                                                <th className="px-4 py-2 text-left">Note</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-200">
+                                            {history.map(move => (
+                                                <tr key={move.id} className="hover:bg-zinc-50">
+                                                    <td className="px-4 py-2 whitespace-nowrap">{new Date(move.createdAt).toLocaleString()}</td>
+                                                    <td className="px-4 py-2 whitespace-nowrap">{move.movementType}</td>
+                                                    <td className="px-4 py-2 text-center">{renderDelta(move.quantityDelta)}</td>
+                                                    <td className="px-4 py-2 whitespace-nowrap">{move.siteName || '--'}</td>
+                                                    <td className="px-4 py-2 whitespace-nowrap">{move.store}</td>
+                                                    <td className="px-4 py-2 whitespace-nowrap">{move.actionedBy || '--'}</td>
+                                                    <td className="px-4 py-2 whitespace-nowrap">{move.requestNumber || '--'}</td>
+                                                    <td className="px-4 py-2">{move.note || ''}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

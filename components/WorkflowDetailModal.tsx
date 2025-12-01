@@ -35,6 +35,12 @@ const ActionButton: React.FC<{ onClick: () => void; disabled: boolean; children:
 const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, user, onClose, onUpdate }) => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasSiteAccess = useMemo(() => {
+    if (user.role === UserRole.Admin) return true;
+    const sites = user.sites || [];
+    if (!workflow.projectCode || sites.length === 0) return false;
+    return sites.map(s => s.toLowerCase()).includes(workflow.projectCode.toLowerCase());
+  }, [user, workflow.projectCode]);
   const attachments: WorkflowAttachment[] = useMemo(() => {
     if (workflow.attachments && workflow.attachments.length > 0) {
         return workflow.attachments;
@@ -53,6 +59,11 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
     setIsUpdating(true);
     setError(null);
     try {
+        if (!hasSiteAccess) {
+            setError('You are not allowed to action requests for this site.');
+            setIsUpdating(false);
+            return;
+        }
         const { error } = await supabase
             .from('en_workflow_requests')
             .update({ current_status: newStatus })

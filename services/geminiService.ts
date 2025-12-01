@@ -8,11 +8,8 @@ const API_KEY =
   (typeof process !== 'undefined' ? (process as any).env?.GEMINI_API_KEY : undefined) ??
   (typeof process !== 'undefined' ? (process as any).env?.API_KEY : undefined);
 
-if (!API_KEY) {
-  console.warn("AI key not set (VITE_GEMINI_API_KEY / GEMINI_API_KEY / API_KEY). AI features will be disabled.");
-}
-
-const ai = API_KEY ? new GoogleGenAI({ apiKey: API_KEY }) : null;
+export const aiAvailable = !!API_KEY;
+const ai = aiAvailable ? new GoogleGenAI({ apiKey: API_KEY as string }) : null;
 
 const extractText = (result: any): string | null => {
   // Try helper
@@ -33,7 +30,7 @@ const extractText = (result: any): string | null => {
 
 export const generateReportSummary = async (workflows: WorkflowRequest[], stock: StockItem[]): Promise<string> => {
   if (!ai) {
-    return "AI key not configured. Cannot generate summary.";
+    return "This feature is currently unavailable.";
   }
 
   const prompt = `
@@ -73,8 +70,8 @@ export const generateReportSummary = async (workflows: WorkflowRequest[], stock:
     const text = extractText(result);
     return text || "No AI response was returned.";
   } catch (error) {
-    console.error("Error generating report summary with AI service:", error);
-    return "An error occurred while generating the AI summary. Please check the console for details.";
+    console.error("AI summary error:", error);
+    return "We couldn't generate a summary right now. Please try again later.";
   }
 };
 
@@ -83,7 +80,7 @@ export const askStockQuestion = async (
   context: { receipts: any[]; issues: any[] }
 ): Promise<string> => {
   if (!ai) {
-    return "AI key not configured. Please add VITE_GEMINI_API_KEY or GEMINI_API_KEY.";
+    return "This feature is currently unavailable.";
   }
 
   const prompt = `
@@ -108,7 +105,7 @@ export const askStockQuestion = async (
     const text = extractText(result);
     return text || "No AI response was returned.";
   } catch (error) {
-    console.error("Error answering stock question with AI service:", error);
-    return "Could not generate an answer. Please try again.";
+    console.error("AI Q&A error:", error);
+    return "We couldn't generate an answer right now. Please try again later.";
   }
 };
