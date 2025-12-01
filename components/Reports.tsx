@@ -166,7 +166,7 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
                 onChange={e => setQuestion(e.target.value)}
                 rows={3}
                 className="w-full p-3 border border-zinc-300 rounded-md text-sm bg-white text-zinc-900"
-                placeholder={`Example: "Who booked out the last squeeze pipes?" or "Do we have spare pumps in stock?"`}
+                placeholder="Ask about stock or requests…"
               />
               <div className="flex items-center gap-3">
                 <button

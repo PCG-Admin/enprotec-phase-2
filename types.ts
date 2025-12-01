@@ -15,7 +15,6 @@ export type View =
   | 'Salvage'
   | 'InspectionReport'
   | 'MyInspections'
-  | 'FleetDashboard'
   | 'StockReports';
 
 export type FormType = 'PR' | 'GateRelease' | 'StockRequest' | 'EPOD' | 'StockIntake' | 'SalvageBooking' | 'ReturnIntake';

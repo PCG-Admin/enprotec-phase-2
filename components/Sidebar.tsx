@@ -26,13 +26,13 @@ interface SidebarProps {
 }
 
 const viewPermissions: Record<UserRole, View[]> = {
-  [UserRole.Admin]: ['Dashboard', 'FleetDashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stores', 'Sites', 'Users', 'Reports', 'StockReports'],
-  [UserRole.OperationsManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stores', 'Sites', 'Reports'],
-  [UserRole.EquipmentManager]: ['Dashboard', 'FleetDashboard', 'StockReceipts', 'EquipmentManager', 'RejectedRequests', 'Salvage', 'Stores', 'Reports'],
-  [UserRole.StockController]: ['Dashboard', 'FleetDashboard', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'Salvage', 'Stores', 'StockReports'],
+  [UserRole.Admin]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stores', 'Sites', 'Users', 'Reports', 'StockReports'],
+  [UserRole.OperationsManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stores', 'Sites', 'Reports'],
+  [UserRole.EquipmentManager]: ['Dashboard', 'StockReceipts', 'EquipmentManager', 'RejectedRequests', 'Salvage', 'Stores', 'Reports'],
+  [UserRole.StockController]: ['Dashboard', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'Salvage', 'Stores', 'StockReports'],
   [UserRole.Storeman]: ['Dashboard', 'Stores', 'Picking'],
-  [UserRole.SiteManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'Stores'],
-  [UserRole.ProjectManager]: ['Dashboard', 'FleetDashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'Stores'],
+  [UserRole.SiteManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'Stores'],
+  [UserRole.ProjectManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'Stores'],
   [UserRole.Driver]: ['Deliveries'],
   [UserRole.Security]: ['Deliveries'],
 };
@@ -73,7 +73,6 @@ const NavItem: React.FC<{
 const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView, collapsed, onToggle }) => {
   const allNavItems: { label: string; view: View; icon: React.ReactNode }[] = [
     { label: 'Dashboard', view: 'Dashboard', icon: <HomeIcon className="w-5 h-5" /> },
-    { label: 'Fleet Dashboard', view: 'FleetDashboard', icon: <ReportsIcon className="w-5 h-5" /> },
     { label: 'Workflows', view: 'Workflows', icon: <WorkflowIcon className="w-5 h-5" /> },
     { label: 'Stock Receipts', view: 'StockReceipts', icon: <ClipboardCheckIcon className="w-5 h-5" /> },
     { label: 'Stock Requests', view: 'Requests', icon: <CheckSquareIcon className="w-5 h-5" /> },

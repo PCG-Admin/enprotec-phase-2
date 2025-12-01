@@ -466,7 +466,7 @@ const maxBar = Math.max(inboundQty, outboundQty, 1);
               onChange={e => setAiQuestion(e.target.value)}
               rows={3}
               className="w-full border border-zinc-300 rounded-md p-2 text-sm"
-              placeholder={`Ask anything like "Who booked out the last squeeze pipes?" or "Do we have spare pumps in stock?"`}
+              placeholder="Ask about stock or issues…"
             />
             <div className="flex items-center gap-3">
               <button
