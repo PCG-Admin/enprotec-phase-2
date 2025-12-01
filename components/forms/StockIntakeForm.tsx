@@ -4,6 +4,7 @@ import { StoreType, User, WorkflowRequest, UserRole, Store, departmentToStoreMap
 import { supabase } from '../../supabase/client';
 import { Database } from '../../supabase/database.types';
 import Select from 'react-select';
+import { stockService } from '../../services/stockService';
 
 type StockItemRow = Database['public']['Tables']['en_stock_items']['Row'];
 type InventoryRow = Database['public']['Tables']['en_inventory']['Row'];
@@ -19,44 +20,44 @@ interface StockIntakeFormProps {
 type IntakeType = 'existing' | 'new' | 'return';
 
 const customSelectStyles = {
-  control: (provided: any, state: any) => ({
-    ...provided,
-    backgroundColor: '#ffffff', // white
-    borderColor: state.isFocused ? '#0ea5e9' : '#d4d4d8', // sky-500, zinc-300
-    boxShadow: state.isFocused ? '0 0 0 1px #0ea5e9' : 'none',
-    '&:hover': {
-      borderColor: '#a1a1aa', // zinc-400
-    },
-  }),
-  menu: (provided: any) => ({
-    ...provided,
-    backgroundColor: '#ffffff', // white
-    border: '1px solid #e4e4e7', // zinc-200
-  }),
-  option: (provided: any, state: any) => ({
-    ...provided,
-    backgroundColor: state.isSelected
-      ? '#0ea5e9' // sky-500
-      : state.isFocused
-      ? '#f4f4f5' // zinc-100
-      : '#ffffff', // white
-    color: state.isSelected ? '#ffffff' : '#18181b', // white, zinc-900
-    '&:active': {
-      backgroundColor: '#0284c7', // sky-600
-    },
-  }),
-  singleValue: (provided: any) => ({
-    ...provided,
-    color: '#18181b', // zinc-900
-  }),
-  input: (provided: any) => ({
-    ...provided,
-    color: '#18181b', // zinc-900
-  }),
-  placeholder: (provided: any) => ({
-    ...provided,
-    color: '#71717a', // zinc-500
-  }),
+    control: (provided: any, state: any) => ({
+        ...provided,
+        backgroundColor: '#ffffff', // white
+        borderColor: state.isFocused ? '#0ea5e9' : '#d4d4d8', // sky-500, zinc-300
+        boxShadow: state.isFocused ? '0 0 0 1px #0ea5e9' : 'none',
+        '&:hover': {
+            borderColor: '#a1a1aa', // zinc-400
+        },
+    }),
+    menu: (provided: any) => ({
+        ...provided,
+        backgroundColor: '#ffffff', // white
+        border: '1px solid #e4e4e7', // zinc-200
+    }),
+    option: (provided: any, state: any) => ({
+        ...provided,
+        backgroundColor: state.isSelected
+            ? '#0ea5e9' // sky-500
+            : state.isFocused
+                ? '#f4f4f5' // zinc-100
+                : '#ffffff', // white
+        color: state.isSelected ? '#ffffff' : '#18181b', // white, zinc-900
+        '&:active': {
+            backgroundColor: '#0284c7', // sky-600
+        },
+    }),
+    singleValue: (provided: any) => ({
+        ...provided,
+        color: '#18181b', // zinc-900
+    }),
+    input: (provided: any) => ({
+        ...provided,
+        color: '#18181b', // zinc-900
+    }),
+    placeholder: (provided: any) => ({
+        ...provided,
+        color: '#71717a', // zinc-500
+    }),
 };
 
 const FormRow: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -81,9 +82,9 @@ const FormTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement>> 
 
 const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCancel, returnWorkflow }) => {
     const [intakeType, setIntakeType] = useState<IntakeType>(returnWorkflow ? 'return' : 'existing');
-    
+
     const [availableStockItems, setAvailableStockItems] = useState<StockItemRow[]>([]);
-    const [stockOptions, setStockOptions] = useState<{value: string, label: string}[]>([]);
+    const [stockOptions, setStockOptions] = useState<{ value: string, label: string }[]>([]);
     const [stockLoading, setStockLoading] = useState(true);
 
     const [selectedStockItemId, setSelectedStockItemId] = useState('');
@@ -98,12 +99,12 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
     const [comments, setComments] = useState('');
     const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
     const [attachmentInputKey, setAttachmentInputKey] = useState(0);
-    
+
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
     const isReturnMode = intakeType === 'return';
-    
+
     const visibleStores = useMemo(() => {
         if (user.role === UserRole.Admin || !user.departments || user.departments.length === 0) {
             return Object.values(StoreType);
@@ -140,16 +141,16 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
                 }));
                 setStockOptions(options);
 
-                if(returnWorkflow) {
+                if (returnWorkflow) {
                     const firstItem = returnWorkflow.items[0];
-                    if(firstItem) {
+                    if (firstItem) {
                         const returnedStockItem = stockData.find(s => s.part_number === firstItem.partNumber);
-                        if(returnedStockItem) {
-                             setSelectedStockItemId(returnedStockItem.id);
-                             setQuantity(String(returnWorkflow.items.reduce((sum, item) => sum + item.quantityRequested, 0)));
-                             setDeliveryNotePO(`RETURN from ${returnWorkflow.requestNumber}`);
-                             setComments(`Rejected by ${returnWorkflow.requester}: ${returnWorkflow.rejectionComment}`);
-                             setLocation('Awaiting placement');
+                        if (returnedStockItem) {
+                            setSelectedStockItemId(returnedStockItem.id);
+                            setQuantity(String(returnWorkflow.items.reduce((sum, item) => sum + item.quantityRequested, 0)));
+                            setDeliveryNotePO(`RETURN from ${returnWorkflow.requestNumber}`);
+                            setComments(`Rejected by ${returnWorkflow.requester}: ${returnWorkflow.rejectionComment}`);
+                            setLocation('Awaiting placement');
                         }
                     }
                 }
@@ -203,8 +204,8 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
 
                 const { data: newStockItem, error: insertError } = await supabase
                     .from('en_stock_items')
-                    .insert({ 
-                        part_number: partNumber, 
+                    .insert({
+                        part_number: partNumber,
                         description: description,
                         min_stock_level: parseInt(minStockLevel, 10),
                     })
@@ -236,58 +237,20 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
                 const { data: publicData } = supabase.storage.from('Enprotec').getPublicUrl(filePath);
                 attachmentUrl = publicData.publicUrl;
             }
-            
-            const { error: receiptError } = await supabase.from('en_stock_receipts').insert({
-                stock_item_id: stockItemId,
-                quantity_received: quantityReceived,
-                received_by_id: user.id,
-                delivery_note_po: deliveryNotePO,
-                comments: comments,
+
+            // Use the new atomic service
+            await stockService.processStockIntake({
+                stockItemId: stockItemId,
+                quantity: quantityReceived,
                 store: store,
-                attachment_url: attachmentUrl,
+                location: location,
+                receivedById: user.id,
+                deliveryNote: deliveryNotePO,
+                comments: comments,
+                attachmentUrl: attachmentUrl,
+                isReturn: isReturnMode,
+                returnWorkflowId: returnWorkflow?.id
             });
-            if (receiptError) throw receiptError;
-
-            const { data: inventoryItem, error: inventoryFetchError } = await supabase
-                .from('en_inventory')
-                .select('id, quantity_on_hand')
-                .eq('stock_item_id', stockItemId)
-                .eq('store', store)
-                .maybeSingle();
-
-            if (inventoryFetchError && inventoryFetchError.code !== 'PGRST116') {
-                throw inventoryFetchError;
-            }
-
-            if (inventoryItem) {
-                const newQuantity = (inventoryItem as InventoryRow).quantity_on_hand + quantityReceived;
-                const { error: updateError } = await supabase
-                    .from('en_inventory')
-                    .update({ quantity_on_hand: newQuantity, location: location })
-                    .eq('id', (inventoryItem as InventoryRow).id);
-                if (updateError) throw updateError;
-            } else {
-                const { error: insertError } = await supabase
-                    .from('en_inventory')
-                    .insert({
-                        stock_item_id: stockItemId,
-                        store,
-                        quantity_on_hand: quantityReceived,
-                        location,
-                    });
-                if (insertError) throw insertError;
-            }
-
-            if (isReturnMode && returnWorkflow) {
-                const { error: workflowUpdateError } = await supabase
-                    .from('en_workflow_requests')
-                    .update({
-                        current_status: WorkflowStatus.COMPLETED,
-                        rejection_comment: null,
-                    })
-                    .eq('id', returnWorkflow.id);
-                if (workflowUpdateError) throw workflowUpdateError;
-            }
 
             setAttachmentFile(null);
             setAttachmentInputKey((prev) => prev + 1);
@@ -300,7 +263,7 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
             setLoading(false);
         }
     };
-    
+
     const renderPartFields = () => {
         if (intakeType === 'existing' || isReturnMode) {
             return (
@@ -330,7 +293,7 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
                     <FormLabel htmlFor="partNumber">Part Number</FormLabel>
                     <FormInput id="partNumber" type="text" value={partNumber} onChange={e => setPartNumber(e.target.value)} placeholder="e.g., OEM-5566" required />
                 </FormRow>
-                 <FormRow>
+                <FormRow>
                     <FormLabel htmlFor="description">Description</FormLabel>
                     <FormInput id="description" type="text" value={description} onChange={e => setDescription(e.target.value)} placeholder="e.g., Secondary Gearbox Assembly" required />
                 </FormRow>
@@ -350,7 +313,7 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
                     {!isReturnMode && (
                         <FormRow>
                             <FormLabel htmlFor="intakeType">Intake Type</FormLabel>
-                             <div className="md:col-span-2 flex items-center space-x-4 p-1 bg-zinc-200 rounded-md">
+                            <div className="md:col-span-2 flex items-center space-x-4 p-1 bg-zinc-200 rounded-md">
                                 <button
                                     type="button"
                                     onClick={() => setIntakeType('existing')}
@@ -368,7 +331,7 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
                             </div>
                         </FormRow>
                     )}
-                     <FormRow>
+                    <FormRow>
                         <FormLabel htmlFor="deliveryNotePO">Delivery Note / PO #</FormLabel>
                         <FormInput id="deliveryNotePO" type="text" value={deliveryNotePO} onChange={e => setDeliveryNotePO(e.target.value)} placeholder="e.g., DN-12345 or PO-67890" required disabled={isReturnMode} />
                     </FormRow>
@@ -434,9 +397,9 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
                             ))}
                         </FormSelect>
                     </FormRow>
-                     <FormRow>
+                    <FormRow>
                         <FormLabel htmlFor="location">Location in Store</FormLabel>
-                        <FormInput id="location" type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g., Aisle 5, Bin C3" required disabled={isReturnMode}/>
+                        <FormInput id="location" type="text" value={location} onChange={e => setLocation(e.target.value)} placeholder="e.g., Aisle 5, Bin C3" required disabled={isReturnMode} />
                     </FormRow>
                     <FormRow>
                         <FormLabel htmlFor="comments">Comments / Notes</FormLabel>
@@ -451,14 +414,14 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
                         <FormInput id="receivedBy" type="text" value={user.name} readOnly />
                     </FormRow>
                 </fieldset>
-                
+
                 {error && <p className="text-sm text-red-600">{error}</p>}
 
                 <div className="flex justify-end items-center gap-3 pt-4 border-t border-zinc-200">
                     <button type="button" onClick={onCancel} className="px-6 py-2 bg-zinc-200 text-zinc-800 font-semibold rounded-md hover:bg-zinc-300 transition-colors">
                         Cancel
                     </button>
-                     <button type="submit" disabled={loading} className="px-6 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 disabled:bg-zinc-300 transition-colors">
+                    <button type="submit" disabled={loading} className="px-6 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 disabled:bg-zinc-300 transition-colors">
                         {loading ? 'Processing...' : (isReturnMode ? 'Confirm Return to Stock' : 'Add to Inventory')}
                     </button>
                 </div>

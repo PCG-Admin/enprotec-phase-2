@@ -5,6 +5,7 @@ import { supabase } from '../../supabase/client';
 import Select from 'react-select';
 import { Database } from '../../supabase/database.types';
 import { sendApprovalWebhook } from '../../services/webhookService';
+import { stockService } from '../../services/stockService';
 
 type StockItemInsert = Database['public']['Tables']['en_stock_items']['Insert'];
 type WorkflowRequestInsert = Database['public']['Tables']['en_workflow_requests']['Insert'];
@@ -21,44 +22,44 @@ interface StockRequestFormProps {
 }
 
 const customSelectStyles = {
-  control: (provided: any, state: any) => ({
-    ...provided,
-    backgroundColor: '#ffffff', // white
-    borderColor: state.isFocused ? '#0ea5e9' : '#d4d4d8', // sky-500, zinc-300
-    boxShadow: state.isFocused ? '0 0 0 1px #0ea5e9' : 'none',
-    '&:hover': {
-      borderColor: '#a1a1aa', // zinc-400
-    },
-  }),
-  menu: (provided: any) => ({
-    ...provided,
-    backgroundColor: '#ffffff', // white
-    border: '1px solid #e4e4e7', // zinc-200
-  }),
-  option: (provided: any, state: any) => ({
-    ...provided,
-    backgroundColor: state.isSelected
-      ? '#0ea5e9' // sky-500
-      : state.isFocused
-      ? '#f4f4f5' // zinc-100
-      : '#ffffff', // white
-    color: state.isSelected ? '#ffffff' : '#18181b', // white, zinc-900
-    '&:active': {
-      backgroundColor: '#0284c7', // sky-600
-    },
-  }),
-  singleValue: (provided: any) => ({
-    ...provided,
-    color: '#18181b', // zinc-900
-  }),
-  input: (provided: any) => ({
-    ...provided,
-    color: '#18181b', // zinc-900
-  }),
-  placeholder: (provided: any) => ({
-    ...provided,
-    color: '#71717a', // zinc-500
-  }),
+    control: (provided: any, state: any) => ({
+        ...provided,
+        backgroundColor: '#ffffff', // white
+        borderColor: state.isFocused ? '#0ea5e9' : '#d4d4d8', // sky-500, zinc-300
+        boxShadow: state.isFocused ? '0 0 0 1px #0ea5e9' : 'none',
+        '&:hover': {
+            borderColor: '#a1a1aa', // zinc-400
+        },
+    }),
+    menu: (provided: any) => ({
+        ...provided,
+        backgroundColor: '#ffffff', // white
+        border: '1px solid #e4e4e7', // zinc-200
+    }),
+    option: (provided: any, state: any) => ({
+        ...provided,
+        backgroundColor: state.isSelected
+            ? '#0ea5e9' // sky-500
+            : state.isFocused
+                ? '#f4f4f5' // zinc-100
+                : '#ffffff', // white
+        color: state.isSelected ? '#ffffff' : '#18181b', // white, zinc-900
+        '&:active': {
+            backgroundColor: '#0284c7', // sky-600
+        },
+    }),
+    singleValue: (provided: any) => ({
+        ...provided,
+        color: '#18181b', // zinc-900
+    }),
+    input: (provided: any) => ({
+        ...provided,
+        color: '#18181b', // zinc-900
+    }),
+    placeholder: (provided: any) => ({
+        ...provided,
+        color: '#71717a', // zinc-500
+    }),
 };
 
 const FormRow: React.FC<{ children: React.ReactNode }> = ({ children }) => (
@@ -91,13 +92,13 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
     const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
-    
+
     const [availableStockItems, setAvailableStockItems] = useState<{ value: string; label: string; quantityOnHand: number | null; }[]>([]);
     const [stockLoading, setStockLoading] = useState(false);
 
     const [allActiveSites, setAllActiveSites] = useState<Site[]>([]);
     const [sitesLoading, setSitesLoading] = useState(true);
-    
+
     const userStores = user.departments || [];
 
     const visibleSites = useMemo(() => {
@@ -108,7 +109,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
         const userSites = user.sites || [];
         return allActiveSites.filter(site => userSites.includes(site.name));
     }, [user, allActiveSites]);
-    
+
     useEffect(() => {
         if (visibleSites.length === 1) {
             setDestinationSite(visibleSites[0].id);
@@ -190,7 +191,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
     const handleAddItem = () => {
         setItems([...items, { partNumber: '', quantity: '' }]);
     };
-    
+
     const handleRemoveItem = (index: number) => {
         const newItems = items.filter((_, i) => i !== index);
         setItems(newItems);
@@ -221,7 +222,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                     // Provide a more specific error message
                     throw new Error(`Attachment upload failed: ${uploadError.message}`);
                 }
-                
+
                 const { data } = supabase.storage.from('Enprotec').getPublicUrl(fileName); // *** UPDATED BUCKET NAME ***
                 attachmentUrl = data.publicUrl;
             }
@@ -229,7 +230,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
             // 1. Validate items and get their IDs
             const partNumbers = items.map(i => i.partNumber).filter(Boolean);
             if (partNumbers.length === 0) {
-                 throw new Error("Please add at least one item to the request.");
+                throw new Error("Please add at least one item to the request.");
             }
             if (!department) {
                 throw new Error("Please select a store for this request.");
@@ -249,84 +250,40 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
             }
             const partNumberToIdMap = new Map((stockItems as any[]).map(si => [si.part_number, si.id]));
 
-            // 2. Create the main workflow request
+            // 2. Create the main workflow request using the atomic service
             const requestNumber = `IR-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
-            const currentStatus = WorkflowStatus.REQUEST_SUBMITTED;
-            const newRequest: WorkflowRequestInsert = {
-                request_number: requestNumber,
-                type: 'Internal',
-                requester_id: user.id,
-                site_id: destinationSite,
-                department: department,
-                current_status: currentStatus,
-                priority: priority,
-                attachment_url: attachmentUrl,
-            };
-            const { data: requestData, error: requestError } = await supabase
-                .from('en_workflow_requests')
-                .insert(newRequest)
-                .select()
-                .single();
 
-            if (requestError) throw requestError;
-            if (!requestData) throw new Error("Workflow request creation failed.");
-            const requestId = (requestData as any).id;
-
-            if (attachmentUrl) {
-                const { error: attachmentError } = await supabase
-                    .from('en_workflow_attachments')
-                    .insert({
-                        workflow_request_id: requestId,
-                        attachment_url: attachmentUrl,
-                        file_name: attachmentFile?.name || 'Attachment',
-                    });
-                if (attachmentError) throw attachmentError;
-            }
-
-            // 3. Create the workflow items
-            const workflowItems: WorkflowItemInsert[] = items.map(item => ({
-                workflow_request_id: requestId,
+            const requestItems = items.map(item => ({
                 stock_item_id: partNumberToIdMap.get(item.partNumber)!,
-                quantity_requested: parseInt(item.quantity, 10),
+                quantity: parseInt(item.quantity, 10)
             }));
 
-            const { error: itemsError } = await supabase
-                .from('en_workflow_items')
-                .insert(workflowItems);
-
-            if (itemsError) throw itemsError;
-
-            // 4. Create the initial comment if provided
-            if (comment.trim()) {
-                const newComment: WorkflowCommentInsert = {
-                    workflow_request_id: requestId,
-                    user_id: user.id,
-                    comment_text: comment.trim(),
-                };
-                const { error: commentError } = await supabase
-                    .from('en_workflow_comments')
-                    .insert(newComment);
-
-                if (commentError) {
-                    // Log the error but don't fail the entire submission
-                    console.error("Failed to add initial comment:", commentError);
-                }
-            }
+            const result = await stockService.createStockRequest({
+                requesterId: user.id,
+                requestNumber: requestNumber,
+                siteId: destinationSite,
+                department: department,
+                priority: priority,
+                attachmentUrl: attachmentUrl,
+                items: requestItems,
+                comment: comment.trim()
+            });
 
             // 5. Send webhook notification for new submission
+            const currentStatus = WorkflowStatus.REQUEST_SUBMITTED;
             const webhookRequestPayload: Pick<WorkflowRequest, 'id' | 'requestNumber' | 'currentStatus' | 'requester_id' | 'department'> = {
-                id: requestId,
+                id: (result as any).request_id, // The RPC returns request_id
                 requestNumber: requestNumber,
                 currentStatus: currentStatus,
                 requester_id: user.id,
                 department: department,
             };
-            
+
             await sendApprovalWebhook(
-                'APPROVAL', 
-                webhookRequestPayload, 
-                currentStatus, 
-                user, 
+                'APPROVAL',
+                webhookRequestPayload,
+                currentStatus,
+                user,
                 comment.trim() || `New request submitted by ${user.name}.`
             );
 
@@ -359,7 +316,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                             ))}
                         </FormSelect>
                     </FormRow>
-                     <FormRow>
+                    <FormRow>
                         <FormLabel htmlFor="destinationSite">Destination Site / Project</FormLabel>
                         <FormSelect id="destinationSite" value={destinationSite} onChange={e => setDestinationSite(e.target.value)} required disabled={sitesLoading || visibleSites.length === 0}>
                             <option value="">{sitesLoading ? 'Loading sites...' : (visibleSites.length === 0 ? 'No sites assigned to you' : 'Select a site...')}</option>
@@ -374,7 +331,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                         <FormLabel htmlFor="requiredDate">Date Required</FormLabel>
                         <FormInput id="requiredDate" type="date" value={requiredDate} onChange={e => setRequiredDate(e.target.value)} required />
                     </FormRow>
-                     <FormRow>
+                    <FormRow>
                         <FormLabel htmlFor="priority">Priority</FormLabel>
                         <FormSelect id="priority" value={priority} onChange={e => setPriority(e.target.value as Priority)}>
                             {Object.values(Priority).map(p => <option key={p} value={p}>{p}</option>)}
@@ -385,7 +342,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                 {/* Section 2: Items Requested */}
                 <fieldset className="space-y-4">
                     <legend className="text-lg font-semibold text-zinc-900 border-b border-zinc-200 pb-2 mb-4 w-full">Items Requested</legend>
-                     <div className="space-y-4">
+                    <div className="space-y-4">
                         {items.map((item, index) => (
                             <div key={index} className="p-4 border border-zinc-200 rounded-md bg-zinc-50/50 space-y-4 relative">
                                 {items.length > 1 && (
@@ -396,7 +353,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-2 items-start">
                                     <FormLabel htmlFor={`partNumber${index}`}>Part Number</FormLabel>
                                     <div className="md:col-span-2">
-                                       <Select
+                                        <Select
                                             id={`partNumber${index}`}
                                             options={availableStockItems}
                                             value={availableStockItems.find(opt => opt.value === item.partNumber) || null}
@@ -422,14 +379,14 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                                         )}
                                     </div>
                                 </div>
-                                 <FormRow>
+                                <FormRow>
                                     <FormLabel htmlFor={`quantity${index}`}>Quantity</FormLabel>
                                     <FormInput id={`quantity${index}`} type="number" min="1" value={item.quantity} onChange={e => handleItemChange(index, 'quantity', e.target.value)} placeholder="e.g., 5" required />
                                 </FormRow>
                             </div>
                         ))}
-                     </div>
-                     <button type="button" onClick={handleAddItem} className="text-sm text-sky-600 hover:text-sky-500 font-semibold">+ Add another item</button>
+                    </div>
+                    <button type="button" onClick={handleAddItem} className="text-sm text-sky-600 hover:text-sky-500 font-semibold">+ Add another item</button>
                 </fieldset>
 
                 {/* Section: Attachment */}
@@ -450,7 +407,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                     </FormRow>
                 </fieldset>
 
-                 {/* Section 3: Comments */}
+                {/* Section 3: Comments */}
                 <fieldset className="space-y-4">
                     <legend className="text-lg font-semibold text-zinc-900 border-b border-zinc-200 pb-2 mb-4 w-full">Comments / Special Instructions</legend>
                     <FormRow>
@@ -471,7 +428,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
                     <button type="button" onClick={onCancel} className="px-6 py-2 bg-zinc-200 text-zinc-800 font-semibold rounded-md hover:bg-zinc-300 transition-colors">
                         Cancel
                     </button>
-                     <button type="submit" disabled={loading} className="px-6 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 disabled:bg-zinc-300 transition-colors">
+                    <button type="submit" disabled={loading} className="px-6 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 disabled:bg-zinc-300 transition-colors">
                         {loading ? 'Submitting...' : 'Submit Request for Approval'}
                     </button>
                 </div>
