@@ -49,8 +49,33 @@ export const updateUserProfile = async (
   id: string,
   updates: Partial<Omit<CreateUserPayload, 'password'>> & { status?: UserStatus }
 ): Promise<{ error: string | null; user: User | null }> => {
-  const updateEndpoint =
-    import.meta.env.VITE_UPDATE_USER_ENDPOINT ?? '/api/update-user';
+  const resolveUpdateEndpoint = () => {
+    const configured = import.meta.env.VITE_UPDATE_USER_ENDPOINT?.trim();
+    const fallback = '/api/update-user';
+
+    if (!configured) return fallback;
+
+    if (typeof window !== 'undefined') {
+      const isLocalHost =
+        window.location.hostname === 'localhost' ||
+        window.location.hostname === '127.0.0.1';
+      const configuredIsLocal =
+        configured.includes('localhost') || configured.includes('127.0.0.1');
+
+      if (!isLocalHost && configuredIsLocal) {
+        // Prevent shipping a localhost override to production builds.
+        return fallback;
+      }
+    }
+
+    if (configured.startsWith('http') || configured.startsWith('/')) {
+      return configured;
+    }
+
+    return fallback;
+  };
+
+  const updateEndpoint = resolveUpdateEndpoint();
 
   try {
     const response = await fetch(updateEndpoint, {

@@ -107,12 +107,11 @@ const CommentSection: React.FC<CommentSectionProps> = ({ workflowId, user }) => 
     fetchComments();
   }, [fetchComments]);
 
-  const handlePostComment = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newComment.trim()) return;
+  const handlePostComment = async () => {
+    const trimmedComment = newComment.trim();
+    if (!trimmedComment || isPosting) return;
     setIsPosting(true);
     try {
-      const trimmedComment = newComment.trim();
       let shouldFallbackToSupabase = false;
 
       if (!apiAvailable || !COMMENTS_ENDPOINT) {
@@ -162,7 +161,7 @@ const CommentSection: React.FC<CommentSectionProps> = ({ workflowId, user }) => 
       if (isEndpointMissing || err instanceof TypeError) {
         setApiAvailable(false);
         try {
-          await postCommentViaSupabase(newComment.trim());
+          await postCommentViaSupabase(trimmedComment);
           setNewComment('');
           await fetchComments();
           return;
@@ -199,7 +198,12 @@ const CommentSection: React.FC<CommentSectionProps> = ({ workflowId, user }) => 
           </div>
         ))}
       </div>
-      <form onSubmit={handlePostComment} className="flex items-start space-x-3">
+      <div className="flex items-start space-x-3" onKeyDown={(e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+          e.preventDefault();
+          handlePostComment();
+        }
+      }}>
         <textarea
           value={newComment}
           onChange={(e) => setNewComment(e.target.value)}
@@ -209,13 +213,14 @@ const CommentSection: React.FC<CommentSectionProps> = ({ workflowId, user }) => 
           disabled={isPosting}
         />
         <button
-          type="submit"
+          type="button"
+          onClick={handlePostComment}
           disabled={isPosting || !newComment.trim()}
           className="px-4 py-2 bg-zinc-200 text-zinc-800 font-semibold rounded-md hover:bg-zinc-300 disabled:bg-zinc-100 disabled:cursor-not-allowed transition-colors"
         >
           {isPosting ? '...' : 'Post'}
         </button>
-      </form>
+      </div>
     </div>
   );
 };

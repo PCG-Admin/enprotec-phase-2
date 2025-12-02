@@ -4,6 +4,7 @@ import { User, WorkflowRequest, WorkflowStatus } from '../../types';
 import { supabase } from '../../supabase/client';
 import CommentSection from '../CommentSection';
 import { sendApprovalWebhook } from '../../services/webhookService';
+import SignaturePad from '../SignaturePad';
 
 interface GateReleaseFormProps {
     user: User;
@@ -30,6 +31,49 @@ const GateReleaseForm: React.FC<GateReleaseFormProps> = ({ user, workflow, onSuc
     const [documents, setDocuments] = useState<File[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [driverSignature, setDriverSignature] = useState<string | null>(null);
+    const [gateSignature, setGateSignature] = useState<string | null>(null);
+    const draftKey = workflow ? `enprotec:gateReleaseDraft:${workflow.id}` : null;
+
+    const clearDraft = () => {
+        if (!draftKey) return;
+        if (typeof window !== 'undefined') {
+            window.localStorage.removeItem(draftKey);
+        }
+    };
+
+    const loadDraft = () => {
+        if (!draftKey || typeof window === 'undefined') return;
+        const raw = window.localStorage.getItem(draftKey);
+        if (!raw) return;
+        try {
+            const parsed = JSON.parse(raw) as {
+                driverName?: string;
+                vehicleReg?: string;
+                driverSignature?: string | null;
+                gateSignature?: string | null;
+            };
+            if (parsed.driverName) setDriverName(parsed.driverName);
+            if (parsed.vehicleReg) setVehicleReg(parsed.vehicleReg);
+            if (parsed.driverSignature !== undefined) setDriverSignature(parsed.driverSignature);
+            if (parsed.gateSignature !== undefined) setGateSignature(parsed.gateSignature);
+        } catch (err) {
+            console.warn('Failed to load draft gate release form', err);
+        }
+    };
+
+    const saveDraft = () => {
+        if (!draftKey || typeof window === 'undefined') return;
+        const payload = {
+            driverName,
+            vehicleReg,
+            driverSignature,
+            gateSignature,
+            savedAt: new Date().toISOString(),
+        };
+        window.localStorage.setItem(draftKey, JSON.stringify(payload));
+        alert('Draft saved. You can reopen this form to continue.');
+    };
 
     useEffect(() => {
         if (workflow) {
@@ -40,11 +84,35 @@ const GateReleaseForm: React.FC<GateReleaseFormProps> = ({ user, workflow, onSuc
             setVehicleReg('');
         }
         setDocuments([]);
+        setDriverSignature(null);
+        setGateSignature(null);
+        loadDraft();
     }, [workflow]);
 
     const handleDocumentChange = (event: React.ChangeEvent<HTMLInputElement>) => {
         const files = event.target.files ? Array.from(event.target.files) : [];
         setDocuments(files);
+    };
+
+    const dataUrlToBlob = async (dataUrl: string) => {
+        const response = await fetch(dataUrl);
+        return await response.blob();
+    };
+
+    const uploadSignature = async (fileName: string, dataUrl: string) => {
+        if (!workflow) throw new Error('No workflow available for signature upload.');
+        const blob = await dataUrlToBlob(dataUrl);
+        const path = `signatures/gate-release/${workflow.id}/${fileName}`;
+        const { error: uploadError } = await supabase.storage
+            .from('Enprotec')
+            .upload(path, blob, { contentType: 'image/png', upsert: true });
+
+        if (uploadError) {
+            throw new Error(uploadError.message);
+        }
+
+        const { data } = supabase.storage.from('Enprotec').getPublicUrl(path);
+        return { url: data.publicUrl, fileName };
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -58,6 +126,10 @@ const GateReleaseForm: React.FC<GateReleaseFormProps> = ({ user, workflow, onSuc
         const trimmedReg = vehicleReg.trim();
         if (!trimmedDriver || !trimmedReg) {
             setError('Please provide both driver name and vehicle registration.');
+            return;
+        }
+        if (!driverSignature || !gateSignature) {
+            setError('Please capture both driver and gate/security signatures.');
             return;
         }
 
@@ -78,6 +150,11 @@ const GateReleaseForm: React.FC<GateReleaseFormProps> = ({ user, workflow, onSuc
                 uploadedDocs.push({ url: data.publicUrl, fileName: doc.name });
             }
 
+            const signatureUploads = [
+                await uploadSignature('driver-signature.png', driverSignature),
+                await uploadSignature('security-signature.png', gateSignature),
+            ];
+
             const newStatus = WorkflowStatus.DISPATCHED;
             const { error: updateError } = await supabase
                 .from('en_workflow_requests')
@@ -90,11 +167,13 @@ const GateReleaseForm: React.FC<GateReleaseFormProps> = ({ user, workflow, onSuc
 
             if (updateError) throw updateError;
 
-            if (uploadedDocs.length > 0) {
+            const attachments = [...uploadedDocs, ...signatureUploads];
+
+            if (attachments.length > 0) {
                 const { error: attachmentError } = await supabase
                     .from('en_workflow_attachments')
                     .insert(
-                        uploadedDocs.map(doc => ({
+                        attachments.map(doc => ({
                             workflow_request_id: workflow.id,
                             attachment_url: doc.url,
                             file_name: doc.fileName,
@@ -112,6 +191,9 @@ const GateReleaseForm: React.FC<GateReleaseFormProps> = ({ user, workflow, onSuc
             );
             
             setDocuments([]);
+            setDriverSignature(null);
+            setGateSignature(null);
+            clearDraft();
             onSuccess();
 
         } catch (err) {
@@ -193,24 +275,34 @@ const GateReleaseForm: React.FC<GateReleaseFormProps> = ({ user, workflow, onSuc
                  <fieldset className="space-y-4">
                      <legend className="text-lg font-semibold text-zinc-900 border-b border-zinc-200 pb-2 mb-4 w-full">Authorization Signatures</legend>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div>
-                             <FormLabel htmlFor="driverSignature">Driver Signature</FormLabel>
-                            <div className="mt-2 border border-zinc-300 rounded-md bg-zinc-100 h-24 flex items-center justify-center text-zinc-400 text-sm">
-                                Signature Area
-                            </div>
-                        </div>
-                         <div>
-                             <FormLabel htmlFor="gateSignature">Gate/Security Signature</FormLabel>
-                             <div className="mt-2 border border-zinc-300 rounded-md bg-zinc-100 h-24 flex items-center justify-center text-zinc-400 text-sm">
-                                Signature Area
-                             </div>
-                        </div>
+                        <SignaturePad
+                            label="Driver Signature"
+                            value={driverSignature}
+                            onChange={setDriverSignature}
+                            disabled={loading}
+                            height={140}
+                        />
+                        <SignaturePad
+                            label="Gate/Security Signature"
+                            value={gateSignature}
+                            onChange={setGateSignature}
+                            disabled={loading}
+                            height={140}
+                        />
                     </div>
                 </fieldset>
 
                 {error && <p className="text-sm text-red-600">{error}</p>}
 
                 <div className="flex justify-end items-center gap-3 pt-4 border-t border-zinc-200">
+                    <button
+                        type="button"
+                        onClick={saveDraft}
+                        disabled={loading || !workflow}
+                        className="px-4 py-2 bg-white border border-zinc-300 text-zinc-800 font-semibold rounded-md hover:bg-zinc-50 disabled:bg-zinc-200 transition-colors"
+                    >
+                        Save Draft
+                    </button>
                     <button type="button" onClick={onCancel} className="px-6 py-2 bg-zinc-200 text-zinc-800 font-semibold rounded-md hover:bg-zinc-300 transition-colors">
                         Cancel
                     </button>
