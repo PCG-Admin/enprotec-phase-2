@@ -7,17 +7,21 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "migrate:supabase-users": "node --env-file=.env.local ./scripts/migrateUsersToSupabaseAuth.mjs"
+    "migrate:supabase-users": "node --env-file=.env.local ./scripts/migrateUsersToSupabaseAuth.mjs",
+    "sync-users": "node --env-file=.env.local ./scripts/sync-users.js",
+    "sync-users:execute": "node --env-file=.env.local ./scripts/sync-users.js --execute"
   },
   "dependencies": {
     "@google/genai": "^1.15.0",
     "@supabase/supabase-js": "2",
     "@vercel/node": "^3.0.39",
+    "dotenv": "^17.2.3",
     "html2canvas": "^1.4.1",
     "jspdf": "^3.0.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
-    "react-select": "5"
+    "react-select": "5",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",
