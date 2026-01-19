@@ -7,6 +7,10 @@ export interface NextStepInfo {
 
 const NEXT_STEP_MAP: Partial<Record<WorkflowStatus, NextStepInfo>> = {
   [WorkflowStatus.REQUEST_SUBMITTED]: {
+    title: 'Operations Manager Approval',
+    actor: 'Operations Manager',
+  },
+  [WorkflowStatus.AWAITING_OPS_MANAGER]: {
     title: 'Stock Control Review',
     actor: 'Stock Controller',
   },

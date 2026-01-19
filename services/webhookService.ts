@@ -3,6 +3,7 @@ import { supabase } from '../supabase/client';
 
 const WEBHOOK_URL = 'https://hook.eu2.make.com/auxwo8ivmlye45wqwguiwthp78mwpiyc';
 const DENIAL_WEBHOOK_URL = 'https://hook.eu2.make.com/gew2qe8azxbg884131aa8ynd8gcycrmj';
+const DISPATCH_WEBHOOK_URL = 'https://hook.eu2.make.com/av4hh2h3xnnnr18j5twe6eqwbslhu913';
 
 export type WebhookActionType = 'APPROVAL' | 'DECLINE' | 'REJECTION' | 'ACCEPTANCE' | 'SALVAGE_DECISION';
 
@@ -45,7 +46,10 @@ async function getNextApproverEmails(
 
     switch (newStatus) {
         case WorkflowStatus.REQUEST_SUBMITTED:
-            targetRoles = [UserRole.StockController, UserRole.OperationsManager, UserRole.Admin];
+            targetRoles = [UserRole.OperationsManager, UserRole.Admin];
+            break;
+        case WorkflowStatus.AWAITING_OPS_MANAGER:
+            targetRoles = [UserRole.StockController, UserRole.Admin];
             break;
         case WorkflowStatus.AWAITING_EQUIP_MANAGER:
             targetRoles = [UserRole.EquipmentManager, UserRole.OperationsManager, UserRole.Admin];
@@ -293,5 +297,42 @@ export const sendDenialWebhook = async (request: WorkflowRequest, comment: strin
         }
     } catch (err) {
         console.error('Error sending denial webhook:', err);
+    }
+};
+
+export const sendDispatchWebhook = async (request: WorkflowRequest, user: User): Promise<void> => {
+    try {
+        const payload = {
+            requestNumber: request.requestNumber,
+            projectCode: request.projectCode,
+            department: request.department,
+            priority: request.priority,
+            requester: request.requester,
+            items: request.items,
+            dispatchedBy: {
+                name: user.name,
+                email: user.email,
+                role: user.role,
+            },
+            timestamp: new Date().toISOString(),
+            workflowId: request.id,
+            driverName: request.driverName || null,
+            vehicleRegistration: request.vehicleRegistration || null,
+        };
+
+        const response = await fetch(DISPATCH_WEBHOOK_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`Dispatch webhook failed with status ${response.status}: ${errorText}`);
+        } else {
+            console.log(`Dispatch webhook for ${request.requestNumber} sent successfully.`);
+        }
+    } catch (err) {
+        console.error('Error sending dispatch webhook:', err);
     }
 };

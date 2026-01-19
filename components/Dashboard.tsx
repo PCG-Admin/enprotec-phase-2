@@ -54,8 +54,15 @@ const Dashboard: React.FC<DashboardProps> = ({ openForm, navigateTo, user }) => 
       const userStores = user.departments || [];
 
       let workflowsQuery = supabase.from('en_workflows_view').select('*');
+
+      // Filter by department unless the user is an Admin
       if (!isAdmin && userStores.length > 0) {
           workflowsQuery = workflowsQuery.in('department', userStores);
+      }
+
+      // Filter by sites unless the user is an Admin
+      if (!isAdmin && user.sites && user.sites.length > 0) {
+          workflowsQuery = workflowsQuery.in('projectCode', user.sites);
       }
 
       const visibleStores = userStores.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
@@ -91,7 +98,11 @@ const Dashboard: React.FC<DashboardProps> = ({ openForm, navigateTo, user }) => 
   if (error) return <div className="text-center p-8 text-red-600">{error}</div>;
 
   const activeRequests = workflows.length;
-  const pendingApprovals = workflows.filter(w => w.currentStatus === WorkflowStatus.REQUEST_SUBMITTED || w.currentStatus === WorkflowStatus.AWAITING_EQUIP_MANAGER).length;
+  const pendingApprovals = workflows.filter(w =>
+    w.currentStatus === WorkflowStatus.REQUEST_SUBMITTED ||
+    w.currentStatus === WorkflowStatus.AWAITING_OPS_MANAGER ||
+    w.currentStatus === WorkflowStatus.AWAITING_EQUIP_MANAGER
+  ).length;
   const criticalStock = stock.filter(s => s.quantityOnHand < s.minStockLevel).length;
 
   const canRequestStock = [

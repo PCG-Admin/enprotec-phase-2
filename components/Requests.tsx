@@ -75,7 +75,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             let requestsQuery = supabase
                 .from('en_workflows_view')
                 .select('*')
-                .in('currentStatus', [WorkflowStatus.REQUEST_SUBMITTED, WorkflowStatus.REJECTED_AT_DELIVERY]);
+                .in('currentStatus', [WorkflowStatus.REQUEST_SUBMITTED, WorkflowStatus.AWAITING_OPS_MANAGER, WorkflowStatus.REJECTED_AT_DELIVERY]);
 
             // Filter by department unless the user is an Admin
             if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
@@ -85,13 +85,6 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             // Filter by sites unless the user is an Admin
             if (user.role !== UserRole.Admin && user.sites && user.sites.length > 0) {
                 requestsQuery = requestsQuery.in('projectCode', user.sites);
-            }
-
-            // If non-admin user has no sites assigned, they cannot see any requests
-            if (user.role !== UserRole.Admin && (!user.sites || user.sites.length === 0)) {
-                setRequests([]);
-                setLoading(false);
-                return;
             }
 
             const { data, error } = await requestsQuery.order('createdAt', { ascending: true });
@@ -122,8 +115,13 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
         );
     }, [requests, searchTerm]);
 
-    const awaitingApproval = useMemo(
+    const awaitingOpsManager = useMemo(
         () => filteredRequests.filter(req => req.currentStatus === WorkflowStatus.REQUEST_SUBMITTED),
+        [filteredRequests]
+    );
+
+    const awaitingStockController = useMemo(
+        () => filteredRequests.filter(req => req.currentStatus === WorkflowStatus.AWAITING_OPS_MANAGER),
         [filteredRequests]
     );
 
@@ -133,7 +131,10 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
     );
 
     const pendingCount = useMemo(
-        () => requests.filter(req => req.currentStatus === WorkflowStatus.REQUEST_SUBMITTED).length,
+        () => requests.filter(req =>
+            req.currentStatus === WorkflowStatus.REQUEST_SUBMITTED ||
+            req.currentStatus === WorkflowStatus.AWAITING_OPS_MANAGER
+        ).length,
         [requests]
     );
 
@@ -157,16 +158,41 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
         }
 
         try {
-            const newStatus = WorkflowStatus.AWAITING_EQUIP_MANAGER;
+            // Step 1: REQUEST_SUBMITTED -> AWAITING_OPS_MANAGER (Operations Manager only)
+            // Step 2: AWAITING_OPS_MANAGER -> AWAITING_EQUIP_MANAGER (Stock Controller only)
+            let newStatus: WorkflowStatus;
+
+            if (requestToUpdate.currentStatus === WorkflowStatus.REQUEST_SUBMITTED) {
+                // Only Operations Manager can approve at this step
+                if (user.role !== UserRole.OperationsManager && user.role !== UserRole.Admin) {
+                    alert('Only Operations Manager can approve at this step.');
+                    setUpdatingId(null);
+                    return;
+                }
+                newStatus = WorkflowStatus.AWAITING_OPS_MANAGER;
+            } else if (requestToUpdate.currentStatus === WorkflowStatus.AWAITING_OPS_MANAGER) {
+                // Only Stock Controller can approve at this step
+                if (user.role !== UserRole.StockController && user.role !== UserRole.Admin) {
+                    alert('Only Stock Controller can approve at this step.');
+                    setUpdatingId(null);
+                    return;
+                }
+                newStatus = WorkflowStatus.AWAITING_EQUIP_MANAGER;
+            } else {
+                console.error("Unexpected current status:", requestToUpdate.currentStatus);
+                setUpdatingId(null);
+                return;
+            }
+
             const { error } = await supabase
                 .from('en_workflow_requests')
                 .update({ current_status: newStatus })
                 .eq('id', requestId);
-            
+
             if (error) throw error;
-            
+
             await sendApprovalWebhook('APPROVAL', requestToUpdate, newStatus, user);
-            
+
             setRequests(prev => prev.filter(req => req.id !== requestId));
             onDataChange();
         } catch (err) {
@@ -264,7 +290,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             {error && <p className="text-red-600">{error}</p>}
             {actionError && <p className="text-red-600">{actionError}</p>}
             
-            {!loading && !error && awaitingApproval.length === 0 && returnWorkflows.length === 0 && (
+            {!loading && !error && awaitingOpsManager.length === 0 && awaitingStockController.length === 0 && returnWorkflows.length === 0 && (
                  <div className="text-center p-12 bg-white rounded-lg border border-zinc-200">
                     <h2 className="text-xl font-semibold text-zinc-900">{searchTerm ? 'No Results Found' : 'All Clear!'}</h2>
                     <p className="mt-2 text-zinc-500">
@@ -274,9 +300,126 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                     </p>
                 </div>
             )}
-            
+
             <div className="space-y-6">
-                {awaitingApproval.map(req => {
+                {awaitingOpsManager.length > 0 && (
+                    <div className="space-y-4">
+                        <h2 className="text-lg font-semibold text-zinc-900">Awaiting Operations Manager Approval</h2>
+                        {awaitingOpsManager.map(req => {
+                            const attachments = normalizeAttachments(req);
+                            const nextStepInfo = getNextStepInfo(req.currentStatus);
+                            const canApproveThisStep = user.role === UserRole.OperationsManager || user.role === UserRole.Admin;
+                            return (
+                            <Card key={req.id} title="" padding="p-0">
+                                <div className="flex justify-between items-start p-4 border-b border-zinc-200">
+                                    <div className="flex-grow">
+                                        <h3 className="font-bold text-lg text-zinc-900">{req.requestNumber}</h3>
+                                        <div className="grid grid-cols-2 md:grid-cols-5 gap-x-4 gap-y-2 text-sm mt-2">
+                                            <div><div className="text-zinc-500 text-xs">Requester</div><div className="text-zinc-900 font-medium">{req.requester}</div></div>
+                                            <div><div className="text-zinc-500 text-xs">Project/Site</div><div className="text-zinc-900 font-medium">{req.projectCode}</div></div>
+                                            <div><div className="text-zinc-500 text-xs">Store</div><div className="text-zinc-900 font-medium">{req.department}</div></div>
+                                            <div><div className="text-zinc-500 text-xs">Priority</div><div className="text-zinc-900 font-medium">{req.priority}</div></div>
+                                            <div>
+                                                <div className="text-zinc-500 text-xs">Next Step</div>
+                                                <div className="text-zinc-900 font-medium">
+                                                    {nextStepInfo ? nextStepInfo.title : 'N/A'}
+                                                </div>
+                                                {nextStepInfo?.actor && (
+                                                    <p className="text-xs text-zinc-500">{nextStepInfo.actor}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {attachments.length > 0 && (
+                                        <div className="ml-4 flex-shrink-0 flex flex-wrap gap-2 justify-end">
+                                            {attachments.map(att => (
+                                                <a
+                                                    key={att.id}
+                                                    href={att.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex-shrink-0"
+                                                    title={att.fileName || 'View attachment'}
+                                                >
+                                                    <img src={att.url} alt={att.fileName || 'Attachment'} className="h-20 w-20 rounded-md object-cover border border-zinc-200 hover:ring-2 hover:ring-sky-500 transition-all" />
+                                                </a>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                 <div className="overflow-x-auto">
+                                    <table className="min-w-full bg-white text-sm">
+                                        <thead className="bg-zinc-50">
+                                             <tr>
+                                                <th className="py-2 px-4 text-left text-xs font-semibold text-zinc-500 uppercase">Part #</th>
+                                                <th className="py-2 px-4 text-left text-xs font-semibold text-zinc-500 uppercase">Description</th>
+                                                <th className="py-2 px-4 text-center text-xs font-semibold text-zinc-500 uppercase">Qty Requested</th>
+                                                <th className="py-2 px-4 text-center text-xs font-semibold text-zinc-500 uppercase">Qty on Hand (Store)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-200">
+                                             {req.items.map(item => <RequestItemRow key={item.partNumber} item={item} />)}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {expandedCommentId === req.id && (
+                                    <div className="p-4 bg-zinc-50 border-t border-zinc-200">
+                                        <CommentSection workflowId={req.id} user={user} />
+                                    </div>
+                                )}
+
+                                {rejectingId === req.id && (
+                                    <div className="p-4 border-t border-zinc-200 bg-zinc-50">
+                                        <label htmlFor={`rejectionComment-${req.id}`} className="block text-sm font-medium text-zinc-700 mb-2">Reason for Declining (Required)</label>
+                                        <textarea
+                                            id={`rejectionComment-${req.id}`}
+                                            value={rejectionComment}
+                                            onChange={(e) => setRejectionComment(e.target.value)}
+                                            rows={3}
+                                            className="w-full p-2 bg-white border border-zinc-300 rounded-md focus:ring-2 focus:ring-sky-500"
+                                            placeholder="e.g., Insufficient stock, duplicate request..."
+                                        />
+                                        <div className="flex justify-end gap-2 mt-2">
+                                            <button onClick={() => setRejectingId(null)} className="px-3 py-1 text-sm bg-zinc-200 text-zinc-800 rounded hover:bg-zinc-300">Cancel</button>
+                                            <button onClick={() => handleDecline(req.id)} className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700">Confirm Decline</button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="p-4 bg-zinc-50/50 border-t border-zinc-200 flex justify-end items-center gap-3">
+                                    <button onClick={() => toggleComments(req.id)} className="mr-auto text-sm text-zinc-500 hover:text-sky-600 transition-colors font-medium">
+                                        {expandedCommentId === req.id ? 'Hide Comments' : 'Show Comments'}
+                                    </button>
+                                    {canApproveThisStep && (
+                                        <>
+                                            <button
+                                                onClick={() => setRejectingId(req.id)}
+                                                disabled={updatingId === req.id || rejectingId === req.id}
+                                                className="px-4 py-2 bg-red-600 text-white font-semibold rounded-md hover:bg-red-700 disabled:bg-zinc-300 transition-colors"
+                                            >
+                                                Decline
+                                            </button>
+                                            <button
+                                                onClick={() => handleApprove(req.id)}
+                                                disabled={updatingId === req.id || rejectingId === req.id}
+                                                className="px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 disabled:bg-zinc-300 transition-colors"
+                                            >
+                                                {updatingId === req.id ? '...' : 'Approve (Ops Mgr)'}
+                                            </button>
+                                        </>
+                                    )}
+                                </div>
+                            </Card>
+                        )})}
+                    </div>
+                )}
+
+                {awaitingStockController.length > 0 && (
+                    <div className="space-y-4">
+                        <h2 className="text-lg font-semibold text-zinc-900">Awaiting Stock Controller Approval</h2>
+                        {awaitingStockController.map(req => {
                     const attachments = normalizeAttachments(req);
                     const nextStepInfo = getNextStepInfo(req.currentStatus);
                     return (
@@ -382,7 +525,9 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                             )}
                         </div>
                     </Card>
-                )})}
+                        )})}
+                    </div>
+                )}
 
                 {returnWorkflows.length > 0 && (
                     <div className="space-y-4">

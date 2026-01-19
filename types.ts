@@ -54,6 +54,7 @@ export const storeToStoreMap: Record<StoreType, Store> = {
 export enum WorkflowStatus {
   // Core Internal Flow
   REQUEST_SUBMITTED = 'Request Submitted',
+  AWAITING_OPS_MANAGER = 'Awaiting Ops Manager',
   REQUEST_DECLINED = 'Request Declined',
   AWAITING_EQUIP_MANAGER = 'Awaiting Equip. Manager',
   AWAITING_PICKING = 'Awaiting Picking',

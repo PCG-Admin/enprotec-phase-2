@@ -90,7 +90,12 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
 
     switch (currentStatus) {
         case WorkflowStatus.REQUEST_SUBMITTED:
-            if (role === UserRole.StockController || isAdmin || isOpsManager) {
+            if (isOpsManager || isAdmin) {
+                return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_OPS_MANAGER)} disabled={isUpdating}>Approve (Ops Manager)</ActionButton>;
+            }
+            break;
+        case WorkflowStatus.AWAITING_OPS_MANAGER:
+            if (role === UserRole.StockController || isAdmin) {
                 return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_EQUIP_MANAGER)} disabled={isUpdating}>Approve (Stock Controller)</ActionButton>;
             }
             break;

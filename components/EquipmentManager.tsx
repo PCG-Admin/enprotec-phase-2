@@ -66,13 +66,6 @@ const EquipmentManager: React.FC<EquipmentManagerProps> = ({ user, onDataChange 
                 requestsQuery = requestsQuery.in('projectCode', user.sites);
             }
 
-            // If non-admin user has no sites assigned, they cannot see any requests
-            if (user.role !== UserRole.Admin && (!user.sites || user.sites.length === 0)) {
-                setRequests([]);
-                setLoading(false);
-                return;
-            }
-            
             const { data, error } = await requestsQuery.order('createdAt', { ascending: true });
 
             if (error) throw error;

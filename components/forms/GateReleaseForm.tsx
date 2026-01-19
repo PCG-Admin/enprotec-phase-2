@@ -3,7 +3,7 @@ import Card from '../Card';
 import { User, WorkflowRequest, WorkflowStatus } from '../../types';
 import { supabase } from '../../supabase/client';
 import CommentSection from '../CommentSection';
-import { sendApprovalWebhook } from '../../services/webhookService';
+import { sendApprovalWebhook, sendDispatchWebhook } from '../../services/webhookService';
 import SignaturePad from '../SignaturePad';
 
 interface GateReleaseFormProps {
@@ -183,13 +183,19 @@ const GateReleaseForm: React.FC<GateReleaseFormProps> = ({ user, workflow, onSuc
             }
 
             await sendApprovalWebhook(
-                'APPROVAL', 
-                workflow, 
-                newStatus, 
-                user, 
+                'APPROVAL',
+                workflow,
+                newStatus,
+                user,
                 `Dispatched by ${trimmedDriver} in vehicle ${trimmedReg}.`
             );
-            
+
+            // Send dispatch notification webhook
+            await sendDispatchWebhook(
+                { ...workflow, driverName: trimmedDriver, vehicleRegistration: trimmedReg },
+                user
+            );
+
             setDocuments([]);
             setDriverSignature(null);
             setGateSignature(null);
