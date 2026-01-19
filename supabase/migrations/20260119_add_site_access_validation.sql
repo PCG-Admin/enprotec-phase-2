@@ -22,33 +22,37 @@ DECLARE
     v_item jsonb;
     v_user_sites text[];
     v_site_name text;
+    v_user_role text;
 BEGIN
-    -- 0. Validate Site Access
-    -- Get the user's assigned sites from en_users table
-    SELECT sites INTO v_user_sites
+    -- 0. Validate Site Access (Admin users bypass this check)
+    -- Get the user's role and assigned sites from en_users table
+    SELECT role, sites INTO v_user_role, v_user_sites
     FROM public.en_users
     WHERE id = p_requester_id;
 
-    -- Get the site name for the requested site
-    SELECT name INTO v_site_name
-    FROM public.en_sites
-    WHERE id = p_site_id;
+    -- Admin users have access to all sites, skip validation
+    IF v_user_role != 'Admin' THEN
+        -- Get the site name for the requested site
+        SELECT name INTO v_site_name
+        FROM public.en_sites
+        WHERE id = p_site_id;
 
-    -- Check if user has access to this site
-    -- If sites is NULL or empty, user has no site access
-    IF v_user_sites IS NULL OR array_length(v_user_sites, 1) IS NULL THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'You do not have access to any sites. Please contact an administrator.'
-        );
-    END IF;
+        -- Check if user has access to this site
+        -- If sites is NULL or empty, user has no site access
+        IF v_user_sites IS NULL OR array_length(v_user_sites, 1) IS NULL THEN
+            RETURN jsonb_build_object(
+                'success', false,
+                'error', 'You do not have access to any sites. Please contact an administrator.'
+            );
+        END IF;
 
-    -- Check if the requested site is in the user's assigned sites
-    IF NOT (v_site_name = ANY(v_user_sites)) THEN
-        RETURN jsonb_build_object(
-            'success', false,
-            'error', 'You do not have access to request from site: ' || v_site_name || '. Please contact an administrator.'
-        );
+        -- Check if the requested site is in the user's assigned sites
+        IF NOT (v_site_name = ANY(v_user_sites)) THEN
+            RETURN jsonb_build_object(
+                'success', false,
+                'error', 'You do not have access to request from site: ' || v_site_name || '. Please contact an administrator.'
+            );
+        END IF;
     END IF;
 
     -- 1. Create Request

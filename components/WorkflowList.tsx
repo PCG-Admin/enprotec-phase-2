@@ -34,6 +34,11 @@ const WorkflowList: React.FC<WorkflowListProps> = ({ user }) => {
       if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
         query = query.in('department', user.departments);
       }
+
+      // Filter by sites unless the user is an Admin
+      if (user.role !== UserRole.Admin && user.sites && user.sites.length > 0) {
+        query = query.in('projectCode', user.sites);
+      }
       
       const { data, error } = await query.order('createdAt', { ascending: false });
 

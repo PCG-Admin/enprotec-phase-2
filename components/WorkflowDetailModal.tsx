@@ -36,6 +36,7 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasSiteAccess = useMemo(() => {
+    // Admin has access to all sites
     if (user.role === UserRole.Admin) return true;
     const sites = user.sites || [];
     if (!workflow.projectCode || sites.length === 0) return false;

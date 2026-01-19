@@ -48,7 +48,8 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
 
     const hasSiteAccess = useCallback(
         (siteName?: string | null) => {
-            // All users, including Admins, must have sites explicitly assigned
+            // Admin has access to all sites
+            if (user.role === UserRole.Admin) return true;
             const sites = user.sites || [];
             if (!siteName || sites.length === 0) return false;
             return sites.map(s => s.toLowerCase()).includes(siteName.toLowerCase());
@@ -76,17 +77,18 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                 .select('*')
                 .in('currentStatus', [WorkflowStatus.REQUEST_SUBMITTED, WorkflowStatus.REJECTED_AT_DELIVERY]);
 
-            // All users must have departments and sites assigned - no bypasses
-            if (user.departments && user.departments.length > 0) {
+            // Filter by department unless the user is an Admin
+            if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
                 requestsQuery = requestsQuery.in('department', user.departments);
             }
 
-            if (user.sites && user.sites.length > 0) {
+            // Filter by sites unless the user is an Admin
+            if (user.role !== UserRole.Admin && user.sites && user.sites.length > 0) {
                 requestsQuery = requestsQuery.in('projectCode', user.sites);
             }
 
-            // If user has no sites assigned, they cannot see any requests
-            if (!user.sites || user.sites.length === 0) {
+            // If non-admin user has no sites assigned, they cannot see any requests
+            if (user.role !== UserRole.Admin && (!user.sites || user.sites.length === 0)) {
                 setRequests([]);
                 setLoading(false);
                 return;

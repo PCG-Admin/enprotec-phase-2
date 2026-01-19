@@ -33,6 +33,11 @@ const Picking: React.FC<PickingProps> = ({ user, onDataChange, dataVersion }) =>
                 query = query.in('department', user.departments);
             }
 
+            // Filter by sites unless the user is an Admin
+            if (user.role !== UserRole.Admin && user.sites && user.sites.length > 0) {
+                query = query.in('projectCode', user.sites);
+            }
+
             const { data, error } = await query.order('createdAt', { ascending: true });
 
             if (error) throw error;

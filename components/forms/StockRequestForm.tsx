@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Card from '../Card';
-import { User, Priority, WorkflowStatus, WorkflowRequest, Store, Site } from '../../types';
+import { User, Priority, WorkflowStatus, WorkflowRequest, Store, Site, UserRole } from '../../types';
 import { supabase } from '../../supabase/client';
 import Select from 'react-select';
 import { Database } from '../../supabase/database.types';
@@ -102,8 +102,12 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
     const userStores = user.departments || [];
 
     const visibleSites = useMemo(() => {
-        // All users must have sites explicitly assigned to them
-        // No role should bypass site restrictions
+        // Admin has access to all sites
+        if (user.role === UserRole.Admin) {
+            return allActiveSites;
+        }
+
+        // All other users must have sites explicitly assigned
         const userSites = user.sites || [];
 
         // If user has no sites assigned, they cannot request from any site
