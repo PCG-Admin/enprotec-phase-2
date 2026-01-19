@@ -38,7 +38,7 @@ const EquipmentManager: React.FC<EquipmentManagerProps> = ({ user, onDataChange 
 
     const hasSiteAccess = useCallback(
         (siteName?: string | null) => {
-            if (user.role === UserRole.Admin) return true;
+            // All users, including Admins, must have sites explicitly assigned
             const sites = user.sites || [];
             if (!siteName || sites.length === 0) return false;
             return sites.map(s => s.toLowerCase()).includes(siteName.toLowerCase());
@@ -55,13 +55,17 @@ const EquipmentManager: React.FC<EquipmentManagerProps> = ({ user, onDataChange 
                 .select('*')
                 .eq('currentStatus', WorkflowStatus.AWAITING_EQUIP_MANAGER);
 
-            if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
+            // All users must have departments and sites assigned - no bypasses
+            if (user.departments && user.departments.length > 0) {
                 requestsQuery = requestsQuery.in('department', user.departments);
             }
-            if (user.role !== UserRole.Admin && user.sites && user.sites.length > 0) {
+
+            if (user.sites && user.sites.length > 0) {
                 requestsQuery = requestsQuery.in('projectCode', user.sites);
             }
-            if (user.role !== UserRole.Admin && (!user.sites || user.sites.length === 0)) {
+
+            // If user has no sites assigned, they cannot see any requests
+            if (!user.sites || user.sites.length === 0) {
                 setRequests([]);
                 setLoading(false);
                 return;

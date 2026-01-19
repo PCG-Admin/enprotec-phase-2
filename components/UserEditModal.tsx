@@ -36,6 +36,7 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) 
   const [showPassword, setShowPassword] = useState(false);
   const [availableSites, setAvailableSites] = useState<{ value: string; label: string; }[]>([]);
   const [sitesLoading, setSitesLoading] = useState(true);
+  const [selectAllSites, setSelectAllSites] = useState(false);
 
   useEffect(() => {
     const fetchSites = async () => {
@@ -63,6 +64,8 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) 
         departments: user.departments || [],
       });
       setPassword('');
+      // Check if all sites are selected
+      setSelectAllSites((user.sites || []).length === availableSites.length && availableSites.length > 0);
     } else {
       // Reset form for new user
       setFormData({
@@ -73,9 +76,10 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) 
         departments: [],
       });
       setPassword('');
+      setSelectAllSites(false);
     }
     setShowPassword(false);
-  }, [user]);
+  }, [user, availableSites]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -85,6 +89,23 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) 
   const handleMultiSelectChange = (name: 'sites' | 'departments', selectedOptions: any) => {
     const values = selectedOptions ? selectedOptions.map((opt: any) => opt.value) : [];
     setFormData(prev => ({ ...prev, [name]: values }));
+
+    // Update selectAllSites checkbox state when sites change
+    if (name === 'sites') {
+      setSelectAllSites(values.length === availableSites.length && availableSites.length > 0);
+    }
+  };
+
+  const handleSelectAllSitesChange = (checked: boolean) => {
+    setSelectAllSites(checked);
+    if (checked) {
+      // Select all sites
+      const allSiteValues = availableSites.map(site => site.value);
+      setFormData(prev => ({ ...prev, sites: allSiteValues }));
+    } else {
+      // Deselect all sites
+      setFormData(prev => ({ ...prev, sites: [] }));
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -194,7 +215,12 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) 
                     </select>
                 </div>
                  <div>
-                    <label htmlFor="departments" className="block text-sm font-medium text-zinc-700 mb-1">Stores</label>
+                    <label htmlFor="departments" className="block text-sm font-medium text-zinc-700 mb-1">
+                        Assigned Stores/Departments
+                        <span className="text-xs text-zinc-500 ml-1">
+                            ({formData.departments.length} selected)
+                        </span>
+                    </label>
                     <Select
                         id="departments"
                         isMulti
@@ -203,10 +229,27 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) 
                         onChange={(opts) => handleMultiSelectChange('departments', opts)}
                         styles={customSelectStyles}
                         className="w-full text-zinc-900"
+                        placeholder="Select stores/departments..."
                     />
                 </div>
                  <div>
-                    <label htmlFor="sites" className="block text-sm font-medium text-zinc-700 mb-1">Assigned Sites</label>
+                    <div className="flex items-center justify-between mb-2">
+                        <label htmlFor="sites" className="block text-sm font-medium text-zinc-700">
+                            Assigned Sites
+                            <span className="text-xs text-zinc-500 ml-1">
+                                ({formData.sites.length} of {availableSites.length} selected)
+                            </span>
+                        </label>
+                        <label className="flex items-center cursor-pointer">
+                            <input
+                                type="checkbox"
+                                checked={selectAllSites}
+                                onChange={(e) => handleSelectAllSitesChange(e.target.checked)}
+                                className="mr-2 h-4 w-4 text-sky-500 rounded border-zinc-300 focus:ring-sky-500"
+                            />
+                            <span className="text-sm text-zinc-700 font-medium">Select All Sites</span>
+                        </label>
+                    </div>
                     <Select
                         id="sites"
                         isMulti
@@ -216,6 +259,7 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) 
                         onChange={(opts) => handleMultiSelectChange('sites', opts)}
                         styles={customSelectStyles}
                         className="w-full text-zinc-900"
+                        placeholder="Select sites or use 'Select All Sites' above..."
                     />
                 </div>
             </div>
