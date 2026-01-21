@@ -292,8 +292,27 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
             onSuccess();
 
         } catch (err) {
-            setError(err instanceof Error ? err.message : 'An unexpected error occurred.');
-            console.error(err);
+            console.error('Stock intake error:', err);
+
+            // Provide user-friendly error messages
+            let errorMessage = 'Unable to process stock intake. Please try again.';
+
+            if (err instanceof Error) {
+                // Check for specific error types
+                if (err.message.includes('process_stock_intake')) {
+                    errorMessage = 'Stock intake system is currently unavailable. Please contact your administrator.';
+                } else if (err.message.includes('already exists')) {
+                    errorMessage = err.message; // Show the specific part number conflict
+                } else if (err.message.includes('upload failed')) {
+                    errorMessage = 'File upload failed. Please check your file and try again.';
+                } else if (err.message.includes('not found')) {
+                    errorMessage = 'The selected item could not be found. Please refresh and try again.';
+                } else {
+                    errorMessage = err.message;
+                }
+            }
+
+            setError(errorMessage);
         } finally {
             setLoading(false);
         }
