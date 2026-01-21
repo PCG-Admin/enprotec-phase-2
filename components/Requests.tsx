@@ -95,7 +95,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             setRequests(fetched);
 
         } catch (err) {
-            setError('Failed to fetch requests.');
+            setError('Unable to load requests. Please try again.');
             console.error(err);
         } finally {
             setLoading(false);
@@ -196,7 +196,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             setRequests(prev => prev.filter(req => req.id !== requestId));
             onDataChange();
         } catch (err) {
-            alert('Failed to approve request.');
+            alert('Unable to approve this request. Please try again.');
             console.error(err);
         } finally {
             setUpdatingId(null);

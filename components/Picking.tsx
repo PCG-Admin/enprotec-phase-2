@@ -43,7 +43,7 @@ const Picking: React.FC<PickingProps> = ({ user, onDataChange, dataVersion }) =>
             if (error) throw error;
             setRequests((data as unknown as WorkflowRequest[]) || []);
         } catch (err) {
-            setError('Failed to fetch requests for picking.');
+            setError('Unable to load picking requests. Please try again.');
             console.error(err);
         } finally {
             setLoading(false);
@@ -85,7 +85,7 @@ const Picking: React.FC<PickingProps> = ({ user, onDataChange, dataVersion }) =>
             setRequests(prev => prev.filter(req => req.id !== requestId));
             onDataChange();
         } catch (err) {
-            alert('Failed to update request status.');
+            alert('Unable to update request status. Please try again.');
             console.error(err);
         } finally {
             setUpdatingId(null);

@@ -14,6 +14,7 @@ import Deliveries from './components/Deliveries';
 import EquipmentManager from './components/EquipmentManager';
 import RejectedRequests from './components/RejectedRequests';
 import Sites from './components/Sites';
+import Departments from './components/Departments';
 import StockReceipts from './components/StockReceipts';
 import MyDeliveries from './components/MyDeliveries';
 import SalvagePage from './components/SalvagePage';
@@ -88,13 +89,13 @@ const fetchProfileWithTimeout = async (userId: string): Promise<ProfileLoadResul
 
 // Role-Based Access Control Configuration
 const viewPermissions: Record<UserRole, View[]> = {
-  [UserRole.Admin]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores', 'Sites', 'Users', 'Reports', 'StockReports'],
-  [UserRole.OperationsManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores', 'Sites', 'Reports'],
-  [UserRole.EquipmentManager]: ['Dashboard', 'StockReceipts', 'EquipmentManager', 'RejectedRequests', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores', 'Reports'],
-  [UserRole.StockController]: ['Dashboard', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'InspectionReport', 'MyInspections', 'Salvage', 'Stores', 'StockReports'],
-  [UserRole.Storeman]: ['Dashboard', 'Stores', 'Picking'],
-  [UserRole.SiteManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'InspectionReport', 'MyInspections', 'Stores'],
-  [UserRole.ProjectManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'InspectionReport', 'MyInspections', 'Stores'],
+  [UserRole.Admin]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'InspectionReport', 'MyInspections', 'Salvage', 'Stock', 'Sites', 'Stores', 'Users', 'Reports', 'StockReports'],
+  [UserRole.OperationsManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'InspectionReport', 'MyInspections', 'Salvage', 'Stock', 'Sites', 'Reports'],
+  [UserRole.EquipmentManager]: ['Dashboard', 'StockReceipts', 'EquipmentManager', 'RejectedRequests', 'InspectionReport', 'MyInspections', 'Salvage', 'Stock', 'Reports'],
+  [UserRole.StockController]: ['Dashboard', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'InspectionReport', 'MyInspections', 'Salvage', 'Stock', 'StockReports'],
+  [UserRole.Storeman]: ['Dashboard', 'Stock', 'Picking'],
+  [UserRole.SiteManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'InspectionReport', 'MyInspections', 'Stock'],
+  [UserRole.ProjectManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'InspectionReport', 'MyInspections', 'Stock'],
   [UserRole.Driver]: ['Deliveries', 'InspectionReport', 'MyInspections'],
   [UserRole.Security]: ['Deliveries'],
 };
@@ -374,10 +375,12 @@ const App: React.FC = () => {
         return <MyDeliveries user={loggedInUser} onDataChange={triggerRefresh} dataVersion={dataVersion} />;
        case 'Salvage':
         return <SalvagePage user={loggedInUser} />;
-      case 'Stores':
+      case 'Stock':
         return <StockManagement user={loggedInUser} openForm={openForm} />;
       case 'Sites':
         return <Sites />;
+      case 'Stores':
+        return <Departments />;
       case 'Reports':
         return <Reports user={loggedInUser} />;
       case 'StockReports':

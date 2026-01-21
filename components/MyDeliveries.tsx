@@ -39,7 +39,7 @@ const MyDeliveries: React.FC<MyDeliveriesProps> = ({ user, onDataChange, dataVer
             if (error) throw error;
             setRequests((data as unknown as WorkflowRequest[]) || []);
         } catch (err) {
-            setError('Failed to fetch your deliveries.');
+            setError('Unable to load your deliveries. Please try again.');
             console.error(err);
         } finally {
             setLoading(false);
@@ -73,7 +73,7 @@ const MyDeliveries: React.FC<MyDeliveriesProps> = ({ user, onDataChange, dataVer
             setRequests(prev => prev.filter(req => req.id !== requestId));
             onDataChange();
         } catch (err) {
-            alert('Failed to accept delivery.');
+            alert('Unable to accept this delivery. Please try again.');
             console.error(err);
         } finally {
             setUpdatingId(null);
@@ -112,7 +112,7 @@ const MyDeliveries: React.FC<MyDeliveriesProps> = ({ user, onDataChange, dataVer
             setRejectingId(null);
             setRejectionComment('');
         } catch (err) {
-            alert('Failed to reject delivery.');
+            alert('Unable to reject this delivery. Please try again.');
             console.error(err);
         } finally {
             setUpdatingId(null);

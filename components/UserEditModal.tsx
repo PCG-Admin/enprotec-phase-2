@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Select from 'react-select';
 import { User, UserRole, Store, Site } from '../types';
 import { supabase } from '../supabase/client';
+import { fetchActiveDepartments } from '../services/departmentService';
 import EyeIcon from './icons/EyeIcon';
 import EyeOffIcon from './icons/EyeOffIcon';
 
@@ -10,8 +11,6 @@ interface UserEditModalProps {
   onClose: () => void;
   onSave: (user: Partial<User> & { password?: string }) => void;
 }
-
-const departmentOptions = Object.values(Store).map(d => ({ value: d, label: d }));
 
 const customSelectStyles = {
   control: (provided: any, state: any) => ({
@@ -37,6 +36,8 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) 
   const [availableSites, setAvailableSites] = useState<{ value: string; label: string; }[]>([]);
   const [sitesLoading, setSitesLoading] = useState(true);
   const [selectAllSites, setSelectAllSites] = useState(false);
+  const [departmentOptions, setDepartmentOptions] = useState<{ value: string; label: string; }[]>([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(true);
 
   useEffect(() => {
     const fetchSites = async () => {
@@ -51,7 +52,25 @@ const UserEditModal: React.FC<UserEditModalProps> = ({ user, onClose, onSave }) 
         }
         setSitesLoading(false);
     };
+
+    const fetchDepartments = async () => {
+        setDepartmentsLoading(true);
+        console.info('[Supabase] loading department list for user modal');
+        try {
+            const depts = await fetchActiveDepartments();
+            console.info('[Supabase] department list loaded', depts);
+            setDepartmentOptions(depts.map(d => ({ value: d.code, label: d.name })));
+        } catch (err) {
+            console.error('[Supabase] department list error', err);
+            // Fallback to hardcoded enum values if database fetch fails
+            setDepartmentOptions(Object.values(Store).map(d => ({ value: d, label: d })));
+        } finally {
+            setDepartmentsLoading(false);
+        }
+    };
+
     fetchSites();
+    fetchDepartments();
   }, []);
 
   useEffect(() => {

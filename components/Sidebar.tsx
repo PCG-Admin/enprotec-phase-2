@@ -26,13 +26,13 @@ interface SidebarProps {
 }
 
 const viewPermissions: Record<UserRole, View[]> = {
-  [UserRole.Admin]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stores', 'Sites', 'Users', 'Reports', 'StockReports'],
-  [UserRole.OperationsManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stores', 'Sites', 'Reports'],
-  [UserRole.EquipmentManager]: ['Dashboard', 'StockReceipts', 'EquipmentManager', 'RejectedRequests', 'Salvage', 'Stores', 'Reports'],
-  [UserRole.StockController]: ['Dashboard', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'Salvage', 'Stores', 'StockReports'],
-  [UserRole.Storeman]: ['Dashboard', 'Stores', 'Picking'],
-  [UserRole.SiteManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'Stores'],
-  [UserRole.ProjectManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'Stores'],
+  [UserRole.Admin]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stock', 'Sites', 'Stores', 'Users', 'Reports', 'StockReports'],
+  [UserRole.OperationsManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stock', 'Sites', 'Reports'],
+  [UserRole.EquipmentManager]: ['Dashboard', 'StockReceipts', 'EquipmentManager', 'RejectedRequests', 'Salvage', 'Stock', 'Reports'],
+  [UserRole.StockController]: ['Dashboard', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'Salvage', 'Stock', 'StockReports'],
+  [UserRole.Storeman]: ['Dashboard', 'Stock', 'Picking'],
+  [UserRole.SiteManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'Stock'],
+  [UserRole.ProjectManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'Stock'],
   [UserRole.Driver]: ['Deliveries'],
   [UserRole.Security]: ['Deliveries'],
 };
@@ -81,8 +81,9 @@ const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView, co
     { label: 'Deliveries', view: 'Deliveries', icon: <TruckIcon className="w-5 h-5" /> },
     { label: 'My Deliveries', view: 'MyDeliveries', icon: <CheckCircleIcon className="w-5 h-5" /> },
     { label: 'Salvage Store', view: 'Salvage', icon: <WrenchIcon className="w-5 h-5" /> },
-    { label: 'Stores', view: 'Stores', icon: <StoreIcon className="w-5 h-5" /> },
+    { label: 'Stores - Stock', view: 'Stock', icon: <StoreIcon className="w-5 h-5" /> },
     { label: 'Sites', view: 'Sites', icon: <PinIcon className="w-5 h-5" /> },
+    { label: 'Stores - Management', view: 'Stores', icon: <StoreIcon className="w-5 h-5" /> },
     { label: 'Users', view: 'Users', icon: <UsersIcon className="w-5 h-5" /> },
     { label: 'Rejected', view: 'RejectedRequests', icon: <XCircleIcon className="w-5 h-5" /> },
     { label: 'Reports', view: 'Reports', icon: <ReportsIcon className="w-5 h-5" /> },

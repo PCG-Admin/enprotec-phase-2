@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabase/client';
-import { User, UserRole, UserStatus, Store } from '../types';
+import { User, UserRole, UserStatus, Store, Department } from '../types';
 import UserEditModal from './UserEditModal';
 import { createUserViaFunction, updateUserProfile } from '../services/userAdmin';
 import { mapRawUserToUser } from '../services/userProfile';
+import { fetchDepartments } from '../services/departmentService';
 
 const getRoleBadge = (role: UserRole) => {
     const baseClasses = "px-2.5 py-1 text-xs font-medium rounded-full inline-block border";
@@ -37,6 +38,7 @@ const Users: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [departments, setDepartments] = useState<Department[]>([]);
 
     const fetchUsers = async () => {
         setLoading(true);
@@ -60,7 +62,22 @@ const Users: React.FC = () => {
 
     useEffect(() => {
         fetchUsers();
+        loadDepartments();
     }, []);
+
+    const loadDepartments = async () => {
+        try {
+            const depts = await fetchDepartments();
+            setDepartments(depts);
+        } catch (err) {
+            console.error('Failed to load departments:', err);
+        }
+    };
+
+    const getDepartmentName = (code: string): string => {
+        const dept = departments.find(d => d.code === code);
+        return dept ? dept.name : code;
+    };
 
     const filteredUsers = useMemo(() => {
         if (!searchTerm) return users;
@@ -167,19 +184,20 @@ const Users: React.FC = () => {
                                     <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Name</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Role</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Assigned Sites</th>
+                                    <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Assigned Stores</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Status</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider"></th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {loading && (
-                                    <tr><td colSpan={5} className="text-center py-12 px-6 text-zinc-500">Loading users...</td></tr>
+                                    <tr><td colSpan={6} className="text-center py-12 px-6 text-zinc-500">Loading users...</td></tr>
                                 )}
                                 {error && (
-                                    <tr><td colSpan={5} className="text-center py-12 px-6 text-red-600">{error}</td></tr>
+                                    <tr><td colSpan={6} className="text-center py-12 px-6 text-red-600">{error}</td></tr>
                                 )}
                                 {!loading && !error && filteredUsers.length === 0 && (
-                                    <tr><td colSpan={5} className="text-center py-12 px-6 text-zinc-500">{searchTerm ? 'No users match your search.' : 'No users found.'}</td></tr>
+                                    <tr><td colSpan={6} className="text-center py-12 px-6 text-zinc-500">{searchTerm ? 'No users match your search.' : 'No users found.'}</td></tr>
                                 )}
                                 {!loading && !error && filteredUsers.map((user) => (
                                     <tr key={user.id} className="border-b border-zinc-200 hover:bg-zinc-50 transition-colors">
@@ -201,16 +219,29 @@ const Users: React.FC = () => {
                                                 )}
                                             </div>
                                         </td>
+                                        <td className="px-6 py-4">
+                                            <div className="flex flex-wrap gap-1">
+                                                {user.departments && user.departments.length > 0 ? (
+                                                    user.departments.map(deptCode => (
+                                                        <span key={deptCode} className="inline-block bg-sky-100 text-sky-700 rounded-full px-2 py-0.5 text-xs font-medium border border-sky-200">
+                                                            {getDepartmentName(deptCode)}
+                                                        </span>
+                                                    ))
+                                                ) : (
+                                                    <span className="text-zinc-400 text-xs">N/A</span>
+                                                )}
+                                            </div>
+                                        </td>
                                         <td className="px-6 py-4 whitespace-nowrap">{getStatusBadge(user.status)}</td>
                                         <td className="px-6 py-4 whitespace-nowrap text-right space-x-4">
-                                            <button 
+                                            <button
                                                 onClick={() => toggleUserStatus(user)}
                                                 className="text-zinc-500 hover:text-zinc-800 font-medium"
                                                 title={user.status === UserStatus.Active ? 'Deactivate User' : 'Activate User'}
                                             >
                                                 {user.status === UserStatus.Active ? 'Deactivate' : 'Activate'}
                                             </button>
-                                            <button 
+                                            <button
                                                 onClick={() => handleEditUser(user)}
                                                 className="text-sky-600 hover:text-sky-500 font-medium"
                                             >

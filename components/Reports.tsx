@@ -96,7 +96,7 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
       });
       setAnswer(aiResult);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to ask AI.';
+      const message = err instanceof Error ? err.message : 'Unable to process your question. Please try again.';
       setError(message);
       console.error(err);
     } finally {
@@ -112,7 +112,7 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
         </p>
       </Card>
 
-      <Card title="AI-Powered Operational Summary">
+      <Card title="Operational Summary">
         <div className="space-y-4">
             <p className="text-zinc-400">
                 Generate a real-time summary of current workflows and stock levels.
@@ -137,7 +137,7 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
                             Generating...
                         </>
                     ) : (
-                        'Generate AI Summary'
+                        'Generate Summary'
                     )}
                 </button>
                 {error && <div className="p-4 bg-red-50 text-red-700 border border-red-200 rounded-md">{error}</div>}
@@ -152,9 +152,9 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
         </div>
       </Card>
 
-      <Card title="AI Questions">
+      <Card title="Ask Questions">
         <div className="space-y-4">
-          <p className="text-zinc-400">Ask natural-language questions about recent receipts and issues (last 50 of each in your scope).</p>
+          <p className="text-zinc-400">Ask questions about recent receipts and issues (last 50 of each in your scope).</p>
           {!aiAvailable() ? (
             <div className="p-4 bg-amber-50 text-amber-800 border border-amber-200 rounded-md text-sm">
               This assistant is currently unavailable. Please contact your administrator.
@@ -174,7 +174,7 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
                   disabled={isAsking || !question.trim()}
                   className="px-4 py-2 bg-sky-500 text-white font-semibold rounded-md hover:bg-sky-600 disabled:bg-zinc-300"
                 >
-                  {isAsking ? 'Asking...' : 'Ask AI'}
+                  {isAsking ? 'Processing...' : 'Ask Question'}
                 </button>
                 {answer && <span className="text-xs text-zinc-500">Answer generated</span>}
               </div>

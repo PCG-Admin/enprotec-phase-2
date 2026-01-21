@@ -7,10 +7,11 @@ export type View =
   | 'RejectedRequests'
   | 'Picking'
   | 'Deliveries'
-  | 'Stores'
+  | 'Stock'
   | 'Reports'
   | 'Users'
   | 'Sites'
+  | 'Stores'
   | 'MyDeliveries'
   | 'Salvage'
   | 'InspectionReport'
@@ -19,12 +20,24 @@ export type View =
 
 export type FormType = 'PR' | 'GateRelease' | 'StockRequest' | 'EPOD' | 'StockIntake' | 'SalvageBooking' | 'ReturnIntake';
 
+// Keep existing Store enum for backward compatibility during migration
 export enum Store {
     OEM = 'OEM',
     Operations = 'Operations',
     Projects = 'Projects',
     SalvageYard = 'SalvageYard',
     Satellite = 'Satellite'
+}
+
+// New interface for database-driven departments
+export interface Department {
+    id: string;
+    name: string;
+    code: string; // Maps to Store enum value for backward compatibility
+    description: string | null;
+    status: 'Active' | 'Frozen';
+    created_at: string;
+    updated_at: string;
 }
 
 export enum StoreType {

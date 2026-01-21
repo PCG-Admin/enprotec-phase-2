@@ -14,7 +14,9 @@
       "Bash(node --env-file=.env.local scripts/find-duplicates.js:*)",
       "Bash(node:*)",
       "Bash(npm run migrate:supabase-users:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(npx supabase:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }

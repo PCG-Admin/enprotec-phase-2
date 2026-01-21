@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Card from '../Card';
-import { StoreType, User, WorkflowRequest, UserRole, Store, departmentToStoreMap, WorkflowStatus } from '../../types';
+import { StoreType, User, WorkflowRequest, UserRole, Store, departmentToStoreMap, WorkflowStatus, Department } from '../../types';
 import { supabase } from '../../supabase/client';
 import { Database } from '../../supabase/database.types';
 import Select from 'react-select';
 import { stockService } from '../../services/stockService';
+import { fetchActiveDepartments } from '../../services/departmentService';
 
 type StockItemRow = Database['public']['Tables']['en_stock_items']['Row'];
 type InventoryRow = Database['public']['Tables']['en_inventory']['Row'];
@@ -102,15 +103,49 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [availableStores, setAvailableStores] = useState<Department[]>([]);
+    const [storesLoading, setStoresLoading] = useState(true);
 
     const isReturnMode = intakeType === 'return';
 
+    // Fetch available stores from database
+    useEffect(() => {
+        const loadStores = async () => {
+            setStoresLoading(true);
+            try {
+                const departments = await fetchActiveDepartments();
+                setAvailableStores(departments);
+            } catch (err) {
+                console.error('Failed to load stores:', err);
+                setAvailableStores([]);
+            } finally {
+                setStoresLoading(false);
+            }
+        };
+        loadStores();
+    }, []);
+
     const visibleStores = useMemo(() => {
-        if (user.role === UserRole.Admin || !user.departments || user.departments.length === 0) {
-            return Object.values(StoreType);
+        // If stores haven't loaded yet from database, use enum fallback
+        if (availableStores.length === 0) {
+            if (user.role === UserRole.Admin || !user.departments || user.departments.length === 0) {
+                return Object.values(StoreType);
+            }
+            return user.departments.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
         }
-        return user.departments.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
-    }, [user]);
+
+        // Use database stores
+        if (user.role === UserRole.Admin || !user.departments || user.departments.length === 0) {
+            return availableStores.map(dept => dept.code as StoreType);
+        }
+
+        // Filter to user's assigned departments
+        const userDeptCodes = user.departments || [];
+        const filtered = availableStores
+            .filter(dept => userDeptCodes.includes(dept.code as Store))
+            .map(dept => dept.code as StoreType);
+        return [...new Set(filtered)];
+    }, [user, availableStores]);
 
     useEffect(() => {
         if (visibleStores.length === 1 && !isReturnMode) {

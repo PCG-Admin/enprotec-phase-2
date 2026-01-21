@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../supabase/client';
-import { StockItem, StoreType, FormType, User, Store, departmentToStoreMap, UserRole } from '../types';
+import { StockItem, StoreType, FormType, User, Store, departmentToStoreMap, UserRole, Department } from '../types';
+import { fetchActiveDepartments } from '../services/departmentService';
 
 interface StockManagementProps {
     openForm: (type: FormType, context?: any) => void;
@@ -21,14 +22,19 @@ interface MovementRow {
 
 const getStoreBadge = (store: StoreType) => {
     const baseClasses = "px-2 py-1 text-xs font-medium rounded-full inline-block";
-    switch(store) {
-        case StoreType.OEM: return <span className={`${baseClasses} bg-sky-100 text-sky-800`}>{store}</span>
-        case StoreType.Operations: return <span className={`${baseClasses} bg-indigo-100 text-indigo-800`}>{store}</span>
-        case StoreType.Projects: return <span className={`${baseClasses} bg-rose-100 text-rose-800`}>{store}</span>
-        case StoreType.SalvageYard: return <span className={`${baseClasses} bg-amber-100 text-amber-800`}>{store}</span>
-        case StoreType.Satellite: return <span className={`${baseClasses} bg-purple-100 text-purple-800`}>{store}</span>
-        default: return null;
-    }
+
+    // Color mapping for known stores
+    const colorMap: Record<string, string> = {
+        'OEM': 'bg-sky-100 text-sky-800',
+        'Operations': 'bg-indigo-100 text-indigo-800',
+        'Projects': 'bg-rose-100 text-rose-800',
+        'SalvageYard': 'bg-amber-100 text-amber-800',
+        'Satellite': 'bg-purple-100 text-purple-800',
+    };
+
+    // Use mapped color or default for new stores
+    const colorClass = colorMap[store] || 'bg-zinc-100 text-zinc-800';
+    return <span className={`${baseClasses} ${colorClass}`}>{store}</span>;
 }
 
 const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => {
@@ -46,6 +52,8 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
     const [historyLoading, setHistoryLoading] = useState(false);
     const [historyError, setHistoryError] = useState<string | null>(null);
     const historyRef = useRef<HTMLDivElement | null>(null);
+    const [availableStores, setAvailableStores] = useState<Department[]>([]);
+    const [storesLoading, setStoresLoading] = useState(true);
 
     const canReceiveStock = useMemo(
         () =>
@@ -55,13 +63,55 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
         [user.role]
     );
 
+    // Fetch available stores from database
+    useEffect(() => {
+        const loadStores = async () => {
+            setStoresLoading(true);
+            try {
+                const departments = await fetchActiveDepartments();
+                setAvailableStores(departments);
+            } catch (err) {
+                console.error('Failed to load stores:', err);
+                // Fallback to empty array - will use enum if needed
+                setAvailableStores([]);
+            } finally {
+                setStoresLoading(false);
+            }
+        };
+        loadStores();
+    }, []);
+
     const visibleStores = useMemo(() => {
-        if (user.role === 'Admin' || !user.departments || user.departments.length === 0) {
-            return Object.values(StoreType);
+        // If stores haven't loaded yet from database, use enum fallback
+        if (availableStores.length === 0) {
+            if (user.role === 'Admin' || !user.departments || user.departments.length === 0) {
+                return Object.values(StoreType);
+            }
+            const stores = user.departments.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
+            return [...new Set(stores)];
         }
-        const stores = user.departments.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
-        return [...new Set(stores)]; // Remove duplicates
-    }, [user]);
+
+        // Use database stores
+        if (user.role === 'Admin' || !user.departments || user.departments.length === 0) {
+            return availableStores.map(dept => dept.code as StoreType);
+        }
+
+        // Filter to user's assigned departments
+        const userDeptCodes = user.departments;
+        const filtered = availableStores
+            .filter(dept => userDeptCodes.includes(dept.code))
+            .map(dept => dept.code as StoreType);
+        return [...new Set(filtered)];
+    }, [user, availableStores]);
+
+    // Create a mapping from store code to store name
+    const storeCodeToName = useMemo(() => {
+        const mapping: Record<string, string> = {};
+        availableStores.forEach(dept => {
+            mapping[dept.code] = dept.name;
+        });
+        return mapping;
+    }, [availableStores]);
     
     const fetchStock = useCallback(async () => {
         setLoading(true);
@@ -223,12 +273,12 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
                                 key={tab}
                                 onClick={() => setActiveStore(tab)}
                                 className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
-                                    activeStore === tab 
-                                    ? 'bg-sky-500 text-white' 
+                                    activeStore === tab
+                                    ? 'bg-sky-500 text-white'
                                     : 'text-zinc-600 hover:bg-zinc-100'
                                 }`}
                             >
-                                {tab === 'All' ? 'All Stores' : tab}
+                                {tab === 'All' ? 'All Stores' : (storeCodeToName[tab] || tab)}
                             </button>
                         ))}
                     </nav>

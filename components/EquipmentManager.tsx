@@ -73,7 +73,7 @@ const EquipmentManager: React.FC<EquipmentManagerProps> = ({ user, onDataChange 
             setRequests((data as unknown as WorkflowRequest[]) || []);
 
         } catch (err) {
-            setError('Failed to fetch requests for approval.');
+            setError('Unable to load approval requests. Please try again.');
             console.error(err);
         } finally {
             setLoading(false);
@@ -121,7 +121,7 @@ const EquipmentManager: React.FC<EquipmentManagerProps> = ({ user, onDataChange 
             setRequests(prev => prev.filter(req => req.id !== requestId));
             onDataChange();
         } catch (err) {
-            alert('Failed to approve request.');
+            alert('Unable to approve this request. Please try again.');
             console.error(err);
         } finally {
             setUpdatingId(null);
@@ -166,7 +166,7 @@ const EquipmentManager: React.FC<EquipmentManagerProps> = ({ user, onDataChange 
             setRejectionComment('');
             onDataChange();
         } catch (err) {
-            alert('Failed to decline request.');
+            alert('Unable to decline this request. Please try again.');
             console.error(err);
         } finally {
             setUpdatingId(null);

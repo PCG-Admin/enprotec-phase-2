@@ -174,7 +174,7 @@ export default defineConfig(({ mode }) => {
       process.env.INSPECTION_WEBHOOK_URL ?? env.INSPECTION_WEBHOOK_URL;
     return {
       server: {
-        port: 3001,
+        port: 3002,
         host: '0.0.0.0',
       },
       plugins: [react(), createUserDevPlugin(), updateUserDevPlugin(), sendInspectionDevPlugin()],

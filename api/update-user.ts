@@ -26,6 +26,8 @@ const sanitizeArray = (value?: string[] | null): string[] | null => {
 export const handleUpdateUser = async (
   payload: UpdateUserPayload | undefined
 ): Promise<HandlerResult> => {
+  console.log('[UPDATE-USER] Received payload:', JSON.stringify(payload, null, 2));
+
   const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 
@@ -116,6 +118,8 @@ export const handleUpdateUser = async (
     profileUpdates.password = PASSWORD_PLACEHOLDER;
   }
 
+  console.log('[UPDATE-USER] Profile updates to apply:', JSON.stringify(profileUpdates, null, 2));
+
   const { error: profileError, data: profileData } = await supabaseAdmin
     .from('en_users')
     .update(profileUpdates)
@@ -124,12 +128,14 @@ export const handleUpdateUser = async (
     .single();
 
   if (profileError || !profileData) {
+    console.error('[UPDATE-USER] Profile update error:', profileError);
     return {
       status: 500,
       body: { error: profileError?.message ?? 'Failed to update user profile' },
     };
   }
 
+  console.log('[UPDATE-USER] Successfully updated user profile');
   return {
     status: 200,
     body: profileData as Record<string, unknown>,

@@ -21,9 +21,11 @@ const isUserStatus = (value: string): value is UserStatus => {
 
 export const sanitizeStores = (departments: string[] | null): Store[] | null => {
   if (!departments) return null
-  const validStores = Object.values(Store)
+  // IMPORTANT: No longer filter against hardcoded Store enum
+  // We now support dynamic departments from en_departments table
+  // Just ensure it's a valid array and return as-is
   const filtered = departments.filter((dept): dept is Store =>
-    validStores.includes(dept as Store)
+    typeof dept === 'string' && dept.trim().length > 0
   )
   return filtered.length > 0 ? filtered : null
 }

@@ -453,7 +453,7 @@ const maxBar = Math.max(inboundQty, outboundQty, 1);
 
       <div className="bg-white border border-zinc-200 rounded-lg p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-zinc-900">AI Stock Q&A</h2>
+          <h2 className="text-lg font-semibold text-zinc-900">Stock Q&A</h2>
         </div>
         {!aiAvailable() ? (
           <div className="p-4 bg-amber-50 text-amber-800 border border-amber-200 rounded-md text-sm">
@@ -474,7 +474,7 @@ const maxBar = Math.max(inboundQty, outboundQty, 1);
                 disabled={aiLoading || !aiQuestion.trim()}
                 className="px-4 py-2 bg-sky-500 text-white rounded-md hover:bg-sky-600 disabled:bg-zinc-300"
               >
-                {aiLoading ? 'Asking...' : 'Ask AI'}
+                {aiLoading ? 'Processing...' : 'Ask Question'}
               </button>
               {aiAnswer && <span className="text-xs text-zinc-500">Answer generated</span>}
             </div>

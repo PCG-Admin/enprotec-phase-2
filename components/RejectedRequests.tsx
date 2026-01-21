@@ -31,7 +31,7 @@ const RejectedRequests: React.FC<RejectedRequestsProps> = ({ user }) => {
             if (error) throw error;
             setRequests((data as unknown as WorkflowRequest[]) || []);
         } catch (err) {
-            setError('Failed to fetch rejected requests.');
+            setError('Unable to load rejected requests. Please try again.');
             console.error(err);
         } finally {
             setLoading(false);

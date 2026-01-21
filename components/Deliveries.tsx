@@ -104,7 +104,7 @@ const Deliveries: React.FC<DeliveriesProps> = ({ user, openForm, dataVersion }) 
             setDispatched(reqs.filter(r => r.currentStatus === WorkflowStatus.DISPATCHED));
 
         } catch (err) {
-            setError('Failed to fetch delivery requests.');
+            setError('Unable to load delivery requests. Please try again.');
             console.error(err);
         } finally {
             setLoading(false);
