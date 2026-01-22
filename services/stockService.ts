@@ -30,13 +30,19 @@ export interface CreateRequestParams {
     comment: string;
 }
 
+interface RPCResponse {
+    success: boolean;
+    error?: string;
+    [key: string]: any;
+}
+
 export const stockService = {
     /**
      * Process a stock intake (receipt) atomically using a Database RPC function.
      * This prevents race conditions when updating inventory quantities.
      */
     async processStockIntake(params: StockIntakeParams) {
-        const { data, error } = await supabase.rpc('process_stock_intake', {
+        const { data, error } = await (supabase.rpc as any)('process_stock_intake', {
             p_stock_item_id: params.stockItemId,
             p_quantity: params.quantity,
             p_store: params.store,
@@ -52,34 +58,36 @@ export const stockService = {
         if (error) throw error;
 
         // The RPC returns a JSON object with { success: boolean, error?: string }
-        if (data && !data.success) {
-            throw new Error(data.error || 'Stock intake failed');
+        const result = data as RPCResponse;
+        if (result && !result.success) {
+            throw new Error(result.error || 'Stock intake failed');
         }
 
-        return data;
+        return result;
     },
 
     /**
      * Create a new stock request atomically.
      */
     async createStockRequest(params: CreateRequestParams) {
-        const { data, error } = await supabase.rpc('process_stock_request', {
+        const { data, error } = await (supabase.rpc as any)('process_stock_request', {
             p_requester_id: params.requesterId,
             p_request_number: params.requestNumber,
             p_site_id: params.siteId,
             p_department: params.department as unknown as Department, // Cast to match DB enum if needed
             p_priority: params.priority,
-            p_attachment_url: params.attachmentUrl,
             p_items: params.items,
+            p_attachment_url: params.attachmentUrl,
             p_comment: params.comment
         });
 
         if (error) throw error;
 
-        if (data && !data.success) {
-            throw new Error(data.error || 'Request creation failed');
+        const result = data as RPCResponse;
+        if (result && !result.success) {
+            throw new Error(result.error || 'Request creation failed');
         }
 
-        return data;
+        return result;
     }
 };

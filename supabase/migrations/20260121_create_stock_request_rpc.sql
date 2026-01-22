@@ -11,8 +11,8 @@ CREATE OR REPLACE FUNCTION public.process_stock_request(
     p_site_id TEXT,
     p_department TEXT,
     p_priority TEXT,
-    p_attachment_url TEXT DEFAULT NULL,
     p_items JSONB,
+    p_attachment_url TEXT DEFAULT NULL,
     p_comment TEXT DEFAULT NULL
 )
 RETURNS JSON
