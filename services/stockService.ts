@@ -1,5 +1,5 @@
 import { supabase } from '../supabase/client';
-import { StoreType, Priority, Store, Department } from '../types';
+import { StoreType, Priority, Store } from '../types';
 
 export interface StockIntakeParams {
     stockItemId: string;
@@ -128,7 +128,7 @@ export const stockService = {
                 p_requester_id: params.requesterId,
                 p_request_number: params.requestNumber,
                 p_site_id: params.siteId,
-                p_department: params.department as unknown as Department, // Cast to match DB enum if needed
+                p_department: params.department,
                 p_priority: params.priority,
                 p_items: params.items,
                 p_attachment_url: params.attachmentUrl,

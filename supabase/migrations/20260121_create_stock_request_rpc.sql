@@ -87,20 +87,18 @@ BEGIN
         INSERT INTO public.en_workflow_items (
             workflow_request_id,
             stock_item_id,
-            quantity_requested,
-            created_at
+            quantity_requested
         ) VALUES (
             v_workflow_id,
             v_stock_item_id,
-            v_quantity,
-            NOW()
+            v_quantity
         );
     END LOOP;
 
     -- Add initial comment if provided
     IF p_comment IS NOT NULL AND p_comment != '' THEN
         INSERT INTO public.en_workflow_comments (
-            workflow_id,
+            workflow_request_id,
             user_id,
             comment_text,
             created_at

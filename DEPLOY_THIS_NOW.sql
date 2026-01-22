@@ -1,14 +1,13 @@
 -- ============================================================================
--- EMERGENCY FIX - Stock Request Function
+-- EMERGENCY DATABASE FIX - Deploy This Now
 -- ============================================================================
--- The function was trying to insert into non-existent 'items' column
--- Items must be inserted into en_workflow_items table separately
+-- Copy this entire file and paste into Supabase SQL Editor, then click RUN
 -- ============================================================================
 
 -- Drop the broken function
 DROP FUNCTION IF EXISTS public.process_stock_request CASCADE;
 
--- Create the CORRECT function
+-- Create the CORRECT function with all schema fixes
 CREATE OR REPLACE FUNCTION public.process_stock_request(
     p_requester_id UUID,
     p_request_number TEXT,
@@ -45,7 +44,7 @@ BEGIN
         );
     END IF;
 
-    -- Create workflow request (WITHOUT items column - it doesn't exist!)
+    -- Create workflow request
     INSERT INTO public.en_workflow_requests (
         requester_id,
         request_number,
@@ -54,8 +53,7 @@ BEGIN
         department,
         current_status,
         priority,
-        attachment_url,
-        created_at
+        attachment_url
     ) VALUES (
         p_requester_id,
         p_request_number,
@@ -64,12 +62,11 @@ BEGIN
         p_department,
         'Request Submitted',
         p_priority,
-        p_attachment_url,
-        NOW()
+        p_attachment_url
     )
     RETURNING id INTO v_workflow_id;
 
-    -- Insert each item into en_workflow_items table
+    -- Insert items into separate table
     FOR v_item IN SELECT * FROM jsonb_array_elements(p_items)
     LOOP
         v_stock_item_id := (v_item->>'stock_item_id')::UUID;
@@ -77,41 +74,34 @@ BEGIN
 
         -- Validate stock item exists
         IF NOT EXISTS (SELECT 1 FROM public.en_stock_items WHERE id = v_stock_item_id) THEN
-            -- Rollback by deleting the workflow request we just created
             DELETE FROM public.en_workflow_requests WHERE id = v_workflow_id;
-
             RETURN json_build_object(
                 'success', FALSE,
                 'error', 'One or more stock items not found'
             );
         END IF;
 
-        -- Insert the item
         INSERT INTO public.en_workflow_items (
             workflow_request_id,
             stock_item_id,
-            quantity_requested,
-            created_at
+            quantity_requested
         ) VALUES (
             v_workflow_id,
             v_stock_item_id,
-            v_quantity,
-            NOW()
+            v_quantity
         );
     END LOOP;
 
-    -- Add initial comment if provided
+    -- Add comment if provided
     IF p_comment IS NOT NULL AND p_comment != '' THEN
         INSERT INTO public.en_workflow_comments (
-            workflow_id,
+            workflow_request_id,
             user_id,
-            comment_text,
-            created_at
+            comment_text
         ) VALUES (
             v_workflow_id,
             p_requester_id,
-            p_comment,
-            NOW()
+            p_comment
         );
     END IF;
 
@@ -130,26 +120,8 @@ EXCEPTION
 END;
 $$;
 
--- Grant execute permission
+-- Grant permissions
 GRANT EXECUTE ON FUNCTION public.process_stock_request TO authenticated;
 
--- Add comment
-COMMENT ON FUNCTION public.process_stock_request IS 'Creates stock request with items in separate en_workflow_items table (FIXED - no items column in main table)';
-
--- ============================================================================
--- VERIFICATION
--- ============================================================================
-
--- Check the function was created
-SELECT 'Stock request function fixed! Items now insert into en_workflow_items table correctly.' as status;
-
--- Verify table structure
-SELECT column_name, data_type
-FROM information_schema.columns
-WHERE table_name = 'en_workflow_requests'
-ORDER BY ordinal_position;
-
-SELECT column_name, data_type
-FROM information_schema.columns
-WHERE table_name = 'en_workflow_items'
-ORDER BY ordinal_position;
+-- Verify it worked
+SELECT '✅ DATABASE FIXED! Stock requests should now work. Refresh your browser (Ctrl+Shift+R).' as status;

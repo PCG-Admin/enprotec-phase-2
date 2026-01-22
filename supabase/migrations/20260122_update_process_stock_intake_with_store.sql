@@ -69,7 +69,7 @@ BEGIN
         stock_item_id,
         quantity_received,
         received_by_id,
-        received_at,
+        -- OPTIMIZED: removed received_at (has DEFAULT)
         delivery_note_po,
         comments,
         attachment_url,
@@ -78,7 +78,7 @@ BEGIN
         p_stock_item_id,
         p_quantity,
         p_received_by_id,
-        NOW(),
+        -- OPTIMIZED: removed NOW()
         p_delivery_note,
         p_comments,
         p_attachment_url,
@@ -114,4 +114,4 @@ $$;
 GRANT EXECUTE ON FUNCTION public.process_stock_intake TO authenticated;
 
 -- Add comment
-COMMENT ON FUNCTION public.process_stock_intake IS 'Atomically processes stock intake/receipt without triggering stock movements. Now includes store in receipt record.';
+COMMENT ON FUNCTION public.process_stock_intake IS 'Atomically processes stock intake/receipt without triggering stock movements. Includes store in receipt record. OPTIMIZED: removed unnecessary received_at (has DEFAULT).';
