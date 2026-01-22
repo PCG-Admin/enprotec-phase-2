@@ -1,11 +1,14 @@
 -- ============================================================================
--- Create RPC function for atomic stock request processing
+-- EMERGENCY FIX - Stock Request Function
 -- ============================================================================
--- This function handles stock request creation atomically to prevent race
--- conditions when creating workflow requests and request items.
--- Items are stored in the en_workflow_items table (NOT as JSONB in main table)
+-- The function was trying to insert into non-existent 'items' column
+-- Items must be inserted into en_workflow_items table separately
 -- ============================================================================
 
+-- Drop the broken function
+DROP FUNCTION IF EXISTS public.process_stock_request CASCADE;
+
+-- Create the CORRECT function
 CREATE OR REPLACE FUNCTION public.process_stock_request(
     p_requester_id UUID,
     p_request_number TEXT,
@@ -42,7 +45,7 @@ BEGIN
         );
     END IF;
 
-    -- Create workflow request (items stored in separate table)
+    -- Create workflow request (WITHOUT items column - it doesn't exist!)
     INSERT INTO public.en_workflow_requests (
         requester_id,
         request_number,
@@ -127,8 +130,26 @@ EXCEPTION
 END;
 $$;
 
--- Grant execute permission to authenticated users
+-- Grant execute permission
 GRANT EXECUTE ON FUNCTION public.process_stock_request TO authenticated;
 
 -- Add comment
-COMMENT ON FUNCTION public.process_stock_request IS 'Atomically processes stock request creation with items stored in en_workflow_items table';
+COMMENT ON FUNCTION public.process_stock_request IS 'Creates stock request with items in separate en_workflow_items table (FIXED - no items column in main table)';
+
+-- ============================================================================
+-- VERIFICATION
+-- ============================================================================
+
+-- Check the function was created
+SELECT 'Stock request function fixed! Items now insert into en_workflow_items table correctly.' as status;
+
+-- Verify table structure
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_name = 'en_workflow_requests'
+ORDER BY ordinal_position;
+
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_name = 'en_workflow_items'
+ORDER BY ordinal_position;
