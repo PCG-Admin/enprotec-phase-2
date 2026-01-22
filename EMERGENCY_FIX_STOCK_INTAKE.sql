@@ -1,13 +1,29 @@
 -- ============================================================================
--- Create RPC function for atomic stock intake processing
+-- EMERGENCY FIX - Run this IMMEDIATELY in Supabase SQL Editor
 -- ============================================================================
--- This function handles stock receipts atomically to prevent race conditions
--- when updating inventory quantities.
+-- This will aggressively remove ALL triggers and recreate the stock intake function
 -- ============================================================================
 
--- Drop old version if exists
-DROP FUNCTION IF EXISTS public.process_stock_intake(UUID, INTEGER, TEXT, TEXT, UUID, TEXT, TEXT, TEXT, BOOLEAN, UUID);
+-- STEP 1: Find and drop ALL triggers on en_inventory and en_stock_receipts
+DO $$
+DECLARE
+    r RECORD;
+BEGIN
+    FOR r IN
+        SELECT trigger_name, event_object_table
+        FROM information_schema.triggers
+        WHERE event_object_schema = 'public'
+        AND event_object_table IN ('en_inventory', 'en_stock_receipts')
+    LOOP
+        EXECUTE format('DROP TRIGGER IF EXISTS %I ON public.%I CASCADE', r.trigger_name, r.event_object_table);
+        RAISE NOTICE 'Dropped trigger: % on %', r.trigger_name, r.event_object_table;
+    END LOOP;
+END $$;
 
+-- STEP 2: Drop ALL versions of process_stock_intake
+DROP FUNCTION IF EXISTS public.process_stock_intake CASCADE;
+
+-- STEP 3: Create the working function
 CREATE OR REPLACE FUNCTION public.process_stock_intake(
     p_stock_item_id UUID,
     p_quantity INTEGER,
@@ -27,26 +43,17 @@ AS $$
 DECLARE
     v_inventory_id UUID;
     v_receipt_id UUID;
-    v_part_number TEXT;
-    v_description TEXT;
-    v_current_quantity INTEGER;
 BEGIN
-    -- Get stock item details
-    SELECT part_number, description
-    INTO v_part_number, v_description
-    FROM public.en_stock_items
-    WHERE id = p_stock_item_id;
-
-    IF NOT FOUND THEN
+    -- Validate stock item exists
+    IF NOT EXISTS (SELECT 1 FROM public.en_stock_items WHERE id = p_stock_item_id) THEN
         RETURN json_build_object(
             'success', FALSE,
             'error', 'Stock item not found'
         );
     END IF;
 
-    -- Find or create inventory record for this stock item + store combination
-    SELECT id, quantity_on_hand
-    INTO v_inventory_id, v_current_quantity
+    -- Find or create inventory record
+    SELECT id INTO v_inventory_id
     FROM public.en_inventory
     WHERE stock_item_id = p_stock_item_id AND store = p_store;
 
@@ -60,17 +67,16 @@ BEGIN
         ) VALUES (
             p_stock_item_id,
             p_store,
-            p_location,
+            COALESCE(NULLIF(p_location, ''), 'General'),
             p_quantity
         )
         RETURNING id INTO v_inventory_id;
     ELSE
-        -- Update existing inventory record
+        -- Update existing inventory
         UPDATE public.en_inventory
         SET
             quantity_on_hand = quantity_on_hand + p_quantity,
-            location = COALESCE(NULLIF(p_location, ''), location), -- Update location only if provided
-            updated_at = NOW()
+            location = COALESCE(NULLIF(p_location, ''), location)
         WHERE id = v_inventory_id;
     END IF;
 
@@ -82,7 +88,8 @@ BEGIN
         received_at,
         delivery_note_po,
         comments,
-        attachment_url
+        attachment_url,
+        store
     ) VALUES (
         p_stock_item_id,
         p_quantity,
@@ -90,11 +97,12 @@ BEGIN
         NOW(),
         p_delivery_note,
         p_comments,
-        p_attachment_url
+        p_attachment_url,
+        p_store
     )
     RETURNING id INTO v_receipt_id;
 
-    -- If this is a return from a rejected delivery, update the workflow status
+    -- Handle returns
     IF p_is_return AND p_return_workflow_id IS NOT NULL THEN
         UPDATE public.en_workflow_requests
         SET current_status = 'Completed'
@@ -117,8 +125,8 @@ EXCEPTION
 END;
 $$;
 
--- Grant execute permission to authenticated users
+-- Grant permissions
 GRANT EXECUTE ON FUNCTION public.process_stock_intake TO authenticated;
 
--- Add comment
-COMMENT ON FUNCTION public.process_stock_intake IS 'Atomically processes stock intake/receipt, updating inventory and creating receipt record';
+-- Verify the fix
+SELECT 'Stock intake function created successfully!' as status;

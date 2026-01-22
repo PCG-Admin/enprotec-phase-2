@@ -1,14 +1,18 @@
 -- ============================================================================
--- Create RPC function for atomic stock intake processing
--- ============================================================================
--- This function handles stock receipts atomically to prevent race conditions
--- when updating inventory quantities.
+-- COMPLETE FIX for Stock Intake - Removes conflicting triggers and functions
 -- ============================================================================
 
--- Drop old version if exists
-DROP FUNCTION IF EXISTS public.process_stock_intake(UUID, INTEGER, TEXT, TEXT, UUID, TEXT, TEXT, TEXT, BOOLEAN, UUID);
+-- Step 1: Drop any triggers that might be causing issues with stock_movements
+DROP TRIGGER IF EXISTS trg_inventory_stock_movement ON public.en_inventory CASCADE;
+DROP TRIGGER IF EXISTS trg_receipt_stock_movement ON public.en_stock_receipts CASCADE;
+DROP TRIGGER IF EXISTS update_stock_movement_on_inventory_change ON public.en_inventory CASCADE;
 
-CREATE OR REPLACE FUNCTION public.process_stock_intake(
+-- Step 2: Drop old versions of the function
+DROP FUNCTION IF EXISTS public.process_stock_intake(UUID, INTEGER, TEXT, TEXT, UUID, TEXT, TEXT, TEXT, BOOLEAN, UUID) CASCADE;
+DROP FUNCTION IF EXISTS public.process_stock_intake CASCADE;
+
+-- Step 3: Create the clean, working stock intake function
+CREATE FUNCTION public.process_stock_intake(
     p_stock_item_id UUID,
     p_quantity INTEGER,
     p_store TEXT,
@@ -27,26 +31,17 @@ AS $$
 DECLARE
     v_inventory_id UUID;
     v_receipt_id UUID;
-    v_part_number TEXT;
-    v_description TEXT;
-    v_current_quantity INTEGER;
 BEGIN
-    -- Get stock item details
-    SELECT part_number, description
-    INTO v_part_number, v_description
-    FROM public.en_stock_items
-    WHERE id = p_stock_item_id;
-
-    IF NOT FOUND THEN
+    -- Validate stock item exists
+    IF NOT EXISTS (SELECT 1 FROM public.en_stock_items WHERE id = p_stock_item_id) THEN
         RETURN json_build_object(
             'success', FALSE,
             'error', 'Stock item not found'
         );
     END IF;
 
-    -- Find or create inventory record for this stock item + store combination
-    SELECT id, quantity_on_hand
-    INTO v_inventory_id, v_current_quantity
+    -- Find or create inventory record
+    SELECT id INTO v_inventory_id
     FROM public.en_inventory
     WHERE stock_item_id = p_stock_item_id AND store = p_store;
 
@@ -60,17 +55,16 @@ BEGIN
         ) VALUES (
             p_stock_item_id,
             p_store,
-            p_location,
+            COALESCE(NULLIF(p_location, ''), 'General'),
             p_quantity
         )
         RETURNING id INTO v_inventory_id;
     ELSE
-        -- Update existing inventory record
+        -- Update existing inventory
         UPDATE public.en_inventory
         SET
             quantity_on_hand = quantity_on_hand + p_quantity,
-            location = COALESCE(NULLIF(p_location, ''), location), -- Update location only if provided
-            updated_at = NOW()
+            location = COALESCE(NULLIF(p_location, ''), location)
         WHERE id = v_inventory_id;
     END IF;
 
@@ -94,13 +88,14 @@ BEGIN
     )
     RETURNING id INTO v_receipt_id;
 
-    -- If this is a return from a rejected delivery, update the workflow status
+    -- Handle returns
     IF p_is_return AND p_return_workflow_id IS NOT NULL THEN
         UPDATE public.en_workflow_requests
         SET current_status = 'Completed'
         WHERE id = p_return_workflow_id;
     END IF;
 
+    -- Return success with details
     RETURN json_build_object(
         'success', TRUE,
         'inventory_id', v_inventory_id,
@@ -117,8 +112,8 @@ EXCEPTION
 END;
 $$;
 
--- Grant execute permission to authenticated users
+-- Grant permissions
 GRANT EXECUTE ON FUNCTION public.process_stock_intake TO authenticated;
 
 -- Add comment
-COMMENT ON FUNCTION public.process_stock_intake IS 'Atomically processes stock intake/receipt, updating inventory and creating receipt record';
+COMMENT ON FUNCTION public.process_stock_intake IS 'Atomically processes stock intake/receipt without triggering stock movements';
