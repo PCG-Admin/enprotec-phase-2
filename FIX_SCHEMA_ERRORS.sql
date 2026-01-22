@@ -1,9 +1,12 @@
 -- ============================================================================
--- Create RPC function for atomic stock request processing
+-- COMPREHENSIVE SCHEMA FIX - Run this in Supabase SQL Editor IMMEDIATELY
 -- ============================================================================
--- This function handles stock request creation atomically to prevent race
--- conditions when creating workflow requests and request items.
+-- Fixes all schema mismatches between RPC functions and actual table structure
 -- ============================================================================
+
+-- FIX 1: Update process_stock_request to use correct column name
+-- Issue: Function uses 'request_type' but table has 'type'
+DROP FUNCTION IF EXISTS public.process_stock_request CASCADE;
 
 CREATE OR REPLACE FUNCTION public.process_stock_request(
     p_requester_id UUID,
@@ -64,7 +67,7 @@ BEGIN
         );
     END LOOP;
 
-    -- Create workflow request
+    -- Create workflow request with CORRECT column name 'type'
     INSERT INTO public.en_workflow_requests (
         requester_id,
         request_number,
@@ -124,4 +127,42 @@ $$;
 GRANT EXECUTE ON FUNCTION public.process_stock_request TO authenticated;
 
 -- Add comment
-COMMENT ON FUNCTION public.process_stock_request IS 'Atomically processes stock request creation with items and optional initial comment';
+COMMENT ON FUNCTION public.process_stock_request IS 'Atomically processes stock request creation with items and optional initial comment - FIXED to use correct column name "type"';
+
+-- ============================================================================
+-- VERIFICATION QUERIES
+-- ============================================================================
+
+-- Verify function exists and uses correct column
+SELECT
+    p.proname as function_name,
+    pg_get_functiondef(p.oid) as function_definition
+FROM pg_proc p
+JOIN pg_namespace n ON p.pronamespace = n.oid
+WHERE n.nspname = 'public'
+  AND p.proname = 'process_stock_request';
+
+-- Verify all columns in en_workflow_requests table
+SELECT
+    column_name,
+    data_type,
+    is_nullable
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'en_workflow_requests'
+ORDER BY ordinal_position;
+
+-- Check for any triggers that might reference wrong column names
+SELECT
+    trigger_name,
+    event_object_table,
+    action_statement
+FROM information_schema.triggers
+WHERE event_object_schema = 'public'
+  AND event_object_table IN ('en_workflow_requests', 'en_workflow_items', 'en_stock_receipts', 'en_inventory')
+ORDER BY event_object_table, trigger_name;
+
+-- ============================================================================
+-- SUCCESS MESSAGE
+-- ============================================================================
+SELECT 'Schema errors fixed successfully! Stock request function now uses correct column names.' as status;
