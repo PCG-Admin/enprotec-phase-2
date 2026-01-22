@@ -75,7 +75,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             let requestsQuery = supabase
                 .from('en_workflows_view')
                 .select('*')
-                .in('currentStatus', [WorkflowStatus.REQUEST_SUBMITTED, WorkflowStatus.AWAITING_OPS_MANAGER, WorkflowStatus.REJECTED_AT_DELIVERY]);
+                .in('currentStatus', [WorkflowStatus.REQUEST_SUBMITTED, WorkflowStatus.AWAITING_OPS_MANAGER, WorkflowStatus.AWAITING_STOCK_CONTROLLER, WorkflowStatus.REJECTED_AT_DELIVERY]);
 
             // Filter by department unless the user is an Admin
             if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
@@ -121,7 +121,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
     );
 
     const awaitingStockController = useMemo(
-        () => filteredRequests.filter(req => req.currentStatus === WorkflowStatus.AWAITING_OPS_MANAGER),
+        () => filteredRequests.filter(req => req.currentStatus === WorkflowStatus.AWAITING_STOCK_CONTROLLER),
         [filteredRequests]
     );
 
@@ -133,7 +133,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
     const pendingCount = useMemo(
         () => requests.filter(req =>
             req.currentStatus === WorkflowStatus.REQUEST_SUBMITTED ||
-            req.currentStatus === WorkflowStatus.AWAITING_OPS_MANAGER
+            req.currentStatus === WorkflowStatus.AWAITING_STOCK_CONTROLLER
         ).length,
         [requests]
     );
@@ -158,8 +158,9 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
         }
 
         try {
-            // Step 1: REQUEST_SUBMITTED -> AWAITING_OPS_MANAGER (Operations Manager only)
-            // Step 2: AWAITING_OPS_MANAGER -> AWAITING_EQUIP_MANAGER (Stock Controller only)
+            // Correct workflow order:
+            // Step 1: REQUEST_SUBMITTED -> AWAITING_STOCK_CONTROLLER (Ops Manager approves)
+            // Step 2: AWAITING_OPS_MANAGER -> AWAITING_STOCK_CONTROLLER (if this status is used)
             let newStatus: WorkflowStatus;
 
             if (requestToUpdate.currentStatus === WorkflowStatus.REQUEST_SUBMITTED) {
@@ -169,7 +170,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                     setUpdatingId(null);
                     return;
                 }
-                newStatus = WorkflowStatus.AWAITING_OPS_MANAGER;
+                newStatus = WorkflowStatus.AWAITING_STOCK_CONTROLLER;
             } else if (requestToUpdate.currentStatus === WorkflowStatus.AWAITING_OPS_MANAGER) {
                 // Only Stock Controller can approve at this step
                 if (user.role !== UserRole.StockController && user.role !== UserRole.Admin) {
@@ -177,7 +178,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                     setUpdatingId(null);
                     return;
                 }
-                newStatus = WorkflowStatus.AWAITING_EQUIP_MANAGER;
+                newStatus = WorkflowStatus.AWAITING_STOCK_CONTROLLER;
             } else {
                 console.error("Unexpected current status:", requestToUpdate.currentStatus);
                 setUpdatingId(null);

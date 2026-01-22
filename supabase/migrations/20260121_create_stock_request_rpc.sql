@@ -9,7 +9,7 @@
 CREATE OR REPLACE FUNCTION public.process_stock_request(
     p_requester_id UUID,
     p_request_number TEXT,
-    p_site_id TEXT,
+    p_site_id UUID,
     p_department TEXT,
     p_priority TEXT,
     p_items JSONB,
@@ -51,8 +51,7 @@ BEGIN
         department,
         current_status,
         priority,
-        attachment_url,
-        created_at
+        attachment_url
     ) VALUES (
         p_requester_id,
         p_request_number,
@@ -60,9 +59,8 @@ BEGIN
         p_site_id,
         p_department,
         'Request Submitted',
-        p_priority,
-        p_attachment_url,
-        NOW()
+        p_priority::priority_level,
+        p_attachment_url
     )
     RETURNING id INTO v_workflow_id;
 
@@ -100,13 +98,11 @@ BEGIN
         INSERT INTO public.en_workflow_comments (
             workflow_request_id,
             user_id,
-            comment_text,
-            created_at
+            comment_text
         ) VALUES (
             v_workflow_id,
             p_requester_id,
-            p_comment,
-            NOW()
+            p_comment
         );
     END IF;
 
