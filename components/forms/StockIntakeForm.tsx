@@ -232,10 +232,10 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
                     .from('en_stock_items')
                     .select('id')
                     .eq('part_number', partNumber)
-                    .single();
+                    .maybeSingle();
 
+                if (fetchError) throw fetchError;
                 if (existingPart) throw new Error(`Part number "${partNumber}" already exists in the system. Use the 'Existing Part' option instead.`);
-                if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
 
                 const { data: newStockItem, error: insertError } = await supabase
                     .from('en_stock_items')

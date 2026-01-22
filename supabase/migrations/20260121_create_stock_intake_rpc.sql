@@ -42,7 +42,7 @@ BEGIN
     END IF;
 
     -- Find or create inventory record for this stock item + store combination
-    SELECT id, quantity
+    SELECT id, quantity_on_hand
     INTO v_inventory_id, v_current_quantity
     FROM public.en_inventory
     WHERE stock_item_id = p_stock_item_id AND store = p_store;
@@ -53,7 +53,7 @@ BEGIN
             stock_item_id,
             store,
             location,
-            quantity
+            quantity_on_hand
         ) VALUES (
             p_stock_item_id,
             p_store,
@@ -65,7 +65,7 @@ BEGIN
         -- Update existing inventory record
         UPDATE public.en_inventory
         SET
-            quantity = quantity + p_quantity,
+            quantity_on_hand = quantity_on_hand + p_quantity,
             location = COALESCE(NULLIF(p_location, ''), location), -- Update location only if provided
             updated_at = NOW()
         WHERE id = v_inventory_id;
@@ -108,7 +108,7 @@ BEGIN
         'success', TRUE,
         'inventory_id', v_inventory_id,
         'receipt_id', v_receipt_id,
-        'new_quantity', (SELECT quantity FROM public.en_inventory WHERE id = v_inventory_id)
+        'new_quantity', (SELECT quantity_on_hand FROM public.en_inventory WHERE id = v_inventory_id)
     );
 
 EXCEPTION

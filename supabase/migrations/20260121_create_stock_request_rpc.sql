@@ -42,7 +42,7 @@ BEGIN
         SELECT
             si.part_number,
             si.description,
-            COALESCE(SUM(inv.quantity), 0)
+            COALESCE(SUM(inv.quantity_on_hand), 0)
         INTO v_part_number, v_description, v_quantity_on_hand
         FROM public.en_stock_items si
         LEFT JOIN public.en_inventory inv ON inv.stock_item_id = si.id
