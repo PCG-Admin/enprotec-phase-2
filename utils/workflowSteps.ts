@@ -10,17 +10,17 @@ const NEXT_STEP_MAP: Partial<Record<WorkflowStatus, NextStepInfo>> = {
     title: 'Operations Manager Approval',
     actor: 'Operations Manager',
   },
-  [WorkflowStatus.AWAITING_OPS_MANAGER]: {
-    title: 'Stock Control Review',
-    actor: 'Stock Controller',
-  },
-  [WorkflowStatus.AWAITING_EQUIP_MANAGER]: {
+  [WorkflowStatus.STOCK_CONTROLLER_APPROVAL]: {
     title: 'Equipment Manager Approval',
     actor: 'Equipment Manager',
   },
-  [WorkflowStatus.AWAITING_PICKING]: {
+  [WorkflowStatus.AWAITING_EQUIP_MANAGER]: {
     title: 'Picking & Loading',
-    actor: 'Stores Team',
+    actor: 'Storeman',
+  },
+  [WorkflowStatus.AWAITING_PICKING]: {
+    title: 'Gate Release & Dispatch',
+    actor: 'Security / Driver',
   },
   [WorkflowStatus.PICKED_AND_LOADED]: {
     title: 'Gate Release & Dispatch',
@@ -28,7 +28,7 @@ const NEXT_STEP_MAP: Partial<Record<WorkflowStatus, NextStepInfo>> = {
   },
   [WorkflowStatus.DISPATCHED]: {
     title: 'Delivery Confirmation (EPOD)',
-    actor: 'Driver / Site',
+    actor: 'Driver / Site Manager',
   },
   [WorkflowStatus.EPOD_CONFIRMED]: {
     title: 'Requester Acceptance',
