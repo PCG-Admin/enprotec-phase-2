@@ -86,36 +86,42 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
     const { role } = user;
     const { currentStatus } = workflow;
     const isAdmin = role === UserRole.Admin;
-    const isOpsManager = role === UserRole.OperationsManager;
 
+    // STRICT ROLE CHECKS - Only correct role for each step (+ Admin override)
     switch (currentStatus) {
         case WorkflowStatus.REQUEST_SUBMITTED:
-            if (isOpsManager || isAdmin) {
+            // ONLY Ops Manager can approve initial request
+            if (role === UserRole.OperationsManager || isAdmin) {
                 return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_OPS_MANAGER)} disabled={isUpdating}>Approve (Ops Manager)</ActionButton>;
             }
             break;
         case WorkflowStatus.AWAITING_OPS_MANAGER:
+            // ONLY Stock Controller can approve after Ops Manager
             if (role === UserRole.StockController || isAdmin) {
                 return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_EQUIP_MANAGER)} disabled={isUpdating}>Approve (Stock Controller)</ActionButton>;
             }
             break;
         case WorkflowStatus.AWAITING_EQUIP_MANAGER:
-             if (role === UserRole.EquipmentManager || isAdmin || isOpsManager) {
+            // ONLY Equipment Manager can approve equipment
+            if (role === UserRole.EquipmentManager || isAdmin) {
                 return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_PICKING)} disabled={isUpdating}>Approve (Equip. Manager)</ActionButton>;
             }
             break;
         case WorkflowStatus.AWAITING_PICKING:
-             if (role === UserRole.StockController || isAdmin || isOpsManager) {
+            // ONLY Stock Controller or Storeman can mark as picked
+            if (role === UserRole.StockController || role === UserRole.Storeman || isAdmin) {
                 return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.PICKED_AND_LOADED)} disabled={isUpdating}>Mark as Picked & Loaded</ActionButton>;
             }
             break;
         case WorkflowStatus.PICKED_AND_LOADED:
-             if (role === UserRole.Security || role === UserRole.Driver || isAdmin || isOpsManager) {
+            // ONLY Security or Driver can dispatch
+            if (role === UserRole.Security || role === UserRole.Driver || isAdmin) {
                 return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.DISPATCHED)} disabled={isUpdating}>Confirm Gate Release & Dispatch</ActionButton>;
             }
             break;
         case WorkflowStatus.DISPATCHED:
-             if (role === UserRole.Driver || role === UserRole.SiteManager || isAdmin || isOpsManager) {
+            // ONLY Driver or Site Manager can confirm EPOD
+            if (role === UserRole.Driver || role === UserRole.SiteManager || isAdmin) {
                 return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.EPOD_CONFIRMED)} disabled={isUpdating}>Confirm Delivery (EPOD)</ActionButton>;
             }
             break;

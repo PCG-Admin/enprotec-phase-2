@@ -53,7 +53,9 @@ const Dashboard: React.FC<DashboardProps> = ({ openForm, navigateTo, user }) => 
       const isAdmin = user.role === UserRole.Admin;
       const userStores = user.departments || [];
 
-      let workflowsQuery = supabase.from('en_workflows_view').select('*');
+      let workflowsQuery = supabase.from('en_workflows_view').select('*')
+          .order('createdAt', { ascending: false })
+          .limit(10); // PERFORMANCE: Only load 10 most recent for dashboard
 
       // Filter by department unless the user is an Admin
       if (!isAdmin && userStores.length > 0) {
@@ -66,7 +68,8 @@ const Dashboard: React.FC<DashboardProps> = ({ openForm, navigateTo, user }) => 
       }
 
       const visibleStores = userStores.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
-      let stockQuery = supabase.from('en_stock_view').select('*');
+      let stockQuery = supabase.from('en_stock_view').select('*')
+          .limit(200); // PERFORMANCE: Only load subset for metrics calculation
       if (!isAdmin && visibleStores.length > 0) {
           stockQuery = stockQuery.in('store', visibleStores);
       }

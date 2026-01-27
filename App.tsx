@@ -91,13 +91,13 @@ const fetchProfileWithTimeout = async (userId: string): Promise<ProfileLoadResul
 const viewPermissions: Record<UserRole, View[]> = {
   [UserRole.Admin]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'InspectionReport', 'MyInspections', 'Salvage', 'Stock', 'Sites', 'Stores', 'Users', 'Reports', 'StockReports'],
   [UserRole.OperationsManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'InspectionReport', 'MyInspections', 'Salvage', 'Stock', 'Sites', 'Reports'],
-  [UserRole.EquipmentManager]: ['Dashboard', 'StockReceipts', 'EquipmentManager', 'RejectedRequests', 'InspectionReport', 'MyInspections', 'Salvage', 'Stock', 'Reports'],
-  [UserRole.StockController]: ['Dashboard', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'InspectionReport', 'MyInspections', 'Salvage', 'Stock', 'StockReports'],
-  [UserRole.Storeman]: ['Dashboard', 'Stock', 'Picking'],
+  [UserRole.EquipmentManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'EquipmentManager', 'RejectedRequests', 'InspectionReport', 'MyInspections', 'Salvage', 'Stock', 'Reports'],
+  [UserRole.StockController]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'InspectionReport', 'MyInspections', 'Salvage', 'Stock', 'StockReports'],
+  [UserRole.Storeman]: ['Dashboard', 'Workflows', 'Stock', 'Picking'],
   [UserRole.SiteManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'InspectionReport', 'MyInspections', 'Stock'],
   [UserRole.ProjectManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'InspectionReport', 'MyInspections', 'Stock'],
-  [UserRole.Driver]: ['Deliveries', 'InspectionReport', 'MyInspections'],
-  [UserRole.Security]: ['Deliveries'],
+  [UserRole.Driver]: ['Dashboard', 'Workflows', 'Deliveries', 'InspectionReport', 'MyInspections'],
+  [UserRole.Security]: ['Dashboard', 'Workflows', 'Deliveries'],
 };
 
 const getDefaultViewForRole = (role: UserRole): View => {

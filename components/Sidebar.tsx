@@ -28,13 +28,13 @@ interface SidebarProps {
 const viewPermissions: Record<UserRole, View[]> = {
   [UserRole.Admin]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stock', 'Sites', 'Stores', 'Users', 'Reports', 'StockReports'],
   [UserRole.OperationsManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stock', 'Sites', 'Reports'],
-  [UserRole.EquipmentManager]: ['Dashboard', 'StockReceipts', 'EquipmentManager', 'RejectedRequests', 'Salvage', 'Stock', 'Reports'],
-  [UserRole.StockController]: ['Dashboard', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'Salvage', 'Stock', 'StockReports'],
-  [UserRole.Storeman]: ['Dashboard', 'Stock', 'Picking'],
+  [UserRole.EquipmentManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'EquipmentManager', 'RejectedRequests', 'Salvage', 'Stock', 'Reports'],
+  [UserRole.StockController]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'RejectedRequests', 'Picking', 'Salvage', 'Stock', 'StockReports'],
+  [UserRole.Storeman]: ['Dashboard', 'Workflows', 'Stock', 'Picking'],
   [UserRole.SiteManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'Stock'],
   [UserRole.ProjectManager]: ['Dashboard', 'Workflows', 'Requests', 'MyDeliveries', 'Deliveries', 'Stock'],
-  [UserRole.Driver]: ['Deliveries'],
-  [UserRole.Security]: ['Deliveries'],
+  [UserRole.Driver]: ['Dashboard', 'Workflows', 'Deliveries'],
+  [UserRole.Security]: ['Dashboard', 'Workflows', 'Deliveries'],
 };
 
 const NavItem: React.FC<{

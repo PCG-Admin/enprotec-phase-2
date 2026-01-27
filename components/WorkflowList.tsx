@@ -23,12 +23,20 @@ const WorkflowList: React.FC<WorkflowListProps> = ({ user }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowRequest | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const pageSize = 50;
 
   const fetchWorkflows = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      let query = supabase.from('en_workflows_view').select('*');
+      const from = (page - 1) * pageSize;
+      const to = from + pageSize - 1;
+
+      let query = supabase.from('en_workflows_view').select('*', { count: 'exact' })
+          .order('createdAt', { ascending: false })
+          .range(from, to); // PERFORMANCE: Pagination
 
       // Filter by department unless the user is an Admin
       if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
@@ -39,18 +47,19 @@ const WorkflowList: React.FC<WorkflowListProps> = ({ user }) => {
       if (user.role !== UserRole.Admin && user.sites && user.sites.length > 0) {
         query = query.in('projectCode', user.sites);
       }
-      
-      const { data, error } = await query.order('createdAt', { ascending: false });
+
+      const { data, error, count } = await query;
 
       if (error) throw error;
       setWorkflows((data as unknown as WorkflowRequest[]) || []);
+      setTotalCount(count || 0);
     } catch (err) {
       setError('Failed to fetch workflows.');
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, page]);
 
   useEffect(() => {
     fetchWorkflows();
@@ -118,6 +127,32 @@ const WorkflowList: React.FC<WorkflowListProps> = ({ user }) => {
               ))}
             </tbody>
           </table>
+          {workflows.length > 0 && (
+            <div className="flex items-center justify-between px-6 py-4 border-t border-zinc-200">
+              <div className="text-sm text-zinc-700">
+                Showing {(page - 1) * pageSize + 1}-{Math.min(page * pageSize, totalCount)} of {totalCount} workflows
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="px-3 py-1 rounded-md border border-zinc-300 text-zinc-700 disabled:text-zinc-400 disabled:border-zinc-200 disabled:cursor-not-allowed bg-white hover:bg-zinc-50"
+                >
+                  Previous
+                </button>
+                <span className="text-xs text-zinc-500">
+                  Page {page} of {Math.max(1, Math.ceil(totalCount / pageSize))}
+                </span>
+                <button
+                  onClick={() => setPage(p => p + 1)}
+                  disabled={page * pageSize >= totalCount}
+                  className="px-3 py-1 rounded-md border border-zinc-300 text-zinc-700 disabled:text-zinc-400 disabled:border-zinc-200 disabled:cursor-not-allowed bg-white hover:bg-zinc-50"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
       {selectedWorkflow && (
