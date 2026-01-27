@@ -75,7 +75,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             let requestsQuery = supabase
                 .from('en_workflows_view')
                 .select('*')
-                .in('currentStatus', [WorkflowStatus.REQUEST_SUBMITTED, WorkflowStatus.AWAITING_OPS_MANAGER, WorkflowStatus.STOCK_CONTROLLER_APPROVAL, WorkflowStatus.REJECTED_AT_DELIVERY]);
+                .in('currentStatus', [WorkflowStatus.REQUEST_SUBMITTED, WorkflowStatus.AWAITING_OPS_MANAGER, WorkflowStatus.STOCK_CONTROLLER_APPROVAL, WorkflowStatus.REJECTED_AT_DELIVERY, WorkflowStatus.DISPATCHED]);
 
             // Filter by department unless the user is an Admin
             if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
@@ -130,6 +130,14 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
         [filteredRequests]
     );
 
+    const awaitingEPOD = useMemo(
+        () => filteredRequests.filter(req =>
+            req.currentStatus === WorkflowStatus.DISPATCHED &&
+            req.requester_id === user.id
+        ),
+        [filteredRequests, user.id]
+    );
+
     const pendingCount = useMemo(
         () => requests.filter(req =>
             req.currentStatus === WorkflowStatus.REQUEST_SUBMITTED ||
@@ -141,6 +149,14 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
     const returnCount = useMemo(
         () => requests.filter(req => req.currentStatus === WorkflowStatus.REJECTED_AT_DELIVERY).length,
         [requests]
+    );
+
+    const epodCount = useMemo(
+        () => requests.filter(req =>
+            req.currentStatus === WorkflowStatus.DISPATCHED &&
+            req.requester_id === user.id
+        ).length,
+        [requests, user.id]
     );
 
     const handleApprove = async (requestId: string) => {
@@ -165,20 +181,8 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             let newStatus: WorkflowStatus;
 
             if (requestToUpdate.currentStatus === WorkflowStatus.REQUEST_SUBMITTED) {
-                // Only Operations Manager can approve at this step
-                if (user.role !== UserRole.OperationsManager && user.role !== UserRole.Admin) {
-                    alert('Only Operations Manager can approve at this step.');
-                    setUpdatingId(null);
-                    return;
-                }
                 newStatus = WorkflowStatus.STOCK_CONTROLLER_APPROVAL;
             } else if (requestToUpdate.currentStatus === WorkflowStatus.STOCK_CONTROLLER_APPROVAL) {
-                // Only Stock Controller can approve at this step
-                if (user.role !== UserRole.StockController && user.role !== UserRole.Admin) {
-                    alert('Only Stock Controller can approve at this step.');
-                    setUpdatingId(null);
-                    return;
-                }
                 newStatus = WorkflowStatus.AWAITING_EQUIP_MANAGER;
             } else {
                 console.error("Unexpected current status:", requestToUpdate.currentStatus);
@@ -191,15 +195,18 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                 .update({ current_status: newStatus })
                 .eq('id', requestId);
 
-            if (error) throw error;
+            if (error) {
+                console.error('Database error:', error);
+                throw error;
+            }
 
             await sendApprovalWebhook('APPROVAL', requestToUpdate, newStatus, user);
 
             setRequests(prev => prev.filter(req => req.id !== requestId));
             onDataChange();
         } catch (err) {
-            alert('Unable to approve this request. Please try again.');
-            console.error(err);
+            alert('Unable to approve this request. Please check console for details.');
+            console.error('Approval error:', err);
         } finally {
             setUpdatingId(null);
         }
@@ -249,7 +256,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             setUpdatingId(null);
         }
     };
-    
+
     const toggleComments = (requestId: string) => {
         setExpandedCommentId(currentId => currentId === requestId ? null : requestId);
     };
@@ -264,6 +271,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                             ? 'No new requests awaiting review.'
                             : `${pendingCount} ${pendingCount === 1 ? 'request' : 'requests'} awaiting stock control review.`}
                         {returnCount > 0 && ` ${returnCount} ${returnCount === 1 ? 'rejected delivery' : 'rejected deliveries'} ready to book back into stock.`}
+                        {epodCount > 0 && ` ${epodCount} ${epodCount === 1 ? 'delivery' : 'deliveries'} awaiting your confirmation.`}
                     </p>
                 </div>
                 <div className="flex items-center gap-4 w-full md:w-auto">
@@ -292,13 +300,13 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             {error && <p className="text-red-600">{error}</p>}
             {actionError && <p className="text-red-600">{actionError}</p>}
             
-            {!loading && !error && awaitingOpsManager.length === 0 && awaitingStockController.length === 0 && returnWorkflows.length === 0 && (
+            {!loading && !error && awaitingOpsManager.length === 0 && awaitingStockController.length === 0 && returnWorkflows.length === 0 && awaitingEPOD.length === 0 && (
                  <div className="text-center p-12 bg-white rounded-lg border border-zinc-200">
                     <h2 className="text-xl font-semibold text-zinc-900">{searchTerm ? 'No Results Found' : 'All Clear!'}</h2>
                     <p className="mt-2 text-zinc-500">
                         {searchTerm
                             ? 'Your search did not match any pending requests or returns.'
-                            : 'There are no requests awaiting review and no rejected deliveries to process.'}
+                            : 'There are no requests awaiting review, no rejected deliveries to process, and no deliveries awaiting your confirmation.'}
                     </p>
                 </div>
             )}
@@ -424,6 +432,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                         {awaitingStockController.map(req => {
                     const attachments = normalizeAttachments(req);
                     const nextStepInfo = getNextStepInfo(req.currentStatus);
+                    const canApproveThisStep = user.role === UserRole.StockController || user.role === UserRole.Admin;
                     return (
                     <Card key={req.id} title="" padding="p-0">
                         <div className="flex justify-between items-start p-4 border-b border-zinc-200">
@@ -507,7 +516,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                             <button onClick={() => toggleComments(req.id)} className="mr-auto text-sm text-zinc-500 hover:text-sky-600 transition-colors font-medium">
                                 {expandedCommentId === req.id ? 'Hide Comments' : 'Show Comments'}
                             </button>
-                            {canApprove && (
+                            {canApproveThisStep && (
                                 <>
                                     <button
                                         onClick={() => setRejectingId(req.id)}
@@ -643,6 +652,83 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                                 <div className="p-4 bg-zinc-50/50 border-t border-zinc-200 flex justify-between items-center gap-3">
                                     <button onClick={() => toggleComments(req.id)} className="text-sm text-zinc-500 hover:text-sky-600 transition-colors font-medium">
                                         {expandedCommentId === req.id ? 'Hide Comments' : 'Show Comments'}
+                                    </button>
+                                </div>
+                            </Card>
+                        )})}
+                    </div>
+                )}
+
+                {awaitingEPOD.length > 0 && (
+                    <div className="space-y-4">
+                        <h2 className="text-lg font-semibold text-zinc-900">Awaiting Your EPOD Confirmation</h2>
+                        {awaitingEPOD.map(req => {
+                            const attachments = normalizeAttachments(req);
+                            const nextStepInfo = getNextStepInfo(req.currentStatus);
+                            return (
+                            <Card key={req.id} title="" padding="p-0">
+                                <div className="flex justify-between items-start p-4 border-b border-zinc-200">
+                                    <div className="flex-grow">
+                                        <h3 className="font-bold text-lg text-zinc-900">{req.requestNumber}</h3>
+                                        <div className="grid grid-cols-2 md:grid-cols-5 gap-x-4 gap-y-2 text-sm mt-2">
+                                            <div><div className="text-zinc-500 text-xs">Requester</div><div className="text-zinc-900 font-medium">{req.requester}</div></div>
+                                            <div><div className="text-zinc-500 text-xs">Project/Site</div><div className="text-zinc-900 font-medium">{req.projectCode}</div></div>
+                                            <div><div className="text-zinc-500 text-xs">Store</div><div className="text-zinc-900 font-medium">{req.department}</div></div>
+                                            <div><div className="text-zinc-500 text-xs">Priority</div><div className="text-zinc-900 font-medium">{req.priority}</div></div>
+                                            <div>
+                                                <div className="text-zinc-500 text-xs">Status</div>
+                                                <div className="text-zinc-900 font-medium">Dispatched - Awaiting EPOD</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {attachments.length > 0 && (
+                                        <div className="ml-4 flex-shrink-0 flex flex-wrap gap-2 justify-end">
+                                            {attachments.map(att => (
+                                                <a
+                                                    key={att.id}
+                                                    href={att.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex-shrink-0"
+                                                    title={att.fileName || 'View attachment'}
+                                                >
+                                                    <img src={att.url} alt={att.fileName || 'Attachment'} className="h-20 w-20 rounded-md object-cover border border-zinc-200 hover:ring-2 hover:ring-sky-500 transition-all" />
+                                                </a>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="overflow-x-auto">
+                                    <table className="min-w-full bg-white text-sm">
+                                        <thead className="bg-zinc-50">
+                                            <tr>
+                                                <th className="py-2 px-4 text-left text-xs font-semibold text-zinc-500 uppercase">Part #</th>
+                                                <th className="py-2 px-4 text-left text-xs font-semibold text-zinc-500 uppercase">Description</th>
+                                                <th className="py-2 px-4 text-center text-xs font-semibold text-zinc-500 uppercase">Qty Requested</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-zinc-200">
+                                            {req.items.map(item => <RequestItemRow key={item.partNumber} item={item} />)}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                {expandedCommentId === req.id && (
+                                    <div className="p-4 bg-zinc-50 border-t border-zinc-200">
+                                        <CommentSection workflowId={req.id} user={user} />
+                                    </div>
+                                )}
+
+                                <div className="p-4 bg-zinc-50/50 border-t border-zinc-200 flex justify-end items-center gap-3">
+                                    <button onClick={() => toggleComments(req.id)} className="mr-auto text-sm text-zinc-500 hover:text-sky-600 transition-colors font-medium">
+                                        {expandedCommentId === req.id ? 'Hide Comments' : 'Show Comments'}
+                                    </button>
+                                    <button
+                                        onClick={() => openForm('EPOD', req)}
+                                        className="px-4 py-2 bg-green-600 text-white font-semibold rounded-md hover:bg-green-700 transition-colors"
+                                    >
+                                        Confirm Delivery (EPOD)
                                     </button>
                                 </div>
                             </Card>

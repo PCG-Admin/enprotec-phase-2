@@ -1,9 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { WorkflowRequest, Priority, User, UserRole, WorkflowStatus, WorkflowAttachment } from '../types';
 import WorkflowStatusIndicator from './WorkflowStatusIndicator';
 import { supabase } from '../supabase/client';
 import CommentSection from './CommentSection';
 import { sendApprovalWebhook } from '../services/webhookService';
+import { getActorsForWorkflow, getActorDescription } from '../utils/workflowActors';
 
 interface WorkflowDetailModalProps {
   workflow: WorkflowRequest;
@@ -35,6 +36,7 @@ const ActionButton: React.FC<{ onClick: () => void; disabled: boolean; children:
 const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, user, onClose, onUpdate }) => {
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [actors, setActors] = useState<{ fullName: string; role: string }[]>([]);
   const hasSiteAccess = useMemo(() => {
     // Admin has access to all sites
     if (user.role === UserRole.Admin) return true;
@@ -55,6 +57,24 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
     }
     return [];
   }, [workflow.attachments, workflow.attachmentUrl]);
+
+  useEffect(() => {
+    const fetchActors = async () => {
+      console.log('Fetching actors for:', {
+        status: workflow.currentStatus,
+        site: workflow.projectCode,
+        requesterId: workflow.requester_id
+      });
+      const actorsList = await getActorsForWorkflow(
+        workflow.currentStatus,
+        workflow.projectCode,
+        workflow.requester_id
+      );
+      console.log('Fetched actors:', actorsList);
+      setActors(actorsList);
+    };
+    fetchActors();
+  }, [workflow.currentStatus, workflow.projectCode, workflow.requester_id]);
 
   const handleStatusUpdate = async (newStatus: WorkflowStatus) => {
     setIsUpdating(true);
@@ -120,8 +140,8 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
             }
             break;
         case WorkflowStatus.DISPATCHED:
-            // ONLY Driver or Site Manager can confirm EPOD
-            if (role === UserRole.Driver || role === UserRole.SiteManager || isAdmin) {
+            // ONLY original requester can confirm/decline EPOD
+            if (user.id === workflow.requester_id || isAdmin) {
                 return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.EPOD_CONFIRMED)} disabled={isUpdating}>Confirm Delivery (EPOD)</ActionButton>;
             }
             break;
@@ -193,6 +213,28 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
                     <WorkflowStatusIndicator steps={workflow.steps} currentStep={workflow.currentStatus} />
                 </div>
             </div>
+
+            {actors.length > 0 && (
+                <div>
+                    <h3 className="text-md font-semibold text-zinc-800 mb-2">Who Can Act on Current Step</h3>
+                    <div className="p-4 bg-white rounded-md border border-zinc-200">
+                        <p className="text-xs text-zinc-500 mb-3">Current Status: <span className="font-semibold text-zinc-700">{workflow.currentStatus}</span></p>
+                        <p className="text-xs text-zinc-500 mb-2">Required Role: <span className="font-semibold text-zinc-700">{getActorDescription(workflow.currentStatus)}</span></p>
+                        <div className="space-y-1">
+                            <p className="text-xs font-semibold text-zinc-600 uppercase mb-1">Authorized Users for this Site:</p>
+                            {actors.map((actor, idx) => (
+                                <div key={idx} className="flex items-center gap-2 text-sm">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-sky-500" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fillRule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clipRule="evenodd" />
+                                    </svg>
+                                    <span className="font-medium text-zinc-800">{actor.fullName}</span>
+                                    <span className="text-xs text-zinc-500">({actor.role})</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div>
                 <h3 className="text-md font-semibold text-zinc-800 mb-2">Requested Items ({workflow.items.length})</h3>
