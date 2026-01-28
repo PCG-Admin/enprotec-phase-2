@@ -48,6 +48,13 @@ async function getNextApprovers(
     newStatus: WorkflowStatus,
     request: Pick<WorkflowRequest, 'requester_id' | 'projectCode' | 'department'>
 ): Promise<RecipientInfo[]> {
+    console.log('[getNextApprovers] New Status:', newStatus);
+    console.log('[getNextApprovers] Request data:', {
+        projectCode: request.projectCode,
+        department: request.department,
+        requester_id: request.requester_id
+    });
+
     let targetRoles: UserRole[] = [];
     let targetUserId: string | null = null;
 
@@ -111,25 +118,45 @@ async function getNextApprovers(
             return [];
         }
 
+        console.log(`[getNextApprovers] Query returned ${data.length} users with roles:`, targetRoles);
+
         // Filter by site and department assignments
         const filteredUsers = data.filter(user => {
             // Admin bypass - admins with no sites/departments get all notifications
             if (user.role === UserRole.Admin) {
                 if (!user.sites || user.sites.length === 0) {
+                    console.log(`[getNextApprovers] ✓ Including Admin ${user.name} (no site restrictions)`);
                     return true; // Admin with no site restrictions
                 }
             }
 
-            // Check site assignment
+            // Check site assignment (REQUIRED)
             const hasSiteAccess = user.sites && Array.isArray(user.sites) && user.sites.includes(request.projectCode);
 
-            // Check department assignment
-            const hasDepartmentAccess = user.departments && Array.isArray(user.departments) && user.departments.includes(request.department);
+            // Site access is mandatory
+            if (!hasSiteAccess) {
+                console.log(`[getNextApprovers] ✗ Excluding ${user.name}: No site access (has: ${user.sites?.join(', ') || 'none'}, needs: ${request.projectCode})`);
+                return false;
+            }
 
-            // User must have access to both the site AND department
-            return hasSiteAccess && hasDepartmentAccess;
+            // Check department assignment (OPTIONAL - only if user has departments configured)
+            // If user has no departments configured, they get all notifications for their sites
+            if (!user.departments || !Array.isArray(user.departments) || user.departments.length === 0) {
+                console.log(`[getNextApprovers] ✓ Including ${user.name}: Has site access and no department restrictions`);
+                return true; // User has site access and no department restrictions
+            }
+
+            // If user has departments configured, they must have access to this department
+            const hasDepartmentAccess = user.departments.includes(request.department);
+            if (hasDepartmentAccess) {
+                console.log(`[getNextApprovers] ✓ Including ${user.name}: Has both site and department access`);
+            } else {
+                console.log(`[getNextApprovers] ✗ Excluding ${user.name}: Has site but no department access (has: ${user.departments.join(', ')}, needs: ${request.department})`);
+            }
+            return hasDepartmentAccess;
         });
 
+        console.log(`[getNextApprovers] Filtered to ${filteredUsers.length} users with site/department access`);
         return filteredUsers.map(user => ({ email: user.email, name: user.name }));
     }
 
@@ -790,6 +817,13 @@ export const sendApprovalWebhook = async (
         recipients = await getNextApprovers(newStatus, request);
     } else {
         recipients = await getNextApproversForSalvage(newStatus);
+    }
+
+    console.log(`[Webhook] Action: ${actionType}, New Status: ${newStatus}, Recipients found: ${recipients.length}`);
+    if (recipients.length > 0) {
+        console.log('[Webhook] Recipients:', recipients.map(r => `${r.name} (${r.email})`).join(', '));
+    } else {
+        console.warn('[Webhook] WARNING: No recipients found for this workflow notification!');
     }
 
     const requestNumber = isWorkflowRequest(request) ? request.requestNumber : `SALVAGE-${request.partNumber}`;
