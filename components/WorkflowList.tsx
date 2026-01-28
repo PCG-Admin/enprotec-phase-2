@@ -25,6 +25,7 @@ const WorkflowList: React.FC<WorkflowListProps> = ({ user }) => {
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowRequest | null>(null);
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
+  const [refreshKey, setRefreshKey] = useState(0);
   const pageSize = 50;
 
   const fetchWorkflows = useCallback(async () => {
@@ -34,7 +35,9 @@ const WorkflowList: React.FC<WorkflowListProps> = ({ user }) => {
       const from = (page - 1) * pageSize;
       const to = from + pageSize - 1;
 
-      let query = supabase.from('en_workflows_view').select('*', { count: 'exact' })
+      console.log('[WorkflowList] Fetching workflows from view...');
+
+      let query = supabase.from('en_workflows_view').select('*', { count: 'exact', head: false })
           .order('createdAt', { ascending: false })
           .range(from, to); // PERFORMANCE: Pagination
 
@@ -51,11 +54,19 @@ const WorkflowList: React.FC<WorkflowListProps> = ({ user }) => {
       const { data, error, count } = await query;
 
       if (error) throw error;
-      setWorkflows((data as unknown as WorkflowRequest[]) || []);
+
+      const fetchedWorkflows = (data as unknown as WorkflowRequest[]) || [];
+      console.log('[WorkflowList] Fetched', fetchedWorkflows.length, 'workflows');
+      fetchedWorkflows.forEach(wf => {
+        console.log(`  ${wf.requestNumber}: ${wf.currentStatus}`);
+      });
+
+      setWorkflows(fetchedWorkflows);
       setTotalCount(count || 0);
+      setRefreshKey(prev => prev + 1); // Force re-render with fresh data
     } catch (err) {
       setError('Failed to fetch workflows.');
-      console.error(err);
+      console.error('[WorkflowList] Fetch error:', err);
     } finally {
       setLoading(false);
     }
@@ -100,7 +111,7 @@ const WorkflowList: React.FC<WorkflowListProps> = ({ user }) => {
                 </tr>
               )}
               {!loading && !error && workflows.map((wf: WorkflowRequest) => (
-                <tr key={wf.id} className="border-b border-zinc-200 hover:bg-zinc-50 transition-colors">
+                <tr key={`${wf.id}-${refreshKey}`} className="border-b border-zinc-200 hover:bg-zinc-50 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="font-semibold text-zinc-900">{wf.requestNumber}</div>
                     <div className="text-zinc-500">{wf.projectCode}</div>
@@ -113,10 +124,10 @@ const WorkflowList: React.FC<WorkflowListProps> = ({ user }) => {
                       </span>
                   </td>
                   <td className="px-6 py-4">
-                    <WorkflowStatusIndicator steps={wf.steps} currentStep={wf.currentStatus} />
+                    <WorkflowStatusIndicator key={`status-${wf.id}-${refreshKey}`} steps={wf.steps} currentStep={wf.currentStatus} />
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right">
-                    <button 
+                    <button
                       onClick={() => setSelectedWorkflow(wf)}
                       className="text-sky-600 hover:text-sky-500 font-medium"
                     >
