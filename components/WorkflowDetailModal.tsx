@@ -3,7 +3,7 @@ import { WorkflowRequest, Priority, User, UserRole, WorkflowStatus, WorkflowAtta
 import WorkflowStatusIndicator from './WorkflowStatusIndicator';
 import { supabase } from '../supabase/client';
 import CommentSection from './CommentSection';
-import { sendApprovalWebhook } from '../services/webhookService';
+import { sendApprovalWebhook, sendDenialWebhook } from '../services/webhookService';
 import { getActorsForWorkflow, getActorDescription } from '../utils/workflowActors';
 
 interface WorkflowDetailModalProps {
@@ -37,6 +37,8 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actors, setActors] = useState<{ fullName: string; role: string }[]>([]);
+  const [isRejecting, setIsRejecting] = useState(false);
+  const [rejectionComment, setRejectionComment] = useState('');
   const hasSiteAccess = useMemo(() => {
     // Admin has access to all sites
     if (user.role === UserRole.Admin) return true;
@@ -90,12 +92,49 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
             .update({ current_status: newStatus })
             .eq('id', workflow.id);
         if (error) throw error;
-        
+
         await sendApprovalWebhook('APPROVAL', workflow, newStatus, user);
-        
+
         onUpdate();
     } catch (err) {
         setError("Failed to update workflow status.");
+        console.error(err);
+    } finally {
+        setIsUpdating(false);
+    }
+  };
+
+  const handleDecline = async () => {
+    if (!rejectionComment.trim()) {
+        setError("Please provide a reason for declining the request.");
+        return;
+    }
+    setIsUpdating(true);
+    setError(null);
+    try {
+        if (!hasSiteAccess) {
+            setError('You are not allowed to action requests for this site.');
+            setIsUpdating(false);
+            return;
+        }
+        const newStatus = WorkflowStatus.REQUEST_DECLINED;
+        const { error } = await supabase
+            .from('en_workflow_requests')
+            .update({
+                current_status: newStatus,
+                rejection_comment: rejectionComment.trim()
+            })
+            .eq('id', workflow.id);
+        if (error) throw error;
+
+        await sendApprovalWebhook('DECLINE', workflow, newStatus, user, rejectionComment.trim());
+        await sendDenialWebhook(workflow, rejectionComment.trim());
+
+        setIsRejecting(false);
+        setRejectionComment('');
+        onUpdate();
+    } catch (err) {
+        setError("Failed to decline workflow.");
         console.error(err);
     } finally {
         setIsUpdating(false);
@@ -110,21 +149,54 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
     // STRICT ROLE CHECKS - Only correct role for each step (+ Admin override)
     switch (currentStatus) {
         case WorkflowStatus.REQUEST_SUBMITTED:
-            // ONLY Ops Manager can approve initial request
+            // ONLY Ops Manager can approve/decline initial request
             if (role === UserRole.OperationsManager || isAdmin) {
-                return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_OPS_MANAGER)} disabled={isUpdating}>Approve (Ops Manager)</ActionButton>;
+                return (
+                    <>
+                        <button
+                            onClick={() => setIsRejecting(true)}
+                            disabled={isUpdating || isRejecting}
+                            className="px-4 py-2 bg-red-600 text-white font-semibold rounded-md hover:bg-red-700 disabled:bg-zinc-300 transition-colors"
+                        >
+                            Decline
+                        </button>
+                        <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_OPS_MANAGER)} disabled={isUpdating || isRejecting}>Approve (Ops Manager)</ActionButton>
+                    </>
+                );
             }
             break;
         case WorkflowStatus.AWAITING_OPS_MANAGER:
-            // ONLY Stock Controller can approve after Ops Manager
+            // ONLY Stock Controller can approve/decline after Ops Manager
             if (role === UserRole.StockController || isAdmin) {
-                return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_EQUIP_MANAGER)} disabled={isUpdating}>Approve (Stock Controller)</ActionButton>;
+                return (
+                    <>
+                        <button
+                            onClick={() => setIsRejecting(true)}
+                            disabled={isUpdating || isRejecting}
+                            className="px-4 py-2 bg-red-600 text-white font-semibold rounded-md hover:bg-red-700 disabled:bg-zinc-300 transition-colors"
+                        >
+                            Decline
+                        </button>
+                        <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_EQUIP_MANAGER)} disabled={isUpdating || isRejecting}>Approve (Stock Controller)</ActionButton>
+                    </>
+                );
             }
             break;
         case WorkflowStatus.AWAITING_EQUIP_MANAGER:
-            // ONLY Equipment Manager can approve equipment
+            // ONLY Equipment Manager can approve/decline equipment
             if (role === UserRole.EquipmentManager || isAdmin) {
-                return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_PICKING)} disabled={isUpdating}>Approve (Equip. Manager)</ActionButton>;
+                return (
+                    <>
+                        <button
+                            onClick={() => setIsRejecting(true)}
+                            disabled={isUpdating || isRejecting}
+                            className="px-4 py-2 bg-red-600 text-white font-semibold rounded-md hover:bg-red-700 disabled:bg-zinc-300 transition-colors"
+                        >
+                            Decline
+                        </button>
+                        <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_PICKING)} disabled={isUpdating || isRejecting}>Approve (Equip. Manager)</ActionButton>
+                    </>
+                );
             }
             break;
         case WorkflowStatus.AWAITING_PICKING:
@@ -297,6 +369,40 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
                 <h3 className="text-md font-semibold text-zinc-800 mb-2">Comments</h3>
                 <CommentSection workflowId={workflow.id} user={user} />
             </div>
+
+            {/* Rejection Comment Input */}
+            {isRejecting && (
+                <div className="p-4 bg-red-50 rounded-md border border-red-200">
+                    <label htmlFor="rejectionComment" className="block text-sm font-medium text-zinc-700 mb-2">Reason for Declining (Required)</label>
+                    <textarea
+                        id="rejectionComment"
+                        value={rejectionComment}
+                        onChange={(e) => setRejectionComment(e.target.value)}
+                        rows={3}
+                        className="w-full p-2 bg-white border border-zinc-300 rounded-md focus:ring-2 focus:ring-sky-500 text-zinc-900"
+                        placeholder="e.g., Insufficient stock, duplicate request..."
+                    />
+                    <div className="flex justify-end gap-2 mt-2">
+                        <button
+                            onClick={() => {
+                                setIsRejecting(false);
+                                setRejectionComment('');
+                                setError(null);
+                            }}
+                            className="px-3 py-1 text-sm bg-zinc-200 text-zinc-800 rounded hover:bg-zinc-300"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={handleDecline}
+                            disabled={isUpdating}
+                            className="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:bg-zinc-300"
+                        >
+                            {isUpdating ? 'Declining...' : 'Confirm Decline'}
+                        </button>
+                    </div>
+                </div>
+            )}
 
              {error && <p className="text-sm text-red-600">{error}</p>}
         </div>
