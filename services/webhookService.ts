@@ -62,7 +62,7 @@ async function getNextApprovers(
         case WorkflowStatus.REQUEST_SUBMITTED:
             targetRoles = [UserRole.OperationsManager, UserRole.Admin];
             break;
-        case WorkflowStatus.AWAITING_OPS_MANAGER:
+        case WorkflowStatus.STOCK_CONTROLLER_APPROVAL:
             targetRoles = [UserRole.StockController, UserRole.Admin];
             break;
         case WorkflowStatus.AWAITING_EQUIP_MANAGER:

@@ -162,12 +162,12 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
                         >
                             Decline
                         </button>
-                        <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.AWAITING_OPS_MANAGER)} disabled={isUpdating || isRejecting}>Approve (Ops Manager)</ActionButton>
+                        <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.STOCK_CONTROLLER_APPROVAL)} disabled={isUpdating || isRejecting}>Approve (Ops Manager)</ActionButton>
                     </>
                 );
             }
             break;
-        case WorkflowStatus.AWAITING_OPS_MANAGER:
+        case WorkflowStatus.STOCK_CONTROLLER_APPROVAL:
             // ONLY Stock Controller can approve/decline after Ops Manager
             if (role === UserRole.StockController || isAdmin) {
                 return (
