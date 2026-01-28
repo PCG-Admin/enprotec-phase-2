@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../supabase/client';
 import { User, UserRole, UserStatus, Store, Department } from '../types';
 import UserEditModal from './UserEditModal';
-import { createUserViaFunction, updateUserProfile } from '../services/userAdmin';
+import { createUserViaFunction, updateUserProfile, deleteUserViaFunction } from '../services/userAdmin';
 import { mapRawUserToUser } from '../services/userProfile';
 import { fetchDepartments } from '../services/departmentService';
 
@@ -39,6 +39,8 @@ const Users: React.FC = () => {
     const [editingUser, setEditingUser] = useState<User | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [departments, setDepartments] = useState<Department[]>([]);
+    const [deletingUser, setDeletingUser] = useState<User | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     const fetchUsers = async () => {
         setLoading(true);
@@ -135,17 +137,39 @@ const Users: React.FC = () => {
     
     const toggleUserStatus = async (user: User) => {
         const newStatus = user.status === UserStatus.Active ? UserStatus.Inactive : UserStatus.Active;
-        
+
         const { error } = await supabase
             .from('en_users')
             .update({ status: newStatus })
             .eq('id', user.id);
-        
+
         if (error) {
              alert('Failed to update user status.');
              console.error(error);
         } else {
             fetchUsers();
+        }
+    };
+
+    const handleDeleteUser = async () => {
+        if (!deletingUser) return;
+
+        setIsDeleting(true);
+        try {
+            const { error } = await deleteUserViaFunction(deletingUser.id);
+
+            if (error) {
+                alert(`Failed to delete user: ${error}`);
+                console.error('Delete user error:', error);
+            } else {
+                setDeletingUser(null);
+                fetchUsers();
+            }
+        } catch (err) {
+            alert('Failed to delete user. Please try again.');
+            console.error('Delete user exception:', err);
+        } finally {
+            setIsDeleting(false);
         }
     };
 
@@ -247,6 +271,13 @@ const Users: React.FC = () => {
                                             >
                                                 Edit
                                             </button>
+                                            <button
+                                                onClick={() => setDeletingUser(user)}
+                                                className="text-red-600 hover:text-red-500 font-medium"
+                                                title="Delete User"
+                                            >
+                                                Delete
+                                            </button>
                                         </td>
                                     </tr>
                                 ))}
@@ -261,6 +292,37 @@ const Users: React.FC = () => {
                     onClose={() => setIsModalOpen(false)}
                     onSave={handleSaveUser}
                 />
+            )}
+            {deletingUser && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+                        <h3 className="text-lg font-semibold text-zinc-900 mb-3">Delete User</h3>
+                        <p className="text-zinc-700 mb-2">
+                            Are you sure you want to delete this user? This action cannot be undone.
+                        </p>
+                        <div className="bg-zinc-50 border border-zinc-200 rounded-md p-3 mb-4">
+                            <div className="font-semibold text-zinc-900">{deletingUser.name}</div>
+                            <div className="text-sm text-zinc-600">{deletingUser.email}</div>
+                            <div className="text-sm text-zinc-600 mt-1">{deletingUser.role}</div>
+                        </div>
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => setDeletingUser(null)}
+                                disabled={isDeleting}
+                                className="px-4 py-2 bg-white border border-zinc-300 text-zinc-700 rounded-md hover:bg-zinc-50 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleDeleteUser}
+                                disabled={isDeleting}
+                                className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                            >
+                                {isDeleting ? 'Deleting...' : 'Delete User'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </>
     );

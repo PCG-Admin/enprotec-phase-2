@@ -5,6 +5,7 @@ import react from '@vitejs/plugin-react';
 import { handleCreateUser } from './api/create-user';
 import { handleSendInspectionWebhook } from './api/send-inspection';
 import { handleUpdateUser } from './api/update-user';
+import { handleDeleteUser } from './api/delete-user';
 
 const createUserDevPlugin = (): PluginOption => ({
   name: 'enprotec-create-user-dev-api',
@@ -165,6 +166,57 @@ const sendInspectionDevPlugin = (): PluginOption => ({
   },
 });
 
+const deleteUserDevPlugin = (): PluginOption => ({
+  name: 'enprotec-delete-user-dev-api',
+  configureServer(server) {
+    server.middlewares.use('/api/delete-user', async (req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+
+      if (req.method === 'OPTIONS') {
+        res.statusCode = 204;
+        res.end();
+        return;
+      }
+
+      if (req.method !== 'POST') {
+        res.statusCode = 405;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Method not allowed' }));
+        return;
+      }
+
+      try {
+        let body = '';
+        req.on('data', chunk => {
+          body += chunk;
+        });
+
+        req.on('end', async () => {
+          try {
+            const payload = body ? JSON.parse(body) : undefined;
+            const result = await handleDeleteUser(payload);
+            res.statusCode = result.status;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify(result.body));
+          } catch (error) {
+            console.error('delete-user dev handler failed:', error);
+            res.statusCode = 500;
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: 'Failed to process request' }));
+          }
+        });
+      } catch (error) {
+        console.error('delete-user dev handler error:', error);
+        res.statusCode = 500;
+        res.setHeader('Content-Type', 'application/json');
+        res.end(JSON.stringify({ error: 'Failed to process request' }));
+      }
+    });
+  },
+});
+
 export default defineConfig(({ mode }) => {
     const env = loadEnv(mode, '.', '');
     process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? env.SUPABASE_SERVICE_ROLE_KEY;
@@ -177,7 +229,7 @@ export default defineConfig(({ mode }) => {
         port: 3002,
         host: '0.0.0.0',
       },
-      plugins: [react(), createUserDevPlugin(), updateUserDevPlugin(), sendInspectionDevPlugin()],
+      plugins: [react(), createUserDevPlugin(), updateUserDevPlugin(), sendInspectionDevPlugin(), deleteUserDevPlugin()],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),

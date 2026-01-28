@@ -117,3 +117,35 @@ export const updateUserProfile = async (
   }
 }
 
+export const deleteUserViaFunction = async (
+  userId: string
+): Promise<{ error: string | null; success: boolean }> => {
+  const endpoint = import.meta.env.VITE_DELETE_USER_ENDPOINT ?? '/api/delete-user'
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ userId }),
+    })
+
+    const contentType = response.headers.get('Content-Type') ?? ''
+    const isJson = contentType.includes('application/json')
+    const body = isJson ? await response.json() : null
+
+    if (!response.ok) {
+      const message = body?.error ?? `Failed to delete user (status ${response.status})`
+      return { error: message, success: false }
+    }
+
+    return { error: null, success: true }
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : 'Failed to delete user',
+      success: false,
+    }
+  }
+}
+
