@@ -96,6 +96,7 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
         await sendApprovalWebhook('APPROVAL', workflow, newStatus, user);
 
         onUpdate();
+        onClose(); // Close modal to show updated workflow list
     } catch (err) {
         setError("Failed to update workflow status.");
         console.error(err);
@@ -133,6 +134,7 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
         setIsRejecting(false);
         setRejectionComment('');
         onUpdate();
+        onClose(); // Close modal to show updated workflow list
     } catch (err) {
         setError("Failed to decline workflow.");
         console.error(err);
