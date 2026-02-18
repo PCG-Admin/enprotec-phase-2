@@ -29,6 +29,11 @@ export const handleSendInspectionWebhook = async (
   payload: unknown,
   headers: IncomingHttpHeaders = {}
 ): Promise<HandlerResult> => {
+  if (process.env.APP_ENV === 'dev') {
+    console.log('[Inspection Webhook] Dev environment — webhook suppressed.');
+    return { status: 200, body: { success: true, suppressed: true } };
+  }
+
   const webhookUrl = resolveWebhookUrl(headers);
 
   if (!webhookUrl) {

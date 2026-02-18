@@ -10,6 +10,8 @@ interface LoginProps {
   onLoginSuccess: (user: User) => void;
 }
 
+const IS_DEV = import.meta.env.VITE_APP_ENV === 'dev';
+
 const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -171,10 +173,20 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-zinc-100 font-sans">
+      {IS_DEV && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-amber-400 text-amber-900 text-center text-xs font-bold py-1 tracking-widest uppercase">
+          ⚠ Development Environment — Emails &amp; Webhooks Disabled
+        </div>
+      )}
       <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-lg border border-zinc-200 shadow-sm">
         <div className="text-center space-y-6">
           <div className="flex flex-col items-center justify-center gap-4">
             <EnprotecLogo className="h-20 w-auto max-w-sm" />
+            {IS_DEV && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 border border-amber-300 text-amber-800 text-xs font-semibold tracking-wide uppercase">
+                DEV
+              </span>
+            )}
           </div>
           <h2 className="text-2xl font-bold text-zinc-900">
             Sign in to your account

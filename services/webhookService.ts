@@ -812,6 +812,11 @@ export const sendApprovalWebhook = async (
     comment?: string | null
 ): Promise<void> => {
 
+    if (import.meta.env.VITE_APP_ENV === 'dev') {
+        console.log('[Webhook] Dev environment — approval webhook suppressed.');
+        return;
+    }
+
     let recipients: RecipientInfo[] = [];
     if (isWorkflowRequest(request)) {
         recipients = await getNextApprovers(newStatus, request);
@@ -899,6 +904,10 @@ export const sendApprovalWebhook = async (
 };
 
 export const sendDenialWebhook = async (request: WorkflowRequest, comment: string | null): Promise<void> => {
+    if (import.meta.env.VITE_APP_ENV === 'dev') {
+        console.log('[Webhook] Dev environment — denial webhook suppressed.');
+        return;
+    }
     try {
         const { data: requester, error } = await supabase
             .from('en_users')
@@ -1074,6 +1083,10 @@ export const sendDenialWebhook = async (request: WorkflowRequest, comment: strin
 };
 
 export const sendDispatchWebhook = async (request: WorkflowRequest, user: User): Promise<void> => {
+    if (import.meta.env.VITE_APP_ENV === 'dev') {
+        console.log('[Webhook] Dev environment — dispatch webhook suppressed.');
+        return;
+    }
     try {
         // Get all workflow participants - everyone involved in the workflow for this site/department
         const allRoles: UserRole[] = [
