@@ -5,71 +5,120 @@ import {
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart, Pie, Cell, ResponsiveContainer,
 } from 'recharts';
+import { getInspections } from '../../supabase/services/inspections.service';
+import { getVehicles } from '../../supabase/services/vehicles.service';
+import { getMonthlyCostTotals } from '../../supabase/services/costs.service';
+import { getComplianceSchedule } from '../../supabase/services/compliance.service';
+import type { InspectionRow, VehicleRow } from '../../supabase/database.types';
+import type { ComplianceRow } from '../../supabase/database.types';
 
-/* ─── Mock data ──────────────────────────────────────────────────── */
-const monthlyInspections = [
-  { month: 'Sep', completed: 18, failed: 2 },
-  { month: 'Oct', completed: 22, failed: 3 },
-  { month: 'Nov', completed: 19, failed: 1 },
-  { month: 'Dec', completed: 14, failed: 2 },
-  { month: 'Jan', completed: 25, failed: 4 },
-  { month: 'Feb', completed: 21, failed: 2 },
-];
+/* ─── Constants ──────────────────────────────────────────────── */
+const DATE_RANGE_MONTHS: Record<string, number> = {
+  month: 1, quarter: 3, half: 6, year: 12,
+};
 
-const monthlyCosts = [
-  { month: 'Sep', fuel: 8200,  maintenance: 3100, other: 1400 },
-  { month: 'Oct', fuel: 9100,  maintenance: 4500, other: 900  },
-  { month: 'Nov', fuel: 7800,  maintenance: 2800, other: 1100 },
-  { month: 'Dec', fuel: 6400,  maintenance: 5200, other: 2100 },
-  { month: 'Jan', fuel: 10200, maintenance: 3900, other: 1500 },
-  { month: 'Feb', fuel: 9500,  maintenance: 4100, other: 1200 },
-];
+const DATE_RANGE_LABELS: Record<string, string> = {
+  month: 'Last 30 days', quarter: 'Last 90 days',
+  half: 'Last 6 months', year: 'Last 12 months',
+};
 
-const complianceData = [
-  { name: 'Compliant',       value: 18, color: '#10b981' },
-  { name: 'Expiring (30d)', value: 4,  color: '#f59e0b' },
-  { name: 'Overdue',         value: 3,  color: '#ef4444' },
-];
+const fmtR = (n: number) => `R ${n.toLocaleString('en-ZA')}`;
 
-const vehicleUtilisation = [
-  { vehicle: 'JL4017', hours: 210 },
-  { vehicle: 'ABC123', hours: 185 },
-  { vehicle: 'XYZ789', hours: 162 },
-  { vehicle: 'DEF456', hours: 143 },
-  { vehicle: 'GHI789', hours: 98  },
-];
+const COMPLIANCE_COLORS: Record<string, string> = {
+  Completed: '#10b981',
+  Scheduled: '#3b82f6',
+  'Due Soon': '#f59e0b',
+  Overdue: '#ef4444',
+};
 
-const recentReports = [
-  { name: 'Monthly Fleet Report – Feb 2026', generated: '2026-02-28' },
-  { name: 'Compliance Status Report – Jan 2026', generated: '2026-01-31' },
-  { name: 'Cost Analysis – Q4 2025', generated: '2025-12-31' },
-];
+/* ─── Helpers ────────────────────────────────────────────────── */
+function filterByDateRange(items: InspectionRow[], months: number): InspectionRow[] {
+  const since = new Date();
+  since.setMonth(since.getMonth() - months);
+  return items.filter(i => new Date(i.started_at) >= since);
+}
 
-const PIE_COLORS = complianceData.map(d => d.color);
+function groupByMonth(inspections: InspectionRow[]) {
+  const buckets: Record<string, { completed: number; failed: number; general: number; forklift: number; generator: number }> = {};
+  inspections.forEach(i => {
+    const key = i.started_at.slice(0, 7);
+    if (!buckets[key]) buckets[key] = { completed: 0, failed: 0, general: 0, forklift: 0, generator: 0 };
+    const passed = i.status === 'pass' || i.status === 'requires_attention';
+    if (passed) buckets[key].completed++;
+    else if (i.status === 'fail') buckets[key].failed++;
+    const t = (i.inspection_type ?? '').toLowerCase();
+    if (t === 'forklift') buckets[key].forklift++;
+    else if (t === 'generator') buckets[key].generator++;
+    else buckets[key].general++;
+  });
+  return Object.entries(buckets)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, v]) => ({
+      month: new Date(key + '-01').toLocaleString('en-ZA', { month: 'short' }),
+      ...v,
+    }));
+}
 
-/* ─── Helper: CSV export ─────────────────────────────────────────── */
-const exportCSV = (reportType: string, dateRange: string) => {
+function groupByVehicle(inspections: InspectionRow[]) {
+  const buckets: Record<string, number> = {};
+  inspections.forEach(i => {
+    const reg = i.vehicle_reg ?? i.vehicle_id;
+    buckets[reg] = (buckets[reg] ?? 0) + 1;
+  });
+  return Object.entries(buckets)
+    .sort(([, a], [, b]) => b - a)
+    .slice(0, 10)
+    .map(([vehicle, count]) => ({ vehicle, count }));
+}
+
+function compliancePieData(rows: ComplianceRow[]) {
+  const counts: Record<string, number> = {};
+  rows.forEach(r => { counts[r.status] = (counts[r.status] ?? 0) + 1; });
+  return Object.entries(counts).map(([name, value]) => ({
+    name, value, color: COMPLIANCE_COLORS[name] ?? '#94a3b8',
+  }));
+}
+
+/* ─── CSV export ─────────────────────────────────────────────── */
+function exportCSV(
+  reportType: string,
+  dateRange: string,
+  monthlyInspections: ReturnType<typeof groupByMonth>,
+  monthlyCosts: { month: string; total: number; fuel: number; maintenance: number; other: number }[],
+  complianceData: { name: string; value: number }[],
+  vehicleUtilisation: { vehicle: string; count: number }[],
+  vehicles: VehicleRow[],
+) {
   let rows: string[] = [];
   let header = '';
 
   if (reportType === 'inspections') {
-    header = 'Month,Completed,Failed';
-    rows = monthlyInspections.map(r => `${r.month},${r.completed},${r.failed}`);
+    header = 'Month,Completed,Failed,General,Forklift,Generator';
+    rows = monthlyInspections.map(r =>
+      `${r.month},${r.completed},${r.failed},${r.general},${r.forklift},${r.generator}`);
   } else if (reportType === 'costs') {
-    header = 'Month,Fuel (R),Maintenance (R),Other (R)';
-    rows = monthlyCosts.map(r => `${r.month},${r.fuel},${r.maintenance},${r.other}`);
+    header = 'Month,Fuel (R),Maintenance (R),Other (R),Total (R)';
+    rows = monthlyCosts.map(r => `${r.month},${r.fuel},${r.maintenance},${r.other},${r.total}`);
   } else if (reportType === 'compliance') {
     header = 'Status,Count';
     rows = complianceData.map(r => `${r.name},${r.value}`);
   } else if (reportType === 'utilization') {
-    header = 'Vehicle,Hours';
-    rows = vehicleUtilisation.map(r => `${r.vehicle},${r.hours}`);
+    header = 'Vehicle,Inspections';
+    rows = vehicleUtilisation.map(r => `${r.vehicle},${r.count}`);
   } else {
+    const total = monthlyInspections.reduce((s, r) => s + r.completed + r.failed, 0);
+    const failed = monthlyInspections.reduce((s, r) => s + r.failed, 0);
+    const passRate = total > 0 ? ((total - failed) / total * 100).toFixed(1) : '0';
+    const totalCost = monthlyCosts.reduce((s, r) => s + r.total, 0);
+    const active = vehicles.filter(v => v.status === 'Active').length;
     header = 'Metric,Value';
     rows = [
-      'Total Vehicles,5', 'Active,4', 'In Maintenance,1',
-      'Inspections This Month,21', 'Pass Rate,90.5%',
-      'Total Monthly Cost (R),29950',
+      `Total Vehicles,${vehicles.length}`,
+      `Active,${active}`,
+      `In Maintenance,${vehicles.filter(v => v.status === 'In Maintenance').length}`,
+      `Inspections (${DATE_RANGE_LABELS[dateRange]}),${total}`,
+      `Pass Rate,${passRate}%`,
+      `Total Cost (R),${totalCost}`,
     ];
   }
 
@@ -81,21 +130,87 @@ const exportCSV = (reportType: string, dateRange: string) => {
   a.download = `${reportType}-report-${dateRange}-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
-};
+}
 
-const fmtR = (n: number) => `R ${n.toLocaleString('en-ZA')}`;
-
-/* ─── Component ──────────────────────────────────────────────────── */
+/* ─── Component ──────────────────────────────────────────────── */
 const FleetReports: React.FC = () => {
   const [dateRange, setDateRange]   = React.useState('quarter');
   const [reportType, setReportType] = React.useState('summary');
+  const [loading, setLoading]       = React.useState(true);
+  const [error, setError]           = React.useState<string | null>(null);
 
-  const totalInspections   = monthlyInspections.reduce((s, r) => s + r.completed, 0);
-  const totalFailed        = monthlyInspections.reduce((s, r) => s + r.failed, 0);
-  const passRate           = ((totalInspections - totalFailed) / totalInspections * 100).toFixed(1);
-  const totalCost          = monthlyCosts.reduce((s, r) => s + r.fuel + r.maintenance + r.other, 0);
-  const totalFuel          = monthlyCosts.reduce((s, r) => s + r.fuel, 0);
-  const totalMaintenance   = monthlyCosts.reduce((s, r) => s + r.maintenance, 0);
+  const [allInspections, setAllInspections] = React.useState<InspectionRow[]>([]);
+  const [vehicles, setVehicles]             = React.useState<VehicleRow[]>([]);
+  const [monthlyCosts, setMonthlyCosts]     = React.useState<{ month: string; total: number; fuel: number; maintenance: number; other: number }[]>([]);
+  const [compliance, setCompliance]         = React.useState<ComplianceRow[]>([]);
+
+  /* load on mount and when dateRange changes */
+  React.useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    const months = DATE_RANGE_MONTHS[dateRange] ?? 3;
+
+    Promise.all([
+      getInspections(500),
+      getVehicles(),
+      getMonthlyCostTotals(months),
+      getComplianceSchedule(),
+    ])
+      .then(([insp, veh, costs, comp]) => {
+        if (cancelled) return;
+        setAllInspections(insp);
+        setVehicles(veh);
+        setMonthlyCosts(costs);
+        setCompliance(comp);
+      })
+      .catch(e => { if (!cancelled) setError(e.message ?? 'Failed to load data'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+
+    return () => { cancelled = true; };
+  }, [dateRange]);
+
+  /* derived data */
+  const months            = DATE_RANGE_MONTHS[dateRange] ?? 3;
+  const filteredInsp      = filterByDateRange(allInspections, months);
+  const monthlyInspections = groupByMonth(filteredInsp);
+  const vehicleUtilisation = groupByVehicle(filteredInsp);
+  const complianceData    = compliancePieData(compliance);
+
+  const totalInspections  = filteredInsp.length;
+  const totalFailed       = filteredInsp.filter(i => i.status === 'fail').length;
+  const passRate          = totalInspections > 0
+    ? ((totalInspections - totalFailed) / totalInspections * 100).toFixed(1)
+    : '0';
+  const totalCost         = monthlyCosts.reduce((s, r) => s + r.total, 0);
+  const totalFuel         = monthlyCosts.reduce((s, r) => s + r.fuel, 0);
+  const totalMaintenance  = monthlyCosts.reduce((s, r) => s + r.maintenance, 0);
+  const compliantCount    = compliance.filter(c => c.status === 'Completed' || c.status === 'Scheduled').length;
+  const complianceScore   = compliance.length > 0
+    ? Math.round(compliantCount / compliance.length * 100)
+    : 0;
+  const overdueCompliance = compliance.filter(c => c.status === 'Overdue').length;
+  const activeVehicles    = vehicles.filter(v => v.status === 'Active').length;
+  const inMaintenance     = vehicles.filter(v => v.status === 'In Maintenance').length;
+
+  const generalCount   = filteredInsp.filter(i => (i.inspection_type ?? '').toLowerCase() === 'general').length;
+  const forkliftCount  = filteredInsp.filter(i => (i.inspection_type ?? '').toLowerCase() === 'forklift').length;
+  const generatorCount = filteredInsp.filter(i => (i.inspection_type ?? '').toLowerCase() === 'generator').length;
+
+  const rangeLabel = DATE_RANGE_LABELS[dateRange];
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-sky-600" />
+    </div>
+  );
+
+  if (error) return (
+    <div className="bg-red-50 border border-red-200 text-red-800 rounded-lg p-4">
+      Failed to load reports: {error}
+    </div>
+  );
 
   return (
     <div className="space-y-6">
@@ -109,7 +224,7 @@ const FleetReports: React.FC = () => {
             <Printer className="h-4 w-4" /> Print
           </button>
           <button
-            onClick={() => exportCSV(reportType, dateRange)}
+            onClick={() => exportCSV(reportType, dateRange, monthlyInspections, monthlyCosts, complianceData, vehicleUtilisation, vehicles)}
             className="inline-flex items-center gap-2 bg-sky-600 text-white px-4 py-2 rounded-lg hover:bg-sky-700 text-sm font-medium">
             <Download className="h-4 w-4" /> Export CSV
           </button>
@@ -141,8 +256,11 @@ const FleetReports: React.FC = () => {
             </select>
           </div>
           <div>
-            <button className="inline-flex items-center gap-2 bg-zinc-100 text-zinc-700 px-4 py-2 rounded-lg hover:bg-zinc-200 text-sm font-medium w-full justify-center">
-              <Filter className="h-4 w-4" /> Apply
+            <p className="text-xs text-zinc-500 mb-1">Data refreshes automatically when date range changes.</p>
+            <button
+              onClick={() => setDateRange(d => d)} // trigger re-render / manual refresh
+              className="inline-flex items-center gap-2 bg-zinc-100 text-zinc-700 px-4 py-2 rounded-lg hover:bg-zinc-200 text-sm font-medium w-full justify-center">
+              <Filter className="h-4 w-4" /> Refresh
             </button>
           </div>
         </div>
@@ -153,10 +271,10 @@ const FleetReports: React.FC = () => {
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[
-              { label:'Total Vehicles',   value:'5',              sub:'4 active, 1 in maintenance' },
-              { label:'Inspections (6m)', value:String(totalInspections), sub:`Pass rate ${passRate}%` },
-              { label:'Total Cost (6m)',  value:fmtR(totalCost),  sub:'All categories' },
-              { label:'Compliance Score', value:'72%',            sub:'3 items overdue' },
+              { label: 'Total Vehicles',      value: String(vehicles.length),      sub: `${activeVehicles} active, ${inMaintenance} in maintenance` },
+              { label: `Inspections (${rangeLabel})`, value: String(totalInspections), sub: `Pass rate ${passRate}%` },
+              { label: `Total Cost (${rangeLabel})`,  value: fmtR(totalCost),           sub: 'All categories' },
+              { label: 'Compliance Score',    value: `${complianceScore}%`,        sub: `${overdueCompliance} item${overdueCompliance !== 1 ? 's' : ''} overdue` },
             ].map(({ label, value, sub }) => (
               <div key={label} className="bg-white rounded-lg shadow p-5">
                 <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">{label}</p>
@@ -166,35 +284,57 @@ const FleetReports: React.FC = () => {
             ))}
           </div>
 
+          {/* Inspection type breakdown */}
+          <div className="grid grid-cols-3 gap-4">
+            {[
+              { label: 'General Inspections',   value: generalCount,   color: 'text-blue-600',   bg: 'bg-blue-50' },
+              { label: 'Forklift Inspections',  value: forkliftCount,  color: 'text-orange-600', bg: 'bg-orange-50' },
+              { label: 'Generator Inspections', value: generatorCount, color: 'text-green-600',  bg: 'bg-green-50' },
+            ].map(({ label, value, color, bg }) => (
+              <div key={label} className={`${bg} rounded-lg p-4 text-center`}>
+                <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">{label}</p>
+                <p className={`text-3xl font-bold ${color} mt-1`}>{value}</p>
+              </div>
+            ))}
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-base font-semibold text-zinc-800 mb-4">Monthly Inspections</h3>
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={monthlyInspections}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="month" stroke="#888" tick={{ fontSize:12 }} />
-                  <YAxis stroke="#888" tick={{ fontSize:12 }} />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="completed" name="Completed" fill="#3b82f6" radius={[3,3,0,0]} />
-                  <Bar dataKey="failed"    name="Failed"    fill="#ef4444" radius={[3,3,0,0]} />
-                </BarChart>
-              </ResponsiveContainer>
+              {monthlyInspections.length === 0 ? (
+                <p className="text-sm text-zinc-400 text-center py-12">No inspection data for this period</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={monthlyInspections}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="month" stroke="#888" tick={{ fontSize: 12 }} />
+                    <YAxis stroke="#888" tick={{ fontSize: 12 }} />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="completed" name="Completed" fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="failed"    name="Failed"    fill="#ef4444" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
             </div>
             <div className="bg-white rounded-lg shadow p-6">
               <h3 className="text-base font-semibold text-zinc-800 mb-4">Monthly Cost Trend (R)</h3>
-              <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={monthlyCosts}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="month" stroke="#888" tick={{ fontSize:12 }} />
-                  <YAxis stroke="#888" tick={{ fontSize:12 }} tickFormatter={v => `R${(v/1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v: number) => fmtR(v)} />
-                  <Legend />
-                  <Line type="monotone" dataKey="fuel"        name="Fuel"        stroke="#f97316" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="maintenance" name="Maintenance"  stroke="#3b82f6" strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="other"       name="Other"        stroke="#8b5cf6" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
+              {monthlyCosts.length === 0 ? (
+                <p className="text-sm text-zinc-400 text-center py-12">No cost data for this period</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={240}>
+                  <LineChart data={monthlyCosts}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="month" stroke="#888" tick={{ fontSize: 12 }} />
+                    <YAxis stroke="#888" tick={{ fontSize: 12 }} tickFormatter={v => `R${(v / 1000).toFixed(0)}k`} />
+                    <Tooltip formatter={(v: number) => fmtR(v)} />
+                    <Legend />
+                    <Line type="monotone" dataKey="fuel"        name="Fuel"        stroke="#f97316" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="maintenance" name="Maintenance"  stroke="#3b82f6" strokeWidth={2} dot={false} />
+                    <Line type="monotone" dataKey="other"       name="Other"        stroke="#8b5cf6" strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
         </>
@@ -202,42 +342,64 @@ const FleetReports: React.FC = () => {
 
       {/* ── Inspections Report ── */}
       {reportType === 'inspections' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-white rounded-lg shadow p-6">
-            <h3 className="text-base font-semibold text-zinc-800 mb-4">Inspections per Month</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={monthlyInspections}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="month" stroke="#888" tick={{ fontSize:12 }} />
-                <YAxis stroke="#888" tick={{ fontSize:12 }} />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="completed" name="Completed" fill="#10b981" radius={[3,3,0,0]} />
-                <Bar dataKey="failed"    name="Failed"    fill="#ef4444" radius={[3,3,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="bg-white rounded-lg shadow p-6 space-y-4">
-            <h3 className="text-base font-semibold text-zinc-800">Summary</h3>
+        <>
+          <div className="grid grid-cols-3 gap-4">
             {[
-              { label:'Total Inspections', value:totalInspections },
-              { label:'Passed',            value:totalInspections - totalFailed },
-              { label:'Failed',            value:totalFailed },
-              { label:'Pass Rate',         value:`${passRate}%` },
-            ].map(({ label, value }) => (
-              <div key={label} className="flex justify-between text-sm">
-                <span className="text-zinc-600">{label}</span>
-                <span className="font-semibold text-zinc-900">{value}</span>
+              { label: 'General',   value: generalCount,   color: 'bg-blue-50 text-blue-700' },
+              { label: 'Forklift',  value: forkliftCount,  color: 'bg-orange-50 text-orange-700' },
+              { label: 'Generator', value: generatorCount, color: 'bg-green-50 text-green-700' },
+            ].map(({ label, value, color }) => (
+              <div key={label} className={`${color} rounded-lg p-4 text-center`}>
+                <p className="text-xs font-semibold uppercase tracking-wider opacity-70">{label}</p>
+                <p className="text-3xl font-bold mt-1">{value}</p>
               </div>
             ))}
-            <div className="pt-2">
-              <div className="w-full bg-zinc-200 rounded-full h-2">
-                <div className="bg-green-500 h-2 rounded-full" style={{ width: `${passRate}%` }} />
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="lg:col-span-2 bg-white rounded-lg shadow p-6">
+              <h3 className="text-base font-semibold text-zinc-800 mb-4">Inspections per Month</h3>
+              {monthlyInspections.length === 0 ? (
+                <p className="text-sm text-zinc-400 text-center py-16">No inspection data for this period</p>
+              ) : (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={monthlyInspections}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                    <XAxis dataKey="month" stroke="#888" tick={{ fontSize: 12 }} />
+                    <YAxis stroke="#888" tick={{ fontSize: 12 }} />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="completed" name="Completed" fill="#10b981" radius={[3, 3, 0, 0]} />
+                    <Bar dataKey="failed"    name="Failed"    fill="#ef4444" radius={[3, 3, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+            <div className="bg-white rounded-lg shadow p-6 space-y-4">
+              <h3 className="text-base font-semibold text-zinc-800">Summary</h3>
+              {[
+                { label: 'Total Inspections', value: totalInspections },
+                { label: 'Passed',            value: totalInspections - totalFailed },
+                { label: 'Failed',            value: totalFailed },
+                { label: 'Pass Rate',         value: `${passRate}%` },
+                { label: 'General',           value: generalCount },
+                { label: 'Forklift',          value: forkliftCount },
+                { label: 'Generator',         value: generatorCount },
+              ].map(({ label, value }) => (
+                <div key={label} className="flex justify-between text-sm">
+                  <span className="text-zinc-600">{label}</span>
+                  <span className="font-semibold text-zinc-900">{value}</span>
+                </div>
+              ))}
+              <div className="pt-2">
+                <div className="w-full bg-zinc-200 rounded-full h-2">
+                  <div className="bg-green-500 h-2 rounded-full" style={{ width: `${passRate}%` }} />
+                </div>
+                <p className="text-xs text-zinc-500 mt-1">{passRate}% pass rate</p>
               </div>
-              <p className="text-xs text-zinc-500 mt-1">{passRate}% pass rate</p>
             </div>
           </div>
-        </div>
+        </>
       )}
 
       {/* ── Cost Analysis ── */}
@@ -245,9 +407,9 @@ const FleetReports: React.FC = () => {
         <>
           <div className="grid grid-cols-3 gap-4">
             {[
-              { label:'Total (6m)',       value:fmtR(totalCost)       },
-              { label:'Fuel (6m)',        value:fmtR(totalFuel)        },
-              { label:'Maintenance (6m)', value:fmtR(totalMaintenance) },
+              { label: `Total (${rangeLabel})`,       value: fmtR(totalCost)       },
+              { label: `Fuel (${rangeLabel})`,        value: fmtR(totalFuel)        },
+              { label: `Maintenance (${rangeLabel})`, value: fmtR(totalMaintenance) },
             ].map(({ label, value }) => (
               <div key={label} className="bg-white rounded-lg shadow p-5">
                 <p className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">{label}</p>
@@ -257,18 +419,22 @@ const FleetReports: React.FC = () => {
           </div>
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-base font-semibold text-zinc-800 mb-4">Cost Breakdown by Month (R)</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={monthlyCosts}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="month" stroke="#888" tick={{ fontSize:12 }} />
-                <YAxis stroke="#888" tick={{ fontSize:12 }} tickFormatter={v => `R${(v/1000).toFixed(0)}k`} />
-                <Tooltip formatter={(v: number) => fmtR(v)} />
-                <Legend />
-                <Bar dataKey="fuel"        name="Fuel"        fill="#f97316" stackId="a" />
-                <Bar dataKey="maintenance" name="Maintenance"  fill="#3b82f6" stackId="a" />
-                <Bar dataKey="other"       name="Other"        fill="#8b5cf6" stackId="a" radius={[3,3,0,0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {monthlyCosts.length === 0 ? (
+              <p className="text-sm text-zinc-400 text-center py-16">No cost data for this period</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
+                <BarChart data={monthlyCosts}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="month" stroke="#888" tick={{ fontSize: 12 }} />
+                  <YAxis stroke="#888" tick={{ fontSize: 12 }} tickFormatter={v => `R${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip formatter={(v: number) => fmtR(v)} />
+                  <Legend />
+                  <Bar dataKey="fuel"        name="Fuel"        fill="#f97316" stackId="a" />
+                  <Bar dataKey="maintenance" name="Maintenance"  fill="#3b82f6" stackId="a" />
+                  <Bar dataKey="other"       name="Other"        fill="#8b5cf6" stackId="a" radius={[3, 3, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </>
       )}
@@ -278,16 +444,20 @@ const FleetReports: React.FC = () => {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-base font-semibold text-zinc-800 mb-4">Compliance Overview</h3>
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie data={complianceData} cx="50%" cy="50%"
-                  innerRadius={70} outerRadius={100} paddingAngle={4} dataKey="value"
-                  label={({ name, percent }) => `${name} ${(percent*100).toFixed(0)}%`}>
-                  {complianceData.map((_, i) => <Cell key={i} fill={PIE_COLORS[i]} />)}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
+            {complianceData.length === 0 ? (
+              <p className="text-sm text-zinc-400 text-center py-16">No compliance data</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={280}>
+                <PieChart>
+                  <Pie data={complianceData} cx="50%" cy="50%"
+                    innerRadius={70} outerRadius={100} paddingAngle={4} dataKey="value"
+                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}>
+                    {complianceData.map((d, i) => <Cell key={i} fill={d.color} />)}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
           <div className="bg-white rounded-lg shadow p-6 space-y-3">
             <h3 className="text-base font-semibold text-zinc-800 mb-2">Breakdown</h3>
@@ -301,11 +471,13 @@ const FleetReports: React.FC = () => {
             <hr className="my-2" />
             <div className="flex justify-between text-sm">
               <span className="text-zinc-600">Total tracked</span>
-              <span className="font-semibold">{complianceData.reduce((s,d) => s+d.value, 0)}</span>
+              <span className="font-semibold">{compliance.length}</span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-zinc-600">Compliance rate</span>
-              <span className="font-semibold text-green-600">72%</span>
+              <span className={`font-semibold ${complianceScore >= 80 ? 'text-green-600' : complianceScore >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>
+                {complianceScore}%
+              </span>
             </div>
           </div>
         </div>
@@ -314,41 +486,54 @@ const FleetReports: React.FC = () => {
       {/* ── Vehicle Utilisation ── */}
       {reportType === 'utilization' && (
         <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-base font-semibold text-zinc-800 mb-4">Vehicle Hours (Last 30 days)</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={vehicleUtilisation} layout="vertical">
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis type="number" stroke="#888" tick={{ fontSize:12 }} />
-              <YAxis dataKey="vehicle" type="category" stroke="#888" tick={{ fontSize:12 }} width={60} />
-              <Tooltip />
-              <Bar dataKey="hours" name="Hours" fill="#3b82f6" radius={[0,3,3,0]} />
-            </BarChart>
-          </ResponsiveContainer>
+          <h3 className="text-base font-semibold text-zinc-800 mb-4">
+            Inspections per Vehicle ({rangeLabel})
+          </h3>
+          {vehicleUtilisation.length === 0 ? (
+            <p className="text-sm text-zinc-400 text-center py-16">No inspection data for this period</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={Math.max(240, vehicleUtilisation.length * 40)}>
+              <BarChart data={vehicleUtilisation} layout="vertical">
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis type="number" stroke="#888" tick={{ fontSize: 12 }} />
+                <YAxis dataKey="vehicle" type="category" stroke="#888" tick={{ fontSize: 12 }} width={70} />
+                <Tooltip />
+                <Bar dataKey="count" name="Inspections" fill="#3b82f6" radius={[0, 3, 3, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       )}
 
-      {/* Recent Reports */}
+      {/* Recent Exports log */}
       <div className="bg-white rounded-lg shadow">
         <div className="px-6 py-4 border-b border-zinc-200">
-          <h2 className="text-base font-semibold text-zinc-800">Recent Reports</h2>
+          <h2 className="text-base font-semibold text-zinc-800">Quick Export</h2>
         </div>
         <div className="divide-y divide-zinc-100">
-          {recentReports.map(r => (
-            <div key={r.name} className="px-6 py-4 flex items-center justify-between hover:bg-zinc-50">
-              <div className="flex items-center gap-3">
-                <FileText className="h-5 w-5 text-zinc-400" />
-                <div>
-                  <p className="text-sm font-medium text-zinc-900">{r.name}</p>
-                  <p className="text-xs text-zinc-500">Generated {r.generated}</p>
+          {(['summary', 'inspections', 'costs', 'compliance', 'utilization'] as const).map(type => {
+            const labels: Record<string, string> = {
+              summary: 'Fleet Summary', inspections: 'Inspections Report',
+              costs: 'Cost Analysis', compliance: 'Compliance Status',
+              utilization: 'Vehicle Utilisation',
+            };
+            return (
+              <div key={type} className="px-6 py-4 flex items-center justify-between hover:bg-zinc-50">
+                <div className="flex items-center gap-3">
+                  <FileText className="h-5 w-5 text-zinc-400" />
+                  <div>
+                    <p className="text-sm font-medium text-zinc-900">{labels[type]} — {rangeLabel}</p>
+                    <p className="text-xs text-zinc-500">Live data · {new Date().toLocaleDateString('en-ZA')}</p>
+                  </div>
                 </div>
+                <button
+                  onClick={() => exportCSV(type, dateRange, monthlyInspections, monthlyCosts, complianceData, vehicleUtilisation, vehicles)}
+                  className="text-sky-600 hover:text-sky-800">
+                  <Download className="h-5 w-5" />
+                </button>
               </div>
-              <button
-                onClick={() => exportCSV(reportType, dateRange)}
-                className="text-sky-600 hover:text-sky-800">
-                <Download className="h-5 w-5" />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>

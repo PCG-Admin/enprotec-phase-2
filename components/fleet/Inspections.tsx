@@ -2,7 +2,7 @@ import * as React from 'react';
 import {
   ClipboardList, CheckCircle, AlertCircle, XCircle,
   Plus, Search, X, Camera, MapPin, ChevronRight, ChevronLeft,
-  Trash2, Loader2,
+  Trash2, Loader2, Printer,
 } from 'lucide-react';
 import {
   getInspections, createInspection, deleteInspection,
@@ -106,6 +106,26 @@ interface Deviation {
   deviation: string;
 }
 
+interface GeneratorEquipmentChecks {
+  // Fluids
+  engineOilLevelOk: YesNo;
+  oilLeaks: YesNo;
+  coolantLevelOk: YesNo;
+  coolantLeaks: YesNo;
+  // Fuel
+  fuelGaugePhoto: string;
+  fuelLevel: string;
+  // Engine
+  fanBelt: string;
+  alternatorBelt: string;
+  waterHoses: string;
+  radiatorLevel: string;
+  engineOilLevelEngine: string;
+  batteryWaterLevel: string;
+  fuelLeaks: string;
+  temperature: string;
+}
+
 interface InspectionRecord {
   id: string;
   // Header
@@ -139,9 +159,10 @@ interface InspectionRecord {
   checklistFindings: ChecklistFinding[];
   monthlyBreakdowns: Breakdown[];
   equipment: EquipmentChecks;
+  generatorEquipment: GeneratorEquipmentChecks;
   deviations: Deviation[];
   // Type
-  inspectionType: 'General' | 'Forklift';
+  inspectionType: 'General' | 'Forklift' | 'Generator';
   // Outcome
   result: 'pass' | 'fail' | 'requires_attention';
 }
@@ -197,6 +218,23 @@ const defaultEquipment = (): EquipmentChecks => ({
   seatbelts: 'Yes',
 });
 
+const defaultGeneratorEquipment = (): GeneratorEquipmentChecks => ({
+  engineOilLevelOk: 'Yes',
+  oilLeaks: 'No',
+  coolantLevelOk: 'Yes',
+  coolantLeaks: 'No',
+  fuelGaugePhoto: '',
+  fuelLevel: '',
+  fanBelt: 'Ok',
+  alternatorBelt: 'Ok',
+  waterHoses: 'Ok',
+  radiatorLevel: 'Ok',
+  engineOilLevelEngine: 'Ok',
+  batteryWaterLevel: 'Ok',
+  fuelLeaks: 'None',
+  temperature: 'Ok',
+});
+
 const newWeekRow = (): WeekRow => ({
   id: Date.now().toString(),
   weekLabel: '',
@@ -232,6 +270,7 @@ const defaultForm = (): Omit<InspectionRecord, 'id' | 'result'> => ({
   serviceSticker: '',
   serviceStickerDate: '',
   inspectionType: 'General',
+  generatorEquipment: defaultGeneratorEquipment(),
   weeklyUse: [newWeekRow()],
   checklistFindings: [],
   monthlyBreakdowns: [],
@@ -400,6 +439,231 @@ const CheckRow: React.FC<{ label: string; children: React.ReactNode }> = ({ labe
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+/** Opens a formatted print window for the given inspection record */
+const printInspection = async (insp: InspectionRecord) => {
+  /* Fetch Enprotec logo and convert to base64 so it works in the new window */
+  let logoSrc = '';
+  try {
+    const resp = await fetch('/BR002-Full%20colour%20w%20slogan%20Landscape-2500px-Rev03%20(1).jpg');
+    if (resp.ok) {
+      const blob = await resp.blob();
+      logoSrc = await new Promise<string>(res => {
+        const r = new FileReader();
+        r.onload = () => res(r.result as string);
+        r.readAsDataURL(blob);
+      });
+    }
+  } catch { /* logo unavailable */ }
+
+  const typeLabel = insp.inspectionType === 'Forklift' ? 'FORKLIFT'
+                  : insp.inspectionType === 'Generator' ? 'GENERATOR'
+                  : 'VEHICLE';
+
+  const fullTitle  = `MONTHLY ${typeLabel} INSPECTION REPORT`;
+  const entityWord = insp.inspectionType === 'Generator' ? 'Generator' : 'Vehicle';
+
+  const frontPhotoHtml = insp.vehicleFrontPhoto
+    ? `<img src="${insp.vehicleFrontPhoto}" class="front-photo" alt="${entityWord} front" />`
+    : `<div class="front-photo no-photo">${entityWord} photo not captured</div>`;
+
+  const logoHtml = logoSrc
+    ? `<img src="${logoSrc}" class="logo-img" alt="Enprotec" />`
+    : `<div class="logo-text">ENPROTEC</div>`;
+
+  const resultClass = insp.result === 'pass' ? 'result-pass'
+                    : insp.result === 'fail' ? 'result-fail'
+                    : 'result-attention';
+  const resultLabel = insp.result === 'requires_attention' ? 'REQUIRES ATTENTION'
+                    : insp.result.toUpperCase();
+
+  const devRows = (insp.deviations ?? []).map((d, i) => `
+    <tr><td>${i + 1}</td><td>${d.item}</td><td>${d.deviation}</td></tr>`).join('') ||
+    '<tr><td colspan="3" class="empty-row">No deviations recorded</td></tr>';
+
+  const breakdownRows = (insp.monthlyBreakdowns ?? []).map((b, i) => `
+    <tr><td>${i + 1}</td><td>${b.description ?? ''}</td><td>${b.durationHrs ?? ''}</td><td>${b.spareParts ?? ''}</td><td>${b.costToRepair ?? ''}</td></tr>`).join('') ||
+    '<tr><td colspan="5" class="empty-row">No breakdowns recorded</td></tr>';
+
+  const weeklyRows = (insp.weeklyUse ?? []).map(w => `
+    <tr>
+      <td>${w.weekLabel}</td>
+      <td>${w.operationalHours || '—'}</td>
+      ${insp.inspectionType !== 'Generator' ? `<td>${w.checklistsCompleted || '—'}</td><td>${w.findingsOnChecklists || '—'}</td><td>${w.findingsCommunicated || '—'}</td>` : ''}
+    </tr>`).join('') || `<tr><td colspan="${insp.inspectionType !== 'Generator' ? 5 : 2}" class="empty-row">No weekly data</td></tr>`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"/>
+<title>${fullTitle}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; }
+
+  /* ── Cover header ── */
+  .cover-header {
+    display: flex; align-items: stretch;
+    border-bottom: 3px solid #1d4ed8;
+    margin-bottom: 0;
+  }
+  .cover-left {
+    flex: 1; padding: 20px 24px; display: flex; flex-direction: column; justify-content: center; gap: 12px;
+  }
+  .logo-img  { max-width: 220px; max-height: 80px; object-fit: contain; }
+  .logo-text { font-size: 28px; font-weight: 900; color: #1d4ed8; letter-spacing: 2px; }
+  .company-line { font-size: 10px; color: #6b7280; }
+  .title-block { margin-top: 6px; }
+  .title-block h1 { font-size: 20px; font-weight: 800; color: #1d4ed8; line-height: 1.2; text-transform: uppercase; }
+  .title-block .subtitle { font-size: 11px; color: #6b7280; margin-top: 3px; }
+
+  .cover-right {
+    width: 260px; flex-shrink: 0; position: relative; overflow: hidden;
+  }
+  .front-photo {
+    width: 100%; height: 100%; min-height: 200px;
+    object-fit: cover; display: block;
+  }
+  .no-photo {
+    width: 100%; min-height: 200px; background: #f3f4f6;
+    display: flex; align-items: center; justify-content: center;
+    color: #9ca3af; font-size: 13px; text-align: center; padding: 16px;
+  }
+
+  /* ── Result banner ── */
+  .result-banner {
+    padding: 8px 24px;
+    display: flex; align-items: center; gap: 12px;
+    font-size: 12px; font-weight: 700;
+  }
+  .result-pass       { background: #d1fae5; color: #065f46; }
+  .result-fail       { background: #fee2e2; color: #991b1b; }
+  .result-attention  { background: #fef3c7; color: #92400e; }
+  .result-banner .badge {
+    display: inline-block; padding: 3px 14px; border-radius: 20px;
+    font-size: 12px; font-weight: 800; border: 2px solid currentColor;
+  }
+
+  /* ── Content ── */
+  .content { padding: 16px 24px; }
+
+  .info-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    border: 1px solid #d1d5db; border-radius: 4px;
+    margin-bottom: 16px; overflow: hidden;
+  }
+  .info-grid .row { display: contents; }
+  .info-grid .lbl { background: #f9fafb; font-weight: 700; padding: 5px 10px; border-bottom: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; }
+  .info-grid .val { padding: 5px 10px; border-bottom: 1px solid #e5e7eb; }
+
+  h2 {
+    background: #1d4ed8; color: white;
+    padding: 6px 12px; font-size: 12px; font-weight: 700;
+    margin: 18px 0 8px; border-radius: 3px; text-transform: uppercase;
+  }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 10.5px; }
+  th, td { border: 1px solid #d1d5db; padding: 5px 8px; text-align: left; }
+  th { background: #f3f4f6; font-weight: 700; font-size: 10px; text-transform: uppercase; }
+  .empty-row { text-align: center; color: #9ca3af; font-style: italic; }
+
+  .footer { margin-top: 24px; border-top: 1px solid #e5e7eb; padding-top: 8px; font-size: 9px; color: #9ca3af; text-align: center; }
+
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .cover-header { page-break-inside: avoid; }
+  }
+</style>
+</head><body>
+
+<!-- ── Cover Header ── -->
+<div class="cover-header">
+  <div class="cover-left">
+    ${logoHtml}
+    <p class="company-line">enquiries@enprotec.com &nbsp;|&nbsp; www.enprotec.com</p>
+    <div class="title-block">
+      <h1>${fullTitle}</h1>
+      <p class="subtitle">Inspection Date: ${insp.inspectionDate || '—'} &nbsp;|&nbsp; Site: ${insp.siteAllocation || '—'}</p>
+    </div>
+  </div>
+  <div class="cover-right">
+    ${frontPhotoHtml}
+  </div>
+</div>
+
+<!-- ── Result Banner ── -->
+<div class="result-banner ${resultClass}">
+  <span>Inspection Result:</span>
+  <span class="badge">${resultLabel}</span>
+  <span style="margin-left:auto;font-weight:400">Inspected by: ${insp.inspectedBy || '—'}</span>
+</div>
+
+<!-- ── Content ── -->
+<div class="content">
+
+  <!-- Info grid -->
+  <div class="info-grid">
+    <div class="lbl">Previous Inspection Date</div><div class="val">${insp.previousInspectionDate || '—'}</div>
+    <div class="lbl">Inspection Date</div><div class="val">${insp.inspectionDate || '—'}</div>
+    <div class="lbl">Inspected By</div><div class="val">${insp.inspectedBy || '—'}</div>
+    <div class="lbl">Site Allocation</div><div class="val">${insp.siteAllocation || '—'}</div>
+    <div class="lbl">${entityWord} Make &amp; Model</div><div class="val">${insp.vehicleMakeModel || '—'}</div>
+    <div class="lbl">Registration / Serial</div><div class="val">${insp.registrationNumber || '—'}</div>
+    <div class="lbl">Current Hours / ODO</div><div class="val">${insp.currentHours || '—'}</div>
+    <div class="lbl">Last Service (Hours)</div><div class="val">${insp.lastServiceHours || '—'}</div>
+    <div class="lbl">Last Service (Date)</div><div class="val">${insp.lastServiceDate || '—'}</div>
+    <div class="lbl">Next Service (Hours)</div><div class="val">${insp.nextServiceHours || '—'}</div>
+    <div class="lbl">Next Service (Date)</div><div class="val">${insp.nextServiceDate || '—'}</div>
+    <div class="lbl">Total Maintenance Cost</div><div class="val">R ${insp.totalMaintenanceCost || '0'}</div>
+    <div class="lbl">Avg Monthly Maintenance Cost</div><div class="val">R ${insp.avgMonthlyMaintenanceCost || '0'}</div>
+    <div class="lbl">Serial Number</div><div class="val">${insp.serialNumberText || '—'}</div>
+  </div>
+
+  <h2>1. Weekly Use</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Week</th>
+        <th>Operational Hours</th>
+        ${insp.inspectionType !== 'Generator' ? '<th>Checklists Done?</th><th>Findings?</th><th>Findings Addressed?</th>' : ''}
+      </tr>
+    </thead>
+    <tbody>${weeklyRows}</tbody>
+  </table>
+
+  <h2>2. Monthly Breakdowns</h2>
+  <table>
+    <thead><tr><th>#</th><th>Description</th><th>Duration (Hrs)</th><th>Spare Parts</th><th>Cost (ZAR)</th></tr></thead>
+    <tbody>${breakdownRows}</tbody>
+  </table>
+
+  <h2>3. Deviations</h2>
+  <table>
+    <thead><tr><th>No</th><th>Item</th><th>Deviation / Finding</th></tr></thead>
+    <tbody>${devRows}</tbody>
+  </table>
+
+  <div class="footer">
+    Generated by Enprotec Fleet Management System &nbsp;|&nbsp; ${new Date().toLocaleString('en-ZA')}
+  </div>
+</div>
+
+<script>
+  (function waitAndPrint() {
+    var imgs = Array.from(document.images);
+    if (imgs.length === 0) { window.print(); return; }
+    var done = 0;
+    function check() { done++; if (done >= imgs.length) window.print(); }
+    imgs.forEach(function(img) {
+      if (img.complete) { done++; }
+      else { img.onload = check; img.onerror = check; }
+    });
+    if (done >= imgs.length) window.print();
+  })();
+</script>
+</body></html>`;
+
+  const win = window.open('', '_blank');
+  if (win) { win.document.write(html); win.document.close(); }
+};
+
 const TABS = [
   { id: 0, label: 'Vehicle Info' },
   { id: 1, label: 'Weekly Use' },
@@ -417,7 +681,7 @@ const Inspections: React.FC = () => {
   const [showForm, setShowForm] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState(0);
   const [searchTerm, setSearchTerm] = React.useState('');
-  const [typeFilter, setTypeFilter] = React.useState<'All' | 'General' | 'Forklift'>('All');
+  const [typeFilter, setTypeFilter] = React.useState<'All' | 'General' | 'Forklift' | 'Generator'>('All');
   const [form, setForm] = React.useState(defaultForm());
 
   React.useEffect(() => {
@@ -439,6 +703,9 @@ const Inspections: React.FC = () => {
 
   const setEquip = (field: keyof EquipmentChecks, value: unknown) =>
     setForm(prev => ({ ...prev, equipment: { ...prev.equipment, [field]: value } }));
+
+  const setGenEquip = (field: keyof GeneratorEquipmentChecks, value: unknown) =>
+    setForm(prev => ({ ...prev, generatorEquipment: { ...prev.generatorEquipment, [field]: value } }));
 
   const setWheel = (wheel: 'leftFrontWheel' | 'rightFrontWheel' | 'leftRearWheel' | 'rightRearWheel', field: keyof WheelCheck, value: unknown) =>
     setForm(prev => ({
@@ -496,6 +763,23 @@ const Inspections: React.FC = () => {
     if (e.airConditioner === 'No') add('Air Conditioner', 'Not working');
     if (e.rearViewMirrors === 'No') add('Rear View Mirrors', 'Not all mirrors in good condition');
     if (e.seatbelts === 'No') add('Seatbelts', 'Not in good condition');
+
+    // Generator-specific deviations
+    if (form.inspectionType === 'Generator') {
+      const g = form.generatorEquipment;
+      if (g.engineOilLevelOk === 'No') add('Engine Oil', 'Oil level not in order');
+      if (g.oilLeaks === 'Yes')         add('Engine Oil', 'Oil leaks present');
+      if (g.coolantLevelOk === 'No')    add('Coolant', 'Coolant level not in order');
+      if (g.coolantLeaks === 'Yes')     add('Coolant', 'Coolant leaks present');
+      if (g.fanBelt !== 'Ok' && g.fanBelt !== 'N/A')           add('Fan Belt', g.fanBelt);
+      if (g.alternatorBelt !== 'Ok' && g.alternatorBelt !== 'N/A') add('Alternator Belt', g.alternatorBelt);
+      if (g.waterHoses !== 'Ok' && g.waterHoses !== 'N/A')    add('Water Hoses', g.waterHoses);
+      if (g.radiatorLevel !== 'Ok' && g.radiatorLevel !== 'N/A') add('Radiator Level', g.radiatorLevel);
+      if (g.engineOilLevelEngine !== 'Ok' && g.engineOilLevelEngine !== 'N/A') add('Engine Oil Level', g.engineOilLevelEngine);
+      if (g.batteryWaterLevel !== 'Ok' && g.batteryWaterLevel !== 'N/A') add('Battery Water Level', g.batteryWaterLevel);
+      if (g.temperature !== 'Ok' && g.temperature !== 'N/A')  add('Temperature', g.temperature);
+      if (g.fuelLeaks && g.fuelLeaks !== 'None' && g.fuelLeaks !== '') add('Fuel Leaks', g.fuelLeaks);
+    }
 
     // Merge with manual deviations
     return [...d, ...form.deviations.filter(md => !md.id.startsWith('auto-'))];
@@ -592,18 +876,18 @@ const Inspections: React.FC = () => {
       {/* Inspection Type */}
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">Inspection Type</label>
-        <div className="flex gap-3">
-          {(['General', 'Forklift'] as const).map(t => (
+        <div className="flex flex-wrap gap-3">
+          {([
+            { t: 'General',   active: 'bg-blue-600 border-blue-600 text-white' },
+            { t: 'Forklift',  active: 'bg-orange-500 border-orange-500 text-white' },
+            { t: 'Generator', active: 'bg-green-600 border-green-600 text-white' },
+          ] as const).map(({ t, active }) => (
             <button
               key={t}
               type="button"
               onClick={() => set('inspectionType', t)}
               className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
-                form.inspectionType === t
-                  ? t === 'Forklift'
-                    ? 'bg-orange-500 border-orange-500 text-white'
-                    : 'bg-blue-600 border-blue-600 text-white'
-                  : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+                form.inspectionType === t ? active : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
               }`}
             >
               {t}
@@ -663,9 +947,11 @@ const Inspections: React.FC = () => {
             <tr>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Week</th>
               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Operational Hours</th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Checklists Completed?</th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Findings?</th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Findings Addressed?</th>
+              {form.inspectionType !== 'Generator' && <>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Checklists Completed?</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Findings?</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Findings Addressed?</th>
+              </>}
               <th className="px-3 py-2"></th>
             </tr>
           </thead>
@@ -698,7 +984,7 @@ const Inspections: React.FC = () => {
                     className="w-20 border rounded px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500"
                   />
                 </td>
-                {(['checklistsCompleted', 'findingsOnChecklists', 'findingsCommunicated'] as const).map((f) => (
+                {form.inspectionType !== 'Generator' && (['checklistsCompleted', 'findingsOnChecklists', 'findingsCommunicated'] as const).map((f) => (
                   <td key={f} className="px-3 py-2">
                     <YesNoSelect
                       value={row[f]}
@@ -843,29 +1129,33 @@ const Inspections: React.FC = () => {
     </div>
   );
 
-  const renderTab3 = () => (
-    <div className="space-y-4">
-      <p className="text-sm text-gray-500">Take photos of each angle of the vehicle and relevant identifiers.</p>
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-        {([
-          ['Vehicle Front', 'vehicleFrontPhoto'],
-          ['Vehicle Left', 'vehicleLeftPhoto'],
-          ['Vehicle Right', 'vehicleRightPhoto'],
-          ['Vehicle Back', 'vehicleBackPhoto'],
-          ['Interior', 'interiorPhoto'],
-          ['Serial Number Plate', 'serialNumberPhoto'],
-          ['Service Sticker', 'serviceSticker'],
-        ] as [string, keyof typeof form][]).map(([label, field]) => (
-          <PhotoUpload
-            key={field}
-            label={label}
-            value={form[field] as string}
-            onChange={(v) => set(field, v)}
-          />
-        ))}
+  const renderTab3 = () => {
+    const isGen = form.inspectionType === 'Generator';
+    const prefix = isGen ? 'Machine' : 'Vehicle';
+    return (
+      <div className="space-y-4">
+        <p className="text-sm text-gray-500">Take photos of each angle of the {isGen ? 'generator' : 'vehicle'} and relevant identifiers.</p>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+          {([
+            [`${prefix} Front`, 'vehicleFrontPhoto'],
+            [`${prefix} Left`,  'vehicleLeftPhoto'],
+            [`${prefix} Right`, 'vehicleRightPhoto'],
+            [`${prefix} Back`,  'vehicleBackPhoto'],
+            ['Interior',        'interiorPhoto'],
+            ['Serial Number Plate', 'serialNumberPhoto'],
+            ['Service Sticker', 'serviceSticker'],
+          ] as [string, keyof typeof form][]).map(([label, field]) => (
+            <PhotoUpload
+              key={field}
+              label={label}
+              value={form[field] as string}
+              onChange={(v) => set(field, v)}
+            />
+          ))}
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderWheelSection = (label: string, wheel: 'leftFrontWheel' | 'rightFrontWheel' | 'leftRearWheel' | 'rightRearWheel') => (
     <div className="bg-gray-50 rounded-lg p-3 space-y-2">
@@ -885,7 +1175,67 @@ const Inspections: React.FC = () => {
     </div>
   );
 
+  const renderTab4Generator = () => {
+    const g = form.generatorEquipment;
+    const okOptions = ['Ok', 'Not Ok', 'N/A'];
+    const OkSelect: React.FC<{ value: string; onChange: (v: string) => void }> = ({ value, onChange }) => (
+      <select value={value} onChange={e => onChange(e.target.value)}
+        className="border rounded px-2 py-1 text-sm focus:ring-1 focus:ring-blue-500">
+        {okOptions.map(o => <option key={o} value={o}>{o}</option>)}
+      </select>
+    );
+    return (
+      <div className="space-y-2">
+        <SectionHeader title="Fluids" />
+        <CheckRow label="Engine oil level in order">
+          <YesNoSelect value={g.engineOilLevelOk} onChange={v => setGenEquip('engineOilLevelOk', v)} />
+        </CheckRow>
+        <CheckRow label="Any oil leaks">
+          <YesNoSelect value={g.oilLeaks} onChange={v => setGenEquip('oilLeaks', v)} />
+        </CheckRow>
+        <CheckRow label="Coolant level in order">
+          <YesNoSelect value={g.coolantLevelOk} onChange={v => setGenEquip('coolantLevelOk', v)} />
+        </CheckRow>
+        <CheckRow label="Any coolant leaks">
+          <YesNoSelect value={g.coolantLeaks} onChange={v => setGenEquip('coolantLeaks', v)} />
+        </CheckRow>
+
+        <SectionHeader title="Fuel Gauge" />
+        <div className="flex items-start gap-3 py-2 border-b border-gray-100">
+          <span className="text-sm text-gray-700 flex-1">Fuel Gauge Photo</span>
+          <div className="w-24"><PhotoUpload label="Gauge photo" value={g.fuelGaugePhoto} onChange={v => setGenEquip('fuelGaugePhoto', v)} /></div>
+        </div>
+        <CheckRow label="Fuel Level">
+          <input type="text" value={g.fuelLevel} onChange={e => setGenEquip('fuelLevel', e.target.value)}
+            placeholder="e.g. Half Tank, Full"
+            className="border rounded px-2 py-1 text-sm focus:ring-1 focus:ring-blue-500 w-40" />
+        </CheckRow>
+
+        <SectionHeader title="Engine" />
+        {([
+          ['Fan belt',            'fanBelt'],
+          ['Alternator belt',     'alternatorBelt'],
+          ['Water hoses',         'waterHoses'],
+          ['Radiator level',      'radiatorLevel'],
+          ['Engine oil level',    'engineOilLevelEngine'],
+          ['Battery water level', 'batteryWaterLevel'],
+          ['Temperature',         'temperature'],
+        ] as [string, keyof GeneratorEquipmentChecks][]).map(([label, field]) => (
+          <CheckRow key={field} label={label}>
+            <OkSelect value={g[field] as string} onChange={v => setGenEquip(field, v)} />
+          </CheckRow>
+        ))}
+        <CheckRow label="Fuel leaks">
+          <input type="text" value={g.fuelLeaks} onChange={e => setGenEquip('fuelLeaks', e.target.value)}
+            placeholder="None / describe..."
+            className="border rounded px-2 py-1 text-sm focus:ring-1 focus:ring-blue-500 w-40" />
+        </CheckRow>
+      </div>
+    );
+  };
+
   const renderTab4 = () => {
+    if (form.inspectionType === 'Generator') return renderTab4Generator();
     const e = form.equipment;
     return (
       <div className="space-y-2">
@@ -1194,19 +1544,18 @@ const Inspections: React.FC = () => {
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <div className="flex gap-2">
-            {(['All', 'General', 'Forklift'] as const).map(t => (
+          <div className="flex gap-2 flex-wrap">
+            {([
+              { t: 'All',       active: 'bg-gray-700 border-gray-700 text-white' },
+              { t: 'General',   active: 'bg-blue-600 border-blue-600 text-white' },
+              { t: 'Forklift',  active: 'bg-orange-500 border-orange-500 text-white' },
+              { t: 'Generator', active: 'bg-green-600 border-green-600 text-white' },
+            ] as const).map(({ t, active }) => (
               <button
                 key={t}
-                onClick={() => setTypeFilter(t)}
+                onClick={() => setTypeFilter(t as typeof typeFilter)}
                 className={`px-3 py-2 rounded-lg border text-sm font-medium transition-colors whitespace-nowrap ${
-                  typeFilter === t
-                    ? t === 'Forklift'
-                      ? 'bg-orange-500 border-orange-500 text-white'
-                      : t === 'General'
-                        ? 'bg-blue-600 border-blue-600 text-white'
-                        : 'bg-gray-700 border-gray-700 text-white'
-                    : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
+                  typeFilter === t ? active : 'bg-white border-gray-300 text-gray-700 hover:border-gray-400'
                 }`}
               >
                 {t}
@@ -1280,13 +1629,13 @@ const Inspections: React.FC = () => {
               {filteredInspections.map((insp) => (
                 <tr key={insp.id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                      (insp.inspectionType ?? 'General') === 'Forklift'
-                        ? 'bg-orange-100 text-orange-800'
-                        : 'bg-blue-100 text-blue-800'
-                    }`}>
-                      {insp.inspectionType ?? 'General'}
-                    </span>
+                    {(() => {
+                      const t = insp.inspectionType ?? 'General';
+                      const cls = t === 'Forklift' ? 'bg-orange-100 text-orange-800'
+                                : t === 'Generator' ? 'bg-green-100 text-green-800'
+                                : 'bg-blue-100 text-blue-800';
+                      return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>{t}</span>;
+                    })()}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{insp.vehicleMakeModel}</td>
                   <td className="px-6 py-4 whitespace-nowrap text-gray-600">{insp.registrationNumber}</td>
@@ -1297,9 +1646,14 @@ const Inspections: React.FC = () => {
                   <td className="px-6 py-4 whitespace-nowrap text-gray-600">{insp.deviations?.length || '—'}</td>
                   <td className="px-6 py-4 whitespace-nowrap"><ResultBadge result={insp.result} /></td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <button onClick={() => handleDeleteInspection(insp.id)} className="text-red-500 hover:text-red-700" title="Delete">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    <div className="flex items-center gap-3">
+                      <button onClick={() => printInspection(insp)} className="text-blue-500 hover:text-blue-700" title="Download / Print PDF">
+                        <Printer className="h-4 w-4" />
+                      </button>
+                      <button onClick={() => handleDeleteInspection(insp.id)} className="text-red-500 hover:text-red-700" title="Delete">
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

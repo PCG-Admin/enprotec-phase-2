@@ -38,19 +38,26 @@ const EMPTY_FORM = {
   description: '',
   supplier: '',
   invoice_number: '',
+  rto_number: '',
+  po_number: '',
+  quote_number: '',
+  km_reading: '',
   created_by: null as string | null,
 };
 
 const exportCSV = (data: CostRow[]) => {
-  const header = ['Vehicle Reg', 'Date', 'Category', 'Amount (R)', 'Description', 'Supplier', 'Invoice #'];
+  const header = ['DATE', 'RTO NUMBER', 'PO NUMBER', 'INVOICE NUMBER', 'QUOTE NUMBER', 'SUPPLIER', 'DESCRIPTION', 'KM', 'TYPE', 'AMOUNT EXCL'];
   const rows = data.map(c => [
-    c.vehicle_registration ?? '',
     c.date,
+    c.rto_number ?? '',
+    c.po_number ?? '',
+    c.invoice_number ?? '',
+    c.quote_number ?? '',
+    c.supplier ?? '',
+    c.description,
+    c.km_reading ?? '',
     c.category,
     c.amount.toFixed(2),
-    c.description,
-    c.supplier ?? '',
-    c.invoice_number ?? '',
   ]);
   const csv = [header, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
   const blob = new Blob([csv], { type: 'text/csv' });
@@ -129,6 +136,10 @@ const Costs: React.FC = () => {
         description: cost.description,
         supplier: cost.supplier ?? '',
         invoice_number: cost.invoice_number ?? '',
+        rto_number: cost.rto_number ?? '',
+        po_number: cost.po_number ?? '',
+        quote_number: cost.quote_number ?? '',
+        km_reading: cost.km_reading ?? '',
         created_by: cost.created_by,
       });
     } else {
@@ -157,6 +168,10 @@ const Costs: React.FC = () => {
         description: form.description,
         supplier: form.supplier || null,
         invoice_number: form.invoice_number || null,
+        rto_number: form.rto_number || null,
+        po_number: form.po_number || null,
+        quote_number: form.quote_number || null,
+        km_reading: form.km_reading || null,
         receipt_url: null,
         created_by: form.created_by,
       };
@@ -423,6 +438,34 @@ const Costs: React.FC = () => {
                     onChange={e => setForm(p => ({ ...p, invoice_number: e.target.value }))}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                     placeholder="INV-001" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">RTO Number</label>
+                  <input type="text" value={form.rto_number}
+                    onChange={e => setForm(p => ({ ...p, rto_number: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. E067414" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">PO Number</label>
+                  <input type="text" value={form.po_number}
+                    onChange={e => setForm(p => ({ ...p, po_number: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. PO-0001" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Quote Number</label>
+                  <input type="text" value={form.quote_number}
+                    onChange={e => setForm(p => ({ ...p, quote_number: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. QUA64967" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">KM / Hours Reading</label>
+                  <input type="text" value={form.km_reading}
+                    onChange={e => setForm(p => ({ ...p, km_reading: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    placeholder="e.g. 285.2 or 492h" />
                 </div>
               </div>
               {saveError && (

@@ -127,6 +127,10 @@ export interface CostRow {
   description: string;
   supplier: string | null;
   invoice_number: string | null;
+  rto_number: string | null;
+  po_number: string | null;
+  quote_number: string | null;
+  km_reading: string | null;
   receipt_url: string | null;
   created_by: string | null;
   created_at: string;
