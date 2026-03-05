@@ -2,7 +2,7 @@ import * as React from 'react';
 import {
   ClipboardList, CheckCircle, AlertCircle, XCircle,
   Plus, Search, X, Camera, MapPin, ChevronRight, ChevronLeft,
-  Trash2, Loader2, Printer,
+  Trash2, Loader2, Download,
 } from 'lucide-react';
 import {
   getInspections, createInspection, deleteInspection,
@@ -13,162 +13,13 @@ import type { InspectionRow } from '../../supabase/database.types';
 import type { VehicleRow } from '../../supabase/database.types';
 import type { User } from '../../types';
 import { UserRole } from '../../types';
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-type YesNo = 'Yes' | 'No' | '';
-type Condition = 'Good' | 'Damaged' | 'Not Working' | 'N/A' | '';
-
-interface WeekRow {
-  id: string;
-  weekLabel: string;
-  operationalHours: string;
-  checklistsCompleted: YesNo;
-  findingsOnChecklists: YesNo;
-  findingsCommunicated: YesNo;
-}
-
-interface ChecklistFinding {
-  id: string;
-  date: string;
-  description: string;
-  remedialAction: string;
-}
-
-interface Breakdown {
-  id: string;
-  description: string;
-  durationHrs: string;
-  spareParts: string;
-  costToRepair: string;
-}
-
-interface WheelCheck {
-  tyreThreadCondition: Condition;
-  bubblesOrDamage: YesNo;
-  allWheelNutsInPlace: YesNo;
-  photo: string;
-}
-
-interface EquipmentChecks {
-  // Windscreen
-  windscreenCondition: Condition;
-  windscreenPhoto: string;
-  // Wipers
-  wipersCondition: Condition;
-  // Wheels
-  leftFrontWheel: WheelCheck;
-  rightFrontWheel: WheelCheck;
-  leftRearWheel: WheelCheck;
-  rightRearWheel: WheelCheck;
-  // Headlights
-  headlightsBothWorking: YesNo;
-  headlightsFreeFromDamage: YesNo;
-  headlightsLensesClear: YesNo;
-  // Taillights
-  taillightsBothWorking: YesNo;
-  taillightsFreeFromDamage: YesNo;
-  taillightsLensesClear: YesNo;
-  // Indicators & Hazards
-  leftIndicatorWorking: YesNo;
-  rightIndicatorWorking: YesNo;
-  hazardsWorking: YesNo;
-  // Hooter
-  hooterWorking: YesNo;
-  // Emergency Kit
-  fireExtinguisher: YesNo;
-  stopBlock: YesNo;
-  // Fluids
-  engineOilLevel: YesNo;
-  oilLeaks: YesNo;
-  coolantLevel: YesNo;
-  coolantLeaks: YesNo;
-  hydraulicsOilPhoto: string;
-  hydraulicsNote: string;
-  // Engine
-  fanBelt: Condition;
-  alternatorBelt: Condition;
-  waterHoses: Condition;
-  radiatorLevel: Condition;
-  engineOilLevelEngine: Condition;
-  batteryWaterLevel: Condition;
-  fuelLeaks: string;
-  engineTemperature: Condition;
-  // General
-  suspension: YesNo;
-  brakes: YesNo;
-  clutch: YesNo;
-  airConditioner: YesNo;
-  rearViewMirrors: YesNo;
-  seatbelts: YesNo;
-}
-
-interface Deviation {
-  id: string;
-  item: string;
-  deviation: string;
-}
-
-interface GeneratorEquipmentChecks {
-  // Fluids
-  engineOilLevelOk: YesNo;
-  oilLeaks: YesNo;
-  coolantLevelOk: YesNo;
-  coolantLeaks: YesNo;
-  // Fuel
-  fuelGaugePhoto: string;
-  fuelLevel: string;
-  // Engine
-  fanBelt: string;
-  alternatorBelt: string;
-  waterHoses: string;
-  radiatorLevel: string;
-  engineOilLevelEngine: string;
-  batteryWaterLevel: string;
-  fuelLeaks: string;
-  temperature: string;
-}
-
-interface InspectionRecord {
-  id: string;
-  // Header
-  previousInspectionDate: string;
-  inspectionDate: string;
-  inspectedBy: string;
-  siteAllocation: string;
-  vehicleMakeModel: string;
-  registrationNumber: string;
-  currentHours: string;
-  lastServiceHours: string;
-  lastServiceDate: string;
-  nextServiceHours: string;
-  nextServiceDate: string;
-  previousLoadTestDate: string;
-  nextLoadTestDate: string;
-  totalMaintenanceCost: string;
-  avgMonthlyMaintenanceCost: string;
-  // Visual
-  vehicleFrontPhoto: string;
-  vehicleLeftPhoto: string;
-  vehicleRightPhoto: string;
-  vehicleBackPhoto: string;
-  interiorPhoto: string;
-  serialNumberPhoto: string;
-  serialNumberText: string;
-  serviceSticker: string;
-  serviceStickerDate: string;
-  // Sections
-  weeklyUse: WeekRow[];
-  checklistFindings: ChecklistFinding[];
-  monthlyBreakdowns: Breakdown[];
-  equipment: EquipmentChecks;
-  generatorEquipment: GeneratorEquipmentChecks;
-  deviations: Deviation[];
-  // Type
-  inspectionType: 'General' | 'Forklift' | 'Generator';
-  // Outcome
-  result: 'pass' | 'fail' | 'requires_attention';
-}
+import {
+  downloadInspection,
+  type YesNo, type Condition,
+  type WeekRow, type ChecklistFinding, type Breakdown,
+  type WheelCheck, type EquipmentChecks, type Deviation,
+  type GeneratorEquipmentChecks, type InspectionRecord,
+} from '../../utils/printInspection';
 
 // ─── Default state helpers ───────────────────────────────────────────────────
 
@@ -283,30 +134,7 @@ const defaultForm = (): Omit<InspectionRecord, 'id' | 'result'> => ({
 
 // ─── Mock list data ───────────────────────────────────────────────────────────
 
-const mockInspections: InspectionRecord[] = [
-  {
-    id: '1', previousInspectionDate: '2025-05-26', inspectionDate: '2025-06-26',
-    inspectedBy: 'Brian Marabe', siteAllocation: 'Grootegeluk Mine',
-    vehicleMakeModel: 'JLG 4017RS', registrationNumber: 'N/A', currentHours: '3684',
-    lastServiceHours: '3667', lastServiceDate: '2025-05-20',
-    nextServiceHours: '4667', nextServiceDate: '2026-06-20',
-    previousLoadTestDate: '2025-06', nextLoadTestDate: '2026-06',
-    totalMaintenanceCost: '62160.23', avgMonthlyMaintenanceCost: '1036.00',
-    vehicleFrontPhoto: '', vehicleLeftPhoto: '', vehicleRightPhoto: '', vehicleBackPhoto: '',
-    interiorPhoto: '', serialNumberPhoto: '', serialNumberText: 'QH621',
-    serviceSticker: '', serviceStickerDate: '2025-05-20',
-    weeklyUse: [], checklistFindings: [], monthlyBreakdowns: [],
-    equipment: defaultEquipment(),
-    deviations: [
-      { id: '1', item: 'Hydraulic lock', deviation: 'Door lock key not in place' },
-      { id: '2', item: 'Reverse camera', deviation: 'Not working' },
-      { id: '3', item: 'Aircon', deviation: 'Not working' },
-      { id: '4', item: 'Front wiper', deviation: 'Not working' },
-      { id: '5', item: 'Hydraulic chain boom', deviation: 'No grease on chain, dry (need to be greased)' },
-    ],
-    result: 'requires_attention',
-  },
-];
+
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -440,346 +268,6 @@ const CheckRow: React.FC<{ label: string; children: React.ReactNode }> = ({ labe
   </div>
 );
 
-// ─── Main Component ───────────────────────────────────────────────────────────
-
-/** Opens a formatted print window for the given inspection record */
-const printInspection = async (insp: InspectionRecord) => {
-  /* Fetch Enprotec logo → base64 so it renders in the new window */
-  let logoSrc = '';
-  try {
-    const resp = await fetch('/BR002-Full%20colour%20w%20slogan%20Landscape-2500px-Rev03%20(1).jpg');
-    if (resp.ok) {
-      const blob = await resp.blob();
-      logoSrc = await new Promise<string>(res => {
-        const r = new FileReader(); r.onload = () => res(r.result as string); r.readAsDataURL(blob);
-      });
-    }
-  } catch { /* logo unavailable */ }
-
-  /* ── helpers ── */
-  const ph = (src: string, label: string) => src
-    ? `<div class="photo-cell"><img src="${src}" class="photo-img" alt="${label}"/><p class="photo-label">${label}</p></div>`
-    : `<div class="photo-cell no-photo-cell"><p class="photo-label">${label}</p><p class="photo-none">No photo</p></div>`;
-
-  const chk = (label: string, val: string) => {
-    const cls = (val === 'Yes' || val === 'Good' || val === 'Ok' || val === 'None')
-      ? 'chk-pass' : (val === 'No' || val === 'Damaged' || val === 'Not Working') ? 'chk-fail' : 'chk-na';
-    return `<tr><td>${label}</td><td class="${cls}">${val || '—'}</td></tr>`;
-  };
-
-  const typeLabel  = insp.inspectionType === 'Forklift' ? 'FORKLIFT' : insp.inspectionType === 'Generator' ? 'GENERATOR' : 'VEHICLE';
-  const fullTitle  = `MONTHLY ${typeLabel} INSPECTION REPORT`;
-  const entityWord = insp.inspectionType === 'Generator' ? 'Generator' : 'Vehicle';
-  const isGen      = insp.inspectionType === 'Generator';
-  const logoHtml   = logoSrc ? `<img src="${logoSrc}" class="logo-img" alt="Enprotec"/>` : `<div class="logo-text">ENPROTEC</div>`;
-  const resultClass = insp.result === 'pass' ? 'result-pass' : insp.result === 'fail' ? 'result-fail' : 'result-attention';
-  const resultLabel = insp.result === 'requires_attention' ? 'REQUIRES ATTENTION' : insp.result.toUpperCase();
-
-  /* ── row builders ── */
-  const weeklyRows = (insp.weeklyUse ?? []).map(w =>
-    `<tr><td>${w.weekLabel||'—'}</td><td>${w.operationalHours||'—'}</td>${!isGen ? `<td>${w.checklistsCompleted||'—'}</td><td>${w.findingsOnChecklists||'—'}</td><td>${w.findingsCommunicated||'—'}</td>` : ''}</tr>`
-  ).join('') || `<tr><td colspan="${isGen?2:5}" class="empty-row">No weekly data</td></tr>`;
-
-  const findingRows = (insp.checklistFindings ?? []).map((f, i) =>
-    `<tr><td>${i+1}</td><td>${f.date||'—'}</td><td>${f.description||'—'}</td><td>${f.remedialAction||'—'}</td></tr>`
-  ).join('') || '<tr><td colspan="4" class="empty-row">No findings recorded</td></tr>';
-
-  const breakdownRows = (insp.monthlyBreakdowns ?? []).map((b, i) =>
-    `<tr><td>${i+1}</td><td>${b.description||'—'}</td><td>${b.durationHrs||'—'}</td><td>${b.spareParts||'—'}</td><td>${b.costToRepair||'—'}</td></tr>`
-  ).join('') || '<tr><td colspan="5" class="empty-row">No breakdowns recorded</td></tr>';
-
-  const devRows = (insp.deviations ?? []).map((d, i) =>
-    `<tr><td>${i+1}</td><td>${d.item}</td><td>${d.deviation}</td></tr>`
-  ).join('') || '<tr><td colspan="3" class="empty-row">No deviations recorded</td></tr>';
-
-  /* ── equipment checks HTML ── */
-  const e = insp.equipment;
-  const g = insp.generatorEquipment;
-
-  const wheelHtml = (label: string, w: typeof e.leftFrontWheel) => `
-    <div class="wheel-card">
-      <div class="wheel-title">${label}</div>
-      ${ph(w.photo, label + ' photo')}
-      <table style="margin-top:6px">
-        ${chk('Tyre Thread', w.tyreThreadCondition)}
-        ${chk('Bubbles / Damage', w.bubblesOrDamage)}
-        ${chk('All Nuts In Place', w.allWheelNutsInPlace)}
-      </table>
-    </div>`;
-
-  const equipChecksHtml = isGen ? `
-    <h2>6. Generator Equipment Checks</h2>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-      <div>
-        <h3 class="sub-h">Fluids</h3>
-        <table>
-          ${chk('Engine Oil Level OK', g.engineOilLevelOk)}
-          ${chk('Oil Leaks', g.oilLeaks)}
-          ${chk('Coolant Level OK', g.coolantLevelOk)}
-          ${chk('Coolant Leaks', g.coolantLeaks)}
-        </table>
-        <h3 class="sub-h">Engine</h3>
-        <table>
-          ${chk('Fan Belt', g.fanBelt)}
-          ${chk('Alternator Belt', g.alternatorBelt)}
-          ${chk('Water Hoses', g.waterHoses)}
-          ${chk('Radiator Level', g.radiatorLevel)}
-          ${chk('Engine Oil Level', g.engineOilLevelEngine)}
-          ${chk('Battery Water Level', g.batteryWaterLevel)}
-          ${chk('Fuel Leaks', g.fuelLeaks)}
-          ${chk('Temperature', g.temperature)}
-        </table>
-      </div>
-      <div>
-        <h3 class="sub-h">Fuel Gauge</h3>
-        <p style="font-size:10px;color:#555;margin-bottom:4px">Level: <strong>${g.fuelLevel || '—'}</strong></p>
-        ${g.fuelGaugePhoto ? `<img src="${g.fuelGaugePhoto}" style="max-width:100%;max-height:180px;object-fit:contain;border:1px solid #e5e7eb;border-radius:4px"/>` : '<div class="no-photo-cell" style="height:120px">No fuel gauge photo</div>'}
-      </div>
-    </div>
-  ` : `
-    <h2>6. Equipment Checks</h2>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-      <div>
-        <h3 class="sub-h">Windscreen &amp; Wipers</h3>
-        <table>
-          ${chk('Windscreen Condition', e.windscreenCondition)}
-          ${chk('Wipers Condition', e.wipersCondition)}
-        </table>
-        ${e.windscreenPhoto ? `<img src="${e.windscreenPhoto}" style="max-width:100%;max-height:120px;object-fit:contain;margin-top:6px;border:1px solid #e5e7eb;border-radius:4px"/>` : ''}
-
-        <h3 class="sub-h" style="margin-top:10px">Lights &amp; Signals</h3>
-        <table>
-          ${chk('Headlights Working', e.headlightsBothWorking)}
-          ${chk('Headlights Damage-Free', e.headlightsFreeFromDamage)}
-          ${chk('Headlight Lenses Clear', e.headlightsLensesClear)}
-          ${chk('Taillights Working', e.taillightsBothWorking)}
-          ${chk('Taillights Damage-Free', e.taillightsFreeFromDamage)}
-          ${chk('Taillight Lenses Clear', e.taillightsLensesClear)}
-          ${chk('Left Indicator', e.leftIndicatorWorking)}
-          ${chk('Right Indicator', e.rightIndicatorWorking)}
-          ${chk('Hazards', e.hazardsWorking)}
-          ${chk('Hooter', e.hooterWorking)}
-        </table>
-
-        <h3 class="sub-h" style="margin-top:10px">Emergency Kit</h3>
-        <table>
-          ${chk('Fire Extinguisher', e.fireExtinguisher)}
-          ${chk('Stop Block', e.stopBlock)}
-        </table>
-
-        <h3 class="sub-h" style="margin-top:10px">General</h3>
-        <table>
-          ${chk('Suspension', e.suspension)}
-          ${chk('Brakes', e.brakes)}
-          ${chk('Clutch', e.clutch)}
-          ${chk('Air Conditioner', e.airConditioner)}
-          ${chk('Rear View Mirrors', e.rearViewMirrors)}
-          ${chk('Seatbelts', e.seatbelts)}
-        </table>
-      </div>
-      <div>
-        <h3 class="sub-h">Fluids</h3>
-        <table>
-          ${chk('Engine Oil Level', e.engineOilLevel)}
-          ${chk('Oil Leaks', e.oilLeaks)}
-          ${chk('Coolant Level', e.coolantLevel)}
-          ${chk('Coolant Leaks', e.coolantLeaks)}
-        </table>
-        <p style="font-size:10px;margin-top:6px;color:#555">Hydraulics Note: ${e.hydraulicsNote || '—'}</p>
-        ${e.hydraulicsOilPhoto ? `<img src="${e.hydraulicsOilPhoto}" style="max-width:100%;max-height:120px;object-fit:contain;margin-top:6px;border:1px solid #e5e7eb;border-radius:4px"/>` : ''}
-
-        <h3 class="sub-h" style="margin-top:10px">Engine</h3>
-        <table>
-          ${chk('Fan Belt', e.fanBelt)}
-          ${chk('Alternator Belt', e.alternatorBelt)}
-          ${chk('Water Hoses', e.waterHoses)}
-          ${chk('Radiator Level', e.radiatorLevel)}
-          ${chk('Engine Oil Level', e.engineOilLevelEngine)}
-          ${chk('Battery Water Level', e.batteryWaterLevel)}
-          ${chk('Fuel Leaks', e.fuelLeaks)}
-          ${chk('Engine Temperature', e.engineTemperature)}
-        </table>
-      </div>
-    </div>
-
-    <h3 class="sub-h">Wheels</h3>
-    <div class="wheel-grid">
-      ${wheelHtml('Left Front', e.leftFrontWheel)}
-      ${wheelHtml('Right Front', e.rightFrontWheel)}
-      ${wheelHtml('Left Rear', e.leftRearWheel)}
-      ${wheelHtml('Right Rear', e.rightRearWheel)}
-    </div>
-  `;
-
-  const html = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><title>${fullTitle}</title>
-<style>
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a1a;background:#fff}
-
-  /* cover */
-  .cover-header{display:flex;align-items:stretch;border-bottom:3px solid #1d4ed8}
-  .cover-left{flex:1;padding:20px 24px;display:flex;flex-direction:column;justify-content:center;gap:10px}
-  .logo-img{max-width:220px;max-height:80px;object-fit:contain}
-  .logo-text{font-size:28px;font-weight:900;color:#1d4ed8;letter-spacing:2px}
-  .company-line{font-size:10px;color:#6b7280}
-  .title-block h1{font-size:19px;font-weight:800;color:#1d4ed8;text-transform:uppercase;line-height:1.2}
-  .title-block .subtitle{font-size:10px;color:#6b7280;margin-top:3px}
-  .cover-right{width:260px;flex-shrink:0;overflow:hidden}
-  .front-photo{width:100%;height:100%;min-height:200px;object-fit:cover;display:block}
-  .no-photo-cover{width:100%;min-height:200px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;text-align:center;padding:16px}
-
-  /* result banner */
-  .result-banner{padding:8px 24px;display:flex;align-items:center;gap:12px;font-size:12px;font-weight:700}
-  .result-pass{background:#d1fae5;color:#065f46}
-  .result-fail{background:#fee2e2;color:#991b1b}
-  .result-attention{background:#fef3c7;color:#92400e}
-  .result-banner .badge{display:inline-block;padding:3px 14px;border-radius:20px;font-size:12px;font-weight:800;border:2px solid currentColor}
-
-  /* content */
-  .content{padding:16px 24px}
-  .info-grid{display:grid;grid-template-columns:1fr 1fr;border:1px solid #d1d5db;border-radius:4px;margin-bottom:16px;overflow:hidden}
-  .info-grid .lbl{background:#f9fafb;font-weight:700;padding:5px 10px;border-bottom:1px solid #e5e7eb;border-right:1px solid #e5e7eb}
-  .info-grid .val{padding:5px 10px;border-bottom:1px solid #e5e7eb}
-  h2{background:#1d4ed8;color:#fff;padding:6px 12px;font-size:12px;font-weight:700;margin:18px 0 8px;border-radius:3px;text-transform:uppercase}
-  .sub-h{font-size:11px;font-weight:700;color:#374151;background:#f3f4f6;padding:4px 8px;border-left:3px solid #1d4ed8;margin-bottom:4px}
-  table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:10.5px}
-  th,td{border:1px solid #d1d5db;padding:5px 8px;text-align:left}
-  th{background:#f3f4f6;font-weight:700;font-size:10px;text-transform:uppercase}
-  .empty-row{text-align:center;color:#9ca3af;font-style:italic}
-
-  /* check colours */
-  .chk-pass{color:#065f46;background:#d1fae5;font-weight:600}
-  .chk-fail{color:#991b1b;background:#fee2e2;font-weight:600}
-  .chk-na{color:#6b7280}
-
-  /* photos */
-  .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
-  .photo-cell{border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;text-align:center}
-  .photo-img{width:100%;height:140px;object-fit:cover;display:block}
-  .photo-label{font-size:9px;font-weight:700;text-transform:uppercase;color:#6b7280;padding:4px;background:#f9fafb}
-  .photo-none{font-size:9px;color:#9ca3af;padding:8px 0}
-  .no-photo-cell{background:#f9fafb;height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center}
-
-  /* wheels */
-  .wheel-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
-  .wheel-card{border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;padding:6px}
-  .wheel-title{font-size:10px;font-weight:700;color:#1d4ed8;margin-bottom:4px;text-align:center}
-  .wheel-card .photo-img{height:100px}
-  .wheel-card .photo-cell{margin-bottom:4px}
-
-  .footer{margin-top:24px;border-top:1px solid #e5e7eb;padding-top:8px;font-size:9px;color:#9ca3af;text-align:center}
-  @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.cover-header{page-break-inside:avoid}}
-</style>
-</head><body>
-
-<!-- Cover -->
-<div class="cover-header">
-  <div class="cover-left">
-    ${logoHtml}
-    <p class="company-line">enquiries@enprotec.com &nbsp;|&nbsp; www.enprotec.com</p>
-    <div class="title-block">
-      <h1>${fullTitle}</h1>
-      <p class="subtitle">Inspection Date: ${insp.inspectionDate||'—'} &nbsp;|&nbsp; Site: ${insp.siteAllocation||'—'}</p>
-    </div>
-  </div>
-  <div class="cover-right">
-    ${insp.vehicleFrontPhoto
-      ? `<img src="${insp.vehicleFrontPhoto}" class="front-photo" alt="${entityWord} front"/>`
-      : `<div class="no-photo-cover">${entityWord} front photo not captured</div>`}
-  </div>
-</div>
-
-<!-- Result Banner -->
-<div class="result-banner ${resultClass}">
-  <span>Inspection Result:</span>
-  <span class="badge">${resultLabel}</span>
-  <span style="margin-left:auto;font-weight:400">Inspected by: ${insp.inspectedBy||'—'}</span>
-</div>
-
-<div class="content">
-
-  <!-- 1. Header Info -->
-  <div class="info-grid">
-    <div class="lbl">Previous Inspection Date</div><div class="val">${insp.previousInspectionDate||'—'}</div>
-    <div class="lbl">Inspection Date</div><div class="val">${insp.inspectionDate||'—'}</div>
-    <div class="lbl">Inspected By</div><div class="val">${insp.inspectedBy||'—'}</div>
-    <div class="lbl">Site Allocation</div><div class="val">${insp.siteAllocation||'—'}</div>
-    <div class="lbl">${entityWord} Make &amp; Model</div><div class="val">${insp.vehicleMakeModel||'—'}</div>
-    <div class="lbl">Registration / Serial</div><div class="val">${insp.registrationNumber||'—'}</div>
-    <div class="lbl">Current Hours / ODO</div><div class="val">${insp.currentHours||'—'}</div>
-    <div class="lbl">Last Service (Hours)</div><div class="val">${insp.lastServiceHours||'—'}</div>
-    <div class="lbl">Last Service (Date)</div><div class="val">${insp.lastServiceDate||'—'}</div>
-    <div class="lbl">Next Service (Hours)</div><div class="val">${insp.nextServiceHours||'—'}</div>
-    <div class="lbl">Next Service (Date)</div><div class="val">${insp.nextServiceDate||'—'}</div>
-    <div class="lbl">Total Maintenance Cost</div><div class="val">R ${insp.totalMaintenanceCost||'0'}</div>
-    <div class="lbl">Avg Monthly Maint. Cost</div><div class="val">R ${insp.avgMonthlyMaintenanceCost||'0'}</div>
-    <div class="lbl">Serial Number</div><div class="val">${insp.serialNumberText||'—'}</div>
-    <div class="lbl">Service Sticker</div><div class="val">${insp.serviceSticker||'—'} ${insp.serviceStickerDate ? '· '+insp.serviceStickerDate : ''}</div>
-  </div>
-
-  <!-- 2. Visual Photos -->
-  <h2>2. Visual Inspection Photos</h2>
-  <div class="photo-grid">
-    ${ph(insp.vehicleFrontPhoto,  entityWord+' Front')}
-    ${ph(insp.vehicleLeftPhoto,   entityWord+' Left')}
-    ${ph(insp.vehicleRightPhoto,  entityWord+' Right')}
-    ${ph(insp.vehicleBackPhoto,   entityWord+' Back')}
-    ${ph(insp.interiorPhoto,      'Interior')}
-    ${ph(insp.serialNumberPhoto,  'Serial Number Plate')}
-  </div>
-
-  <!-- 3. Weekly Use -->
-  <h2>3. Weekly Use</h2>
-  <table>
-    <thead><tr><th>Week</th><th>Operational Hours</th>${!isGen ? '<th>Checklists Done?</th><th>Findings?</th><th>Findings Addressed?</th>' : ''}</tr></thead>
-    <tbody>${weeklyRows}</tbody>
-  </table>
-
-  <!-- 4. Checklist Findings -->
-  <h2>4. Checklist Findings</h2>
-  <table>
-    <thead><tr><th>#</th><th>Date</th><th>Description</th><th>Remedial Action</th></tr></thead>
-    <tbody>${findingRows}</tbody>
-  </table>
-
-  <!-- 5. Monthly Breakdowns -->
-  <h2>5. Monthly Breakdowns</h2>
-  <table>
-    <thead><tr><th>#</th><th>Description</th><th>Duration (Hrs)</th><th>Spare Parts</th><th>Cost (ZAR)</th></tr></thead>
-    <tbody>${breakdownRows}</tbody>
-  </table>
-
-  <!-- 6. Equipment Checks -->
-  ${equipChecksHtml}
-
-  <!-- 7. Deviations -->
-  <h2>7. Deviations / Defects</h2>
-  <table>
-    <thead><tr><th>No</th><th>Item</th><th>Deviation / Finding</th></tr></thead>
-    <tbody>${devRows}</tbody>
-  </table>
-
-  <div class="footer">
-    Generated by Enprotec Fleet Management System &nbsp;|&nbsp; ${new Date().toLocaleString('en-ZA')}
-  </div>
-</div>
-
-<script>
-  (function(){
-    var imgs=Array.from(document.images),done=0,total=imgs.length;
-    if(!total){window.print();return;}
-    function tick(){done++;if(done>=total)window.print();}
-    imgs.forEach(function(i){if(i.complete)done++;else{i.onload=tick;i.onerror=tick;}});
-    if(done>=total)window.print();
-  })();
-</script>
-</body></html>`;
-
-  const win = window.open('', '_blank');
-  if (win) { win.document.write(html); win.document.close(); }
-};
-
 const TABS = [
   { id: 0, label: 'Vehicle Info' },
   { id: 1, label: 'Weekly Use' },
@@ -791,6 +279,7 @@ const TABS = [
 
 const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   const isDriver = user?.role === UserRole.Driver;
+  const isAdmin  = user?.role === UserRole.Admin;
   const [inspections, setInspections] = React.useState<InspectionRecord[]>([]);
   const [vehicles, setVehicles]       = React.useState<VehicleRow[]>([]);
   const [loadingList, setLoadingList] = React.useState(true);
@@ -803,13 +292,20 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   const [typeFilter, setTypeFilter] = React.useState<'All' | 'General' | 'Forklift' | 'Generator'>('All');
   const [form, setForm] = React.useState(defaultForm());
 
+  // Auto-populate inspectedBy with the logged-in user's name when the form opens
+  React.useEffect(() => {
+    if (showForm && user?.name) {
+      setForm(prev => ({ ...prev, inspectedBy: prev.inspectedBy || user.name }));
+    }
+  }, [showForm]);
+
   React.useEffect(() => {
     Promise.all([getInspections(), getVehicles()])
       .then(([rows, vehs]) => {
         setVehicles(vehs);
         setInspections(rows.map((r): InspectionRecord => ({
           id: r.id,
-          ...((r.answers as Omit<InspectionRecord, 'id' | 'result'>) ?? defaultForm()),
+          ...((r.answers as unknown as Omit<InspectionRecord, 'id' | 'result'>) ?? defaultForm()),
           result: (r.status as InspectionRecord['result']) ?? 'pass',
         })));
       })
@@ -979,9 +475,10 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
       )
     : vehicles;
 
-  // For drivers: only show inspections for their assigned vehicles
+  // Filter inspections: non-admin users only see their own submitted inspections
   const assignedRegs = new Set(visibleVehicles.map(v => v.registration));
   const filteredInspections = inspections.filter(i => {
+    if (!isAdmin && i.inspectedBy !== user?.name) return false;
     if (isDriver && !assignedRegs.has(i.registrationNumber)) return false;
     if (typeFilter !== 'All' && (i.inspectionType ?? 'General') !== typeFilter) return false;
     return (
@@ -1073,8 +570,8 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
           ['Last Service (Date)', 'lastServiceDate', 'date'],
           ['Next Service (Hours)', 'nextServiceHours', 'text'],
           ['Next Service (Date)', 'nextServiceDate', 'date'],
-          ['Previous Load Test Date', 'previousLoadTestDate', 'text'],
-          ['Next Load Test Date', 'nextLoadTestDate', 'text'],
+          ['Previous Load Test Date', 'previousLoadTestDate', 'date'],
+          ['Next Load Test Date', 'nextLoadTestDate', 'date'],
           ['Total Maintenance Cost (R)', 'totalMaintenanceCost', 'text'],
           ['Avg Monthly Maintenance Cost (R)', 'avgMonthlyMaintenanceCost', 'text'],
           ['Serial Number', 'serialNumberText', 'text'],
@@ -1771,7 +1268,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
       </div>
 
       {/* List */}
-      <div className="bg-white rounded-lg shadow overflow-hidden">
+      <div className="bg-white rounded-lg shadow">
         {loadingList ? (
           <div className="flex items-center justify-center h-32">
             <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
@@ -1784,55 +1281,57 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
             <p className="mt-1 text-gray-500">{searchTerm ? 'Try adjusting your search' : 'Start by creating a new inspection'}</p>
           </div>
         ) : (
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Vehicle</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Registration</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Site</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hours</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Inspected By</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Deviations</th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Result</th>
-                <th className="px-6 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredInspections.map((insp) => (
-                <tr key={insp.id} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {(() => {
-                      const t = insp.inspectionType ?? 'General';
-                      const cls = t === 'Forklift' ? 'bg-orange-100 text-orange-800'
-                                : t === 'Generator' ? 'bg-green-100 text-green-800'
-                                : 'bg-blue-100 text-blue-800';
-                      return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>{t}</span>;
-                    })()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">{insp.vehicleMakeModel}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-600">{insp.registrationNumber}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-600">{insp.inspectionDate}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-600">{insp.siteAllocation}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-600">{insp.currentHours}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-600">{insp.inspectedBy}</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-gray-600">{insp.deviations?.length || '—'}</td>
-                  <td className="px-6 py-4 whitespace-nowrap"><ResultBadge result={insp.result} /></td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="flex items-center gap-3">
-                      <button onClick={() => printInspection(insp)} className="text-blue-500 hover:text-blue-700" title="Download / Print PDF">
-                        <Printer className="h-4 w-4" />
-                      </button>
-                      <button onClick={() => handleDeleteInspection(insp.id)} className="text-red-500 hover:text-red-700" title="Delete">
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200 text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Type</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Vehicle</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Reg</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Site</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Inspected By</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Deviations</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wide">Result</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-gray-500 uppercase tracking-wide">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredInspections.map((insp) => (
+                  <tr key={insp.id} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {(() => {
+                        const t = insp.inspectionType ?? 'General';
+                        const cls = t === 'Forklift' ? 'bg-orange-100 text-orange-800'
+                                  : t === 'Generator' ? 'bg-green-100 text-green-800'
+                                  : 'bg-blue-100 text-blue-800';
+                        return <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>{t}</span>;
+                      })()}
+                    </td>
+                    <td className="px-3 py-2 whitespace-nowrap font-medium text-gray-900">{insp.vehicleMakeModel}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">{insp.registrationNumber}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">{insp.inspectionDate}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">{insp.siteAllocation}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-gray-600">{insp.inspectedBy}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-center text-gray-600">{insp.deviations?.length || '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap"><ResultBadge result={insp.result} /></td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => downloadInspection(insp)} className="text-blue-500 hover:text-blue-700" title="Download Inspection">
+                          <Download className="h-4 w-4" />
+                        </button>
+                        {!isDriver && (
+                          <button onClick={() => handleDeleteInspection(insp.id)} className="text-red-500 hover:text-red-700" title="Delete">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 

@@ -1,7 +1,7 @@
 import * as React from 'react';
 import {
   Truck, ClipboardCheck, AlertTriangle, DollarSign,
-  ArrowUpRight, Calendar, Loader2, X, Bell, ShieldAlert,
+  ArrowUpRight, Calendar, Loader2, X, Bell, ShieldAlert, Download,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -10,7 +10,8 @@ import {
 import type { User } from '../../types';
 import { UserRole } from '../../types';
 import { getVehicles } from '../../supabase/services/vehicles.service';
-import { getRecentInspections, getRecentInspectionsByInspector, getInspectionsByInspector } from '../../supabase/services/inspections.service';
+import { getInspections, getInspectionsByName } from '../../supabase/services/inspections.service';
+import { downloadInspection, type InspectionRecord } from '../../utils/printInspection';
 import { getMonthlyCostTotals } from '../../supabase/services/costs.service';
 import { getComplianceSchedule } from '../../supabase/services/compliance.service';
 import { getExpiringLicenses } from '../../supabase/services/licenses.service';
@@ -53,17 +54,16 @@ const FleetDashboard: React.FC<Props> = ({ user }) => {
     const today = new Date().toISOString().slice(0, 10);
 
     if (isDriver && user) {
-      // Driver view: assigned vehicles + their own inspections
+      // Driver view: assigned vehicles + their own inspections (matched by inspector_name)
       Promise.all([
-        getRecentInspectionsByInspector(user.id, 7),
-        getInspectionsByInspector(user.id),
+        getInspectionsByName(user.name),
         getVehicles(),
-      ]).then(([recent, all, allVehicles]) => {
+      ]).then(([all, allVehicles]) => {
         // Filter assigned vehicles — supports slash-separated e.g. "Dumisane/Jabu/Sam"
         const myVehicles = allVehicles.filter(v =>
           v.assigned_driver
             ?.split('/')
-            .map(n => n.trim().toLowerCase())
+            .map((n: string) => n.trim().toLowerCase())
             .includes(user.name.toLowerCase())
         );
         const vehicleRegs = myVehicles.length > 0
@@ -80,22 +80,22 @@ const FleetDashboard: React.FC<Props> = ({ user }) => {
         });
         setVehicleStatus(Object.entries(statusCounts).map(([name, value]) => ({ name, value })));
 
-        const todayInspections = recent.filter(i => i.started_at.startsWith(today));
+        const todayInspections = all.filter(i => i.started_at.startsWith(today));
         setInspectionsToday(todayInspections.length);
-        setRecent(recent.slice(0, 5));
+        setRecent(all.slice(0, 5));
 
         const trend = DAYS.map((day, i) => ({
           day,
-          completed: recent.filter(insp => new Date(insp.started_at).getDay() === i).length,
+          completed: all.filter(insp => new Date(insp.started_at).getDay() === i).length,
         }));
         setWeeklyTrend(trend);
       }).catch(() => {}).finally(() => setLoading(false));
 
     } else {
-      // Admin / Fleet Coordinator: full fleet view
+      // Admin / Fleet Coordinator: full fleet view (most recent 10, no date cutoff)
       Promise.all([
         getVehicles(),
-        getRecentInspections(7),
+        getInspections(10),
         getMonthlyCostTotals(1),
         getComplianceSchedule(),
         getExpiringLicenses(30),
@@ -384,8 +384,30 @@ const FleetDashboard: React.FC<Props> = ({ user }) => {
 
       {/* Recent Inspections */}
       <div className="bg-white rounded-lg shadow">
-        <div className="px-6 py-4 border-b border-gray-200">
+        <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <h3 className="text-lg font-semibold text-gray-800">Recent Inspections</h3>
+          {recentInspections.length > 0 && (
+            <button
+              onClick={() => {
+                const header = ['Date', 'Vehicle', 'Inspector', 'Type', 'Status'];
+                const rows = recentInspections.map(i => [
+                  i.started_at.slice(0, 10),
+                  i.vehicle_reg ?? i.vehicle_id ?? '',
+                  i.inspector_name ?? '',
+                  i.inspection_type ?? '',
+                  i.status,
+                ]);
+                const csv = [header, ...rows].map(r => r.map(v => `"${v}"`).join(',')).join('\n');
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a'); a.href = url; a.download = 'inspections.csv'; a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-50"
+            >
+              <Download className="h-4 w-4" />Export CSV
+            </button>
+          )}
         </div>
         <div className="divide-y divide-gray-200">
           {recentInspections.length === 0 ? (
@@ -405,7 +427,7 @@ const FleetDashboard: React.FC<Props> = ({ user }) => {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center space-x-4">
+                <div className="flex items-center space-x-3">
                   <span className={`px-2 py-1 text-xs font-medium rounded-full ${
                     insp.status === 'pass' ? 'bg-green-100 text-green-800' :
                     insp.status === 'fail' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'
@@ -414,6 +436,20 @@ const FleetDashboard: React.FC<Props> = ({ user }) => {
                   </span>
                   <span className="text-sm text-gray-500">{insp.started_at.slice(0, 10)}</span>
                   <Calendar className="h-4 w-4 text-gray-400" />
+                  <button
+                    title="Download / Print PDF"
+                    onClick={() => {
+                      const record = {
+                        id: insp.id,
+                        ...((insp.answers as unknown as Omit<InspectionRecord, 'id' | 'result'>) ?? {}),
+                        result: (insp.status as InspectionRecord['result']) ?? 'pass',
+                      } as InspectionRecord;
+                      downloadInspection(record);
+                    }}
+                    className="text-blue-500 hover:text-blue-700"
+                  >
+                    <Download className="h-4 w-4" />
+                  </button>
                 </div>
               </div>
             ))

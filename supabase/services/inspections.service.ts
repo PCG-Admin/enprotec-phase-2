@@ -98,6 +98,17 @@ export async function getInspectionsByInspector(inspectorId: string): Promise<In
   return data ?? [];
 }
 
+/** All inspections by inspector_name (used when inspector_id is null) */
+export async function getInspectionsByName(inspectorName: string): Promise<InspectionRow[]> {
+  const { data, error } = await supabase
+    .from('inspections')
+    .select('*')
+    .eq('inspector_name', inspectorName)
+    .order('started_at', { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
 /** Count overdue (in_progress past 24h) inspections */
 export async function getOverdueCount(): Promise<number> {
   const yesterday = new Date();
