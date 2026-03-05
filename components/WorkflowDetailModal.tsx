@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { WorkflowRequest, Priority, User, UserRole, WorkflowStatus, WorkflowAttachment } from '../types';
+import { getMappedRole, WorkflowRequest, Priority, User, UserRole, WorkflowStatus, WorkflowAttachment } from '../types';
 import WorkflowStatusIndicator from './WorkflowStatusIndicator';
 import { supabase } from '../supabase/client';
 import CommentSection from './CommentSection';
@@ -41,7 +41,7 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
   const [rejectionComment, setRejectionComment] = useState('');
   const hasSiteAccess = useMemo(() => {
     // Admin has access to all sites
-    if (user.role === UserRole.Admin) return true;
+    if (getMappedRole(user.role) === UserRole.Admin) return true;
     const sites = user.sites || [];
     if (!workflow.projectCode || sites.length === 0) return false;
     return sites.map(s => s.toLowerCase()).includes(workflow.projectCode.toLowerCase());
@@ -146,13 +146,13 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
   const renderActions = () => {
     const { role } = user;
     const { currentStatus } = workflow;
-    const isAdmin = role === UserRole.Admin;
+    const isAdmin = getMappedRole(role) === UserRole.Admin;
 
     // STRICT ROLE CHECKS - Only correct role for each step (+ Admin override)
     switch (currentStatus) {
         case WorkflowStatus.REQUEST_SUBMITTED:
             // ONLY Ops Manager can approve/decline initial request
-            if (role === UserRole.OperationsManager || isAdmin) {
+            if (getMappedRole(role) === UserRole.OperationsManager || isAdmin) {
                 return (
                     <>
                         <button
@@ -169,7 +169,7 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
             break;
         case WorkflowStatus.STOCK_CONTROLLER_APPROVAL:
             // ONLY Stock Controller can approve/decline after Ops Manager
-            if (role === UserRole.StockController || isAdmin) {
+            if (getMappedRole(role) === UserRole.StockController || isAdmin) {
                 return (
                     <>
                         <button
@@ -186,7 +186,7 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
             break;
         case WorkflowStatus.AWAITING_EQUIP_MANAGER:
             // ONLY Equipment Manager can approve/decline equipment
-            if (role === UserRole.EquipmentManager || isAdmin) {
+            if (getMappedRole(role) === UserRole.EquipmentManager || isAdmin) {
                 return (
                     <>
                         <button
@@ -203,13 +203,13 @@ const WorkflowDetailModal: React.FC<WorkflowDetailModalProps> = ({ workflow, use
             break;
         case WorkflowStatus.AWAITING_PICKING:
             // ONLY Stock Controller or Storeman can mark as picked
-            if (role === UserRole.StockController || role === UserRole.Storeman || isAdmin) {
+            if (getMappedRole(role) === UserRole.StockController || getMappedRole(role) === UserRole.Storeman || isAdmin) {
                 return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.PICKED_AND_LOADED)} disabled={isUpdating}>Mark as Picked & Loaded</ActionButton>;
             }
             break;
         case WorkflowStatus.PICKED_AND_LOADED:
             // ONLY Security or Driver can dispatch
-            if (role === UserRole.Security || role === UserRole.Driver || isAdmin) {
+            if (getMappedRole(role) === UserRole.Security || getMappedRole(role) === UserRole.Driver || isAdmin) {
                 return <ActionButton onClick={() => handleStatusUpdate(WorkflowStatus.DISPATCHED)} disabled={isUpdating}>Confirm Gate Release & Dispatch</ActionButton>;
             }
             break;

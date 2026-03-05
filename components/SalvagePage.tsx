@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabase/client';
-import { SalvageRequest, User, WorkflowStatus, UserRole, Store } from '../types';
+import { getMappedRole, SalvageRequest, User, WorkflowStatus, UserRole, Store } from '../types';
 import Card from './Card';
 import { sendApprovalWebhook } from '../services/webhookService';
 
@@ -27,7 +27,7 @@ const SalvagePage: React.FC<SalvagePageProps> = ({ user }) => {
     const [error, setError] = useState<string | null>(null);
     const [updatingId, setUpdatingId] = useState<string | null>(null);
     
-    const isManager = user.role === UserRole.Admin || user.role === UserRole.OperationsManager || user.role === UserRole.EquipmentManager;
+    const isManager = getMappedRole(user.role) === UserRole.Admin || getMappedRole(user.role) === UserRole.OperationsManager || getMappedRole(user.role) === UserRole.EquipmentManager;
 
     const fetchRequests = useCallback(async () => {
         setLoading(true);
@@ -65,7 +65,7 @@ const SalvagePage: React.FC<SalvagePageProps> = ({ user }) => {
             });
 
             const filtered = (() => {
-                if (user.role === UserRole.Admin || !user.departments || user.departments.length === 0) {
+                if (getMappedRole(user.role) === UserRole.Admin || !user.departments || user.departments.length === 0) {
                     return normalized;
                 }
                 const allowedStores = user.departments.filter(store =>
@@ -184,7 +184,7 @@ const SalvagePage: React.FC<SalvagePageProps> = ({ user }) => {
                             {req.status === WorkflowStatus.SALVAGE_TO_BE_SCRAPPED && isManager && (
                                 <button onClick={() => handleUpdate(req.id, WorkflowStatus.SALVAGE_SCRAP_CONFIRMED)} disabled={updatingId === req.id} className="px-3 py-1.5 text-sm bg-red-600 text-white font-semibold rounded-md hover:bg-red-700">Confirm Scrapped</button>
                             )}
-                            {(req.status === WorkflowStatus.SALVAGE_REPAIR_CONFIRMED || req.status === WorkflowStatus.SALVAGE_SCRAP_CONFIRMED) && (user.role === UserRole.StockController || isManager) && (
+                            {(req.status === WorkflowStatus.SALVAGE_REPAIR_CONFIRMED || req.status === WorkflowStatus.SALVAGE_SCRAP_CONFIRMED) && (getMappedRole(user.role) === UserRole.StockController || isManager) && (
                                  <button onClick={() => handleUpdate(req.id, WorkflowStatus.SALVAGE_COMPLETE)} disabled={updatingId === req.id} className="px-3 py-1.5 text-sm bg-emerald-500 text-white font-semibold rounded-md hover:bg-emerald-600">Close Out</button>
                             )}
                         </div>

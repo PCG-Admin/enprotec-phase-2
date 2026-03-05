@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../supabase/client';
-import { WorkflowRequest, Priority, User, UserRole } from '../types';
+import { getMappedRole, WorkflowRequest, Priority, User, UserRole } from '../types';
 import WorkflowStatusIndicator from './WorkflowStatusIndicator';
 import WorkflowDetailModal from './WorkflowDetailModal';
 
@@ -42,12 +42,12 @@ const WorkflowList: React.FC<WorkflowListProps> = ({ user }) => {
           .range(from, to); // PERFORMANCE: Pagination
 
       // Filter by department unless the user is an Admin
-      if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
+      if (getMappedRole(user.role) !== UserRole.Admin && user.departments && user.departments.length > 0) {
         query = query.in('department', user.departments);
       }
 
       // Filter by sites unless the user is an Admin
-      if (user.role !== UserRole.Admin && user.sites && user.sites.length > 0) {
+      if (getMappedRole(user.role) !== UserRole.Admin && user.sites && user.sites.length > 0) {
         query = query.in('projectCode', user.sites);
       }
 

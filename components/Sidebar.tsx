@@ -13,7 +13,7 @@ import PinIcon from './icons/PinIcon';
 import ClipboardCheckIcon from './icons/ClipboardCheckIcon';
 import CheckCircleIcon from './icons/CheckCircleIcon';
 import WrenchIcon from './icons/WrenchIcon';
-import { View, User, UserRole } from '../types';
+import { View, User, UserRole, getMappedRole } from '../types';
 import EnprotecLogo from './icons/EnprotecLogo';
 import ChevronRightIcon from './icons/ChevronRightIcon';
 
@@ -25,7 +25,7 @@ interface SidebarProps {
   onToggle: () => void;
 }
 
-const viewPermissions: Record<UserRole, View[]> = {
+const viewPermissions: Partial<Record<UserRole, View[]>> = {
   [UserRole.Admin]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stock', 'Sites', 'Stores', 'Users', 'Reports', 'StockReports'],
   [UserRole.OperationsManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'Salvage', 'Stock', 'Sites', 'Reports'],
   [UserRole.EquipmentManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Salvage', 'Stock', 'Reports'],
@@ -39,7 +39,7 @@ const viewPermissions: Record<UserRole, View[]> = {
 
 const NavItem: React.FC<{
   icon: React.ReactNode;
-  label: string; 
+  label: string;
   isActive: boolean;
   onClick: () => void;
   collapsed: boolean;
@@ -51,11 +51,10 @@ const NavItem: React.FC<{
         e.preventDefault();
         onClick();
       }}
-      className={`group relative flex items-center ${collapsed ? 'justify-center px-3' : 'px-4'} py-3 rounded-md text-sm font-medium transition-colors duration-200 ${
-        isActive
-          ? 'bg-zinc-100 text-zinc-900'
-          : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900'
-      }`}
+      className={`group relative flex items-center ${collapsed ? 'justify-center px-3' : 'px-4'} py-3 rounded-md text-sm font-medium transition-colors duration-200 ${isActive
+        ? 'bg-zinc-100 text-zinc-900'
+        : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900'
+        }`}
     >
       {isActive && <div className="absolute left-0 top-0 bottom-0 w-1 bg-sky-500 rounded-r-full"></div>}
       {icon}
@@ -90,7 +89,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView, co
     { label: 'Stock Reports', view: 'StockReports', icon: <ReportsIcon className="w-5 h-5" /> },
   ];
 
-  const allowedViews = viewPermissions[user.role] || [];
+  const allowedViews = viewPermissions[getMappedRole(user.role)] || [];
   const visibleNavItems = allNavItems.filter(item => allowedViews.includes(item.view));
 
   return (

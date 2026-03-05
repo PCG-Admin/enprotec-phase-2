@@ -1,4 +1,4 @@
-import { User, WorkflowRequest, WorkflowStatus, SalvageRequest, UserRole } from '../types';
+import { getMappedRole, User, WorkflowRequest, WorkflowStatus, SalvageRequest, UserRole, getRolesMappingTo } from '../types';
 import { supabase } from '../supabase/client';
 
 const WEBHOOK_URL = 'https://hook.eu2.make.com/8txtgm1ou36nd0t1w3jrx891kpqy90mv';
@@ -10,30 +10,30 @@ export type WebhookActionType = 'APPROVAL' | 'DECLINE' | 'REJECTION' | 'ACCEPTAN
 type ApproverFieldKey = `approver${number}`;
 
 type WebhookPayload = {
-    actionType: WebhookActionType;
-    requestNumber: string;
-    previousStatus: WorkflowStatus;
-    newStatus: WorkflowStatus;
-    actor: {
-        name: string;
-        email: string;
-        role: string;
-    };
-    comment?: string | null;
-    timestamp: string;
-    workflowId: string;
+  actionType: WebhookActionType;
+  requestNumber: string;
+  previousStatus: WorkflowStatus;
+  newStatus: WorkflowStatus;
+  actor: {
+    name: string;
+    email: string;
+    role: string;
+  };
+  comment?: string | null;
+  timestamp: string;
+  workflowId: string;
 } & Partial<Record<ApproverFieldKey, string>>;
 
 type DenialWebhookPayload = {
-    requesterName: string;
-    requesterEmail: string;
-    subject: string;
-    body: string;
+  requesterName: string;
+  requesterEmail: string;
+  subject: string;
+  body: string;
 };
 
 type RecipientInfo = {
-    email: string;
-    name: string;
+  email: string;
+  name: string;
 };
 
 /**
@@ -45,122 +45,122 @@ type RecipientInfo = {
  * @returns A promise that resolves to an array of recipient info filtered by site and department access.
  */
 async function getNextApprovers(
-    newStatus: WorkflowStatus,
-    request: Pick<WorkflowRequest, 'requester_id' | 'projectCode' | 'department'>
+  newStatus: WorkflowStatus,
+  request: Pick<WorkflowRequest, 'requester_id' | 'projectCode' | 'department'>
 ): Promise<RecipientInfo[]> {
-    console.log('[getNextApprovers] New Status:', newStatus);
-    console.log('[getNextApprovers] Request data:', {
-        projectCode: request.projectCode,
-        department: request.department,
-        requester_id: request.requester_id
+  console.log('[getNextApprovers] New Status:', newStatus);
+  console.log('[getNextApprovers] Request data:', {
+    projectCode: request.projectCode,
+    department: request.department,
+    requester_id: request.requester_id
+  });
+
+  let targetRoles: UserRole[] = [];
+  let targetUserId: string | null = null;
+
+  switch (newStatus) {
+    case WorkflowStatus.REQUEST_SUBMITTED:
+      targetRoles = [UserRole.OperationsManager, UserRole.Admin].flatMap(getRolesMappingTo);
+      break;
+    case WorkflowStatus.STOCK_CONTROLLER_APPROVAL:
+      targetRoles = [UserRole.StockController, UserRole.Admin].flatMap(getRolesMappingTo);
+      break;
+    case WorkflowStatus.AWAITING_EQUIP_MANAGER:
+      targetRoles = [UserRole.EquipmentManager, UserRole.OperationsManager, UserRole.Admin].flatMap(getRolesMappingTo);
+      break;
+    case WorkflowStatus.AWAITING_PICKING:
+      targetRoles = [UserRole.StockController, UserRole.Storeman, UserRole.OperationsManager, UserRole.Admin].flatMap(getRolesMappingTo);
+      break;
+    case WorkflowStatus.PICKED_AND_LOADED:
+      targetRoles = [UserRole.Driver, UserRole.Security].flatMap(getRolesMappingTo);
+      break;
+    case WorkflowStatus.DISPATCHED:
+    case WorkflowStatus.EPOD_CONFIRMED:
+      targetUserId = request.requester_id;
+      break;
+    case WorkflowStatus.REQUEST_DECLINED:
+      targetUserId = request.requester_id;
+      break;
+    case WorkflowStatus.REJECTED_AT_DELIVERY:
+      targetRoles = [UserRole.StockController, UserRole.OperationsManager, UserRole.Admin].flatMap(getRolesMappingTo);
+      break;
+    case WorkflowStatus.COMPLETED:
+      return [];
+    default:
+      return [];
+  }
+
+  if (targetUserId) {
+    const { data, error } = await supabase
+      .from('en_users')
+      .select('email, name')
+      .eq('id', targetUserId)
+      .eq('status', 'Active')
+      .single();
+
+    if (error || !data) {
+      console.error(`Webhook: Could not find active user with ID ${targetUserId}`, error);
+      return [];
+    }
+    return [{ email: data.email, name: data.name }];
+  }
+
+  if (targetRoles.length > 0) {
+    // Query users with target roles and Active status, including site and department assignments
+    const { data, error } = await supabase
+      .from('en_users')
+      .select('email, name, sites, departments, role')
+      .in('role', targetRoles)
+      .eq('status', 'Active');
+
+    if (error || !data) {
+      console.error(`Webhook: Could not find active users for roles ${targetRoles.join(', ')}`, error);
+      return [];
+    }
+
+    console.log(`[getNextApprovers] Query returned ${data.length} users with roles:`, targetRoles);
+
+    // Filter by site and department assignments
+    const filteredUsers = data.filter(user => {
+      // Admin bypass - admins with no sites/departments get all notifications
+      if (getMappedRole(user.role) === UserRole.Admin) {
+        if (!user.sites || user.sites.length === 0) {
+          console.log(`[getNextApprovers] ✓ Including Admin ${user.name} (no site restrictions)`);
+          return true; // Admin with no site restrictions
+        }
+      }
+
+      // Check site assignment (REQUIRED)
+      const hasSiteAccess = user.sites && Array.isArray(user.sites) && user.sites.includes(request.projectCode);
+
+      // Site access is mandatory
+      if (!hasSiteAccess) {
+        console.log(`[getNextApprovers] ✗ Excluding ${user.name}: No site access (has: ${user.sites?.join(', ') || 'none'}, needs: ${request.projectCode})`);
+        return false;
+      }
+
+      // Check department assignment (OPTIONAL - only if user has departments configured)
+      // If user has no departments configured, they get all notifications for their sites
+      if (!user.departments || !Array.isArray(user.departments) || user.departments.length === 0) {
+        console.log(`[getNextApprovers] ✓ Including ${user.name}: Has site access and no department restrictions`);
+        return true; // User has site access and no department restrictions
+      }
+
+      // If user has departments configured, they must have access to this department
+      const hasDepartmentAccess = user.departments.includes(request.department);
+      if (hasDepartmentAccess) {
+        console.log(`[getNextApprovers] ✓ Including ${user.name}: Has both site and department access`);
+      } else {
+        console.log(`[getNextApprovers] ✗ Excluding ${user.name}: Has site but no department access (has: ${user.departments.join(', ')}, needs: ${request.department})`);
+      }
+      return hasDepartmentAccess;
     });
 
-    let targetRoles: UserRole[] = [];
-    let targetUserId: string | null = null;
+    console.log(`[getNextApprovers] Filtered to ${filteredUsers.length} users with site/department access`);
+    return filteredUsers.map(user => ({ email: user.email, name: user.name }));
+  }
 
-    switch (newStatus) {
-        case WorkflowStatus.REQUEST_SUBMITTED:
-            targetRoles = [UserRole.OperationsManager, UserRole.Admin];
-            break;
-        case WorkflowStatus.STOCK_CONTROLLER_APPROVAL:
-            targetRoles = [UserRole.StockController, UserRole.Admin];
-            break;
-        case WorkflowStatus.AWAITING_EQUIP_MANAGER:
-            targetRoles = [UserRole.EquipmentManager, UserRole.OperationsManager, UserRole.Admin];
-            break;
-        case WorkflowStatus.AWAITING_PICKING:
-            targetRoles = [UserRole.StockController, UserRole.Storeman, UserRole.OperationsManager, UserRole.Admin];
-            break;
-        case WorkflowStatus.PICKED_AND_LOADED:
-            targetRoles = [UserRole.Driver, UserRole.Security];
-            break;
-        case WorkflowStatus.DISPATCHED:
-        case WorkflowStatus.EPOD_CONFIRMED:
-            targetUserId = request.requester_id;
-            break;
-        case WorkflowStatus.REQUEST_DECLINED:
-             targetUserId = request.requester_id;
-            break;
-        case WorkflowStatus.REJECTED_AT_DELIVERY:
-            targetRoles = [UserRole.StockController, UserRole.OperationsManager, UserRole.Admin];
-            break;
-        case WorkflowStatus.COMPLETED:
-            return [];
-        default:
-            return [];
-    }
-
-    if (targetUserId) {
-        const { data, error } = await supabase
-            .from('en_users')
-            .select('email, name')
-            .eq('id', targetUserId)
-            .eq('status', 'Active')
-            .single();
-
-        if (error || !data) {
-            console.error(`Webhook: Could not find active user with ID ${targetUserId}`, error);
-            return [];
-        }
-        return [{ email: data.email, name: data.name }];
-    }
-
-    if (targetRoles.length > 0) {
-        // Query users with target roles and Active status, including site and department assignments
-        const { data, error } = await supabase
-            .from('en_users')
-            .select('email, name, sites, departments, role')
-            .in('role', targetRoles)
-            .eq('status', 'Active');
-
-        if (error || !data) {
-            console.error(`Webhook: Could not find active users for roles ${targetRoles.join(', ')}`, error);
-            return [];
-        }
-
-        console.log(`[getNextApprovers] Query returned ${data.length} users with roles:`, targetRoles);
-
-        // Filter by site and department assignments
-        const filteredUsers = data.filter(user => {
-            // Admin bypass - admins with no sites/departments get all notifications
-            if (user.role === UserRole.Admin) {
-                if (!user.sites || user.sites.length === 0) {
-                    console.log(`[getNextApprovers] ✓ Including Admin ${user.name} (no site restrictions)`);
-                    return true; // Admin with no site restrictions
-                }
-            }
-
-            // Check site assignment (REQUIRED)
-            const hasSiteAccess = user.sites && Array.isArray(user.sites) && user.sites.includes(request.projectCode);
-
-            // Site access is mandatory
-            if (!hasSiteAccess) {
-                console.log(`[getNextApprovers] ✗ Excluding ${user.name}: No site access (has: ${user.sites?.join(', ') || 'none'}, needs: ${request.projectCode})`);
-                return false;
-            }
-
-            // Check department assignment (OPTIONAL - only if user has departments configured)
-            // If user has no departments configured, they get all notifications for their sites
-            if (!user.departments || !Array.isArray(user.departments) || user.departments.length === 0) {
-                console.log(`[getNextApprovers] ✓ Including ${user.name}: Has site access and no department restrictions`);
-                return true; // User has site access and no department restrictions
-            }
-
-            // If user has departments configured, they must have access to this department
-            const hasDepartmentAccess = user.departments.includes(request.department);
-            if (hasDepartmentAccess) {
-                console.log(`[getNextApprovers] ✓ Including ${user.name}: Has both site and department access`);
-            } else {
-                console.log(`[getNextApprovers] ✗ Excluding ${user.name}: Has site but no department access (has: ${user.departments.join(', ')}, needs: ${request.department})`);
-            }
-            return hasDepartmentAccess;
-        });
-
-        console.log(`[getNextApprovers] Filtered to ${filteredUsers.length} users with site/department access`);
-        return filteredUsers.map(user => ({ email: user.email, name: user.name }));
-    }
-
-    return [];
+  return [];
 }
 
 
@@ -170,93 +170,93 @@ async function getNextApprovers(
  * @returns A promise that resolves to an array of recipient info.
  */
 async function getNextApproversForSalvage(newStatus: WorkflowStatus): Promise<RecipientInfo[]> {
-    let targetRoles: UserRole[] = [];
+  let targetRoles: UserRole[] = [];
 
-    switch (newStatus) {
-        case WorkflowStatus.SALVAGE_TO_BE_REPAIRED:
-        case WorkflowStatus.SALVAGE_TO_BE_SCRAPPED:
-            targetRoles = [UserRole.EquipmentManager, UserRole.OperationsManager, UserRole.Admin];
-            break;
-        case WorkflowStatus.SALVAGE_REPAIR_CONFIRMED:
-        case WorkflowStatus.SALVAGE_SCRAP_CONFIRMED:
-            targetRoles = [UserRole.StockController, UserRole.OperationsManager, UserRole.Admin];
-            break;
-        default:
-            return [];
+  switch (newStatus) {
+    case WorkflowStatus.SALVAGE_TO_BE_REPAIRED:
+    case WorkflowStatus.SALVAGE_TO_BE_SCRAPPED:
+      targetRoles = [UserRole.EquipmentManager, UserRole.OperationsManager, UserRole.Admin].flatMap(getRolesMappingTo);
+      break;
+    case WorkflowStatus.SALVAGE_REPAIR_CONFIRMED:
+    case WorkflowStatus.SALVAGE_SCRAP_CONFIRMED:
+      targetRoles = [UserRole.StockController, UserRole.OperationsManager, UserRole.Admin].flatMap(getRolesMappingTo);
+      break;
+    default:
+      return [];
+  }
+
+  if (targetRoles.length > 0) {
+    const { data, error } = await supabase
+      .from('en_users')
+      .select('email, name')
+      .in('role', targetRoles)
+      .eq('status', 'Active');
+    if (error || !data) {
+      console.error('Error fetching salvage user names/emails by role for webhook:', error);
+      return [];
     }
+    return data.map(user => ({ email: user.email, name: user.name }));
+  }
 
-    if (targetRoles.length > 0) {
-        const { data, error } = await supabase
-            .from('en_users')
-            .select('email, name')
-            .in('role', targetRoles)
-            .eq('status', 'Active');
-        if (error || !data) {
-            console.error('Error fetching salvage user names/emails by role for webhook:', error);
-            return [];
-        }
-        return data.map(user => ({ email: user.email, name: user.name }));
-    }
-
-    return [];
+  return [];
 }
 
 
 // A helper function to check if the object is a WorkflowRequest
 function isWorkflowRequest(req: any): req is Pick<WorkflowRequest, 'id' | 'requestNumber' | 'currentStatus' | 'requester_id'> {
-    return 'requestNumber' in req && 'currentStatus' in req && 'requester_id' in req;
+  return 'requestNumber' in req && 'currentStatus' in req && 'requester_id' in req;
 }
 
 /**
  * Generates workflow progress tracker HTML showing completed steps, current step, and next steps
  */
 function generateWorkflowProgressHTML(newStatus: WorkflowStatus): string {
-    const ENPROTEC_BLUE = '#0B5FAA';
-    const ENPROTEC_GREEN = '#00A651';
+  const ENPROTEC_BLUE = '#0B5FAA';
+  const ENPROTEC_GREEN = '#00A651';
 
-    // Define workflow steps in order (Core Internal Flow)
-    const workflowSteps = [
-        { status: WorkflowStatus.REQUEST_SUBMITTED, label: 'Request Submitted', role: 'Requester' },
-        { status: WorkflowStatus.AWAITING_OPS_MANAGER, label: 'Ops Manager Review', role: 'Ops Manager' },
-        { status: WorkflowStatus.AWAITING_EQUIP_MANAGER, label: 'Equipment Manager Review', role: 'Equipment Manager' },
-        { status: WorkflowStatus.AWAITING_PICKING, label: 'Picking', role: 'Stock Controller / Storeman' },
-        { status: WorkflowStatus.PICKED_AND_LOADED, label: 'Picked & Loaded', role: 'Driver / Security' },
-        { status: WorkflowStatus.DISPATCHED, label: 'In Transit', role: 'Driver' },
-        { status: WorkflowStatus.EPOD_CONFIRMED, label: 'Delivered', role: 'Recipient' },
-        { status: WorkflowStatus.COMPLETED, label: 'Completed', role: 'System' },
-    ];
+  // Define workflow steps in order (Core Internal Flow)
+  const workflowSteps = [
+    { status: WorkflowStatus.REQUEST_SUBMITTED, label: 'Request Submitted', role: 'Requester' },
+    { status: WorkflowStatus.AWAITING_OPS_MANAGER, label: 'Ops Manager Review', role: 'Ops Manager' },
+    { status: WorkflowStatus.AWAITING_EQUIP_MANAGER, label: 'Equipment Manager Review', role: 'Equipment Manager' },
+    { status: WorkflowStatus.AWAITING_PICKING, label: 'Picking', role: 'Stock Controller / Storeman' },
+    { status: WorkflowStatus.PICKED_AND_LOADED, label: 'Picked & Loaded', role: 'Driver / Security' },
+    { status: WorkflowStatus.DISPATCHED, label: 'In Transit', role: 'Driver' },
+    { status: WorkflowStatus.EPOD_CONFIRMED, label: 'Delivered', role: 'Recipient' },
+    { status: WorkflowStatus.COMPLETED, label: 'Completed', role: 'System' },
+  ];
 
-    // Find current step index
-    const currentStepIndex = workflowSteps.findIndex(step => step.status === newStatus);
+  // Find current step index
+  const currentStepIndex = workflowSteps.findIndex(step => step.status === newStatus);
 
-    // Generate step items
-    const stepItems = workflowSteps.map((step, index) => {
-        let icon = '';
-        let color = '#94a3b8'; // Default grey
-        let bgColor = '#f1f5f9';
-        let fontWeight = '500';
+  // Generate step items
+  const stepItems = workflowSteps.map((step, index) => {
+    let icon = '';
+    let color = '#94a3b8'; // Default grey
+    let bgColor = '#f1f5f9';
+    let fontWeight = '500';
 
-        if (index < currentStepIndex || (newStatus === WorkflowStatus.COMPLETED && index === currentStepIndex)) {
-            // Completed step
-            icon = '✓';
-            color = ENPROTEC_GREEN;
-            bgColor = '#d1fae5';
-            fontWeight = '600';
-        } else if (index === currentStepIndex) {
-            // Current step (pending)
-            icon = '⏳';
-            color = ENPROTEC_BLUE;
-            bgColor = '#dbeafe';
-            fontWeight = '700';
-        } else {
-            // Future step
-            icon = '○';
-            color = '#94a3b8';
-            bgColor = '#f1f5f9';
-            fontWeight = '500';
-        }
+    if (index < currentStepIndex || (newStatus === WorkflowStatus.COMPLETED && index === currentStepIndex)) {
+      // Completed step
+      icon = '✓';
+      color = ENPROTEC_GREEN;
+      bgColor = '#d1fae5';
+      fontWeight = '600';
+    } else if (index === currentStepIndex) {
+      // Current step (pending)
+      icon = '⏳';
+      color = ENPROTEC_BLUE;
+      bgColor = '#dbeafe';
+      fontWeight = '700';
+    } else {
+      // Future step
+      icon = '○';
+      color = '#94a3b8';
+      bgColor = '#f1f5f9';
+      fontWeight = '500';
+    }
 
-        return `
+    return `
         <tr>
           <td style="padding:8px 0;">
             <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
@@ -272,25 +272,25 @@ function generateWorkflowProgressHTML(newStatus: WorkflowStatus): string {
             </table>
           </td>
         </tr>`;
-    }).join('');
+  }).join('');
 
-    // Determine next action message
-    let nextActionMessage = '';
-    if (newStatus === WorkflowStatus.COMPLETED) {
-        nextActionMessage = 'This workflow has been completed. No further action required.';
-    } else if (newStatus === WorkflowStatus.REQUEST_DECLINED || newStatus === WorkflowStatus.REJECTED_AT_DELIVERY) {
-        nextActionMessage = 'This request has been declined. Please review the comments for details.';
+  // Determine next action message
+  let nextActionMessage = '';
+  if (newStatus === WorkflowStatus.COMPLETED) {
+    nextActionMessage = 'This workflow has been completed. No further action required.';
+  } else if (newStatus === WorkflowStatus.REQUEST_DECLINED || newStatus === WorkflowStatus.REJECTED_AT_DELIVERY) {
+    nextActionMessage = 'This request has been declined. Please review the comments for details.';
+  } else {
+    const nextStepIndex = currentStepIndex + 1;
+    if (nextStepIndex < workflowSteps.length) {
+      const nextStep = workflowSteps[nextStepIndex];
+      nextActionMessage = `<strong>Next Step:</strong> ${nextStep.label} by ${nextStep.role}`;
     } else {
-        const nextStepIndex = currentStepIndex + 1;
-        if (nextStepIndex < workflowSteps.length) {
-            const nextStep = workflowSteps[nextStepIndex];
-            nextActionMessage = `<strong>Next Step:</strong> ${nextStep.label} by ${nextStep.role}`;
-        } else {
-            nextActionMessage = 'Workflow nearing completion.';
-        }
+      nextActionMessage = 'Workflow nearing completion.';
     }
+  }
 
-    return `
+  return `
     <!-- Workflow Progress Card -->
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 20px 0;background:#fefce8;border-radius:12px;border:2px solid #fde047;">
       <tr>
@@ -315,11 +315,11 @@ function generateWorkflowProgressHTML(newStatus: WorkflowStatus): string {
  * Generates requested items table HTML
  */
 function generateRequestedItemsHTML(workflow: WorkflowRequest): string {
-    if (!workflow.items || workflow.items.length === 0) {
-        return '';
-    }
+  if (!workflow.items || workflow.items.length === 0) {
+    return '';
+  }
 
-    const itemRows = workflow.items.map(item => `
+  const itemRows = workflow.items.map(item => `
         <tr style="border-bottom:1px solid #e2e8f0;">
             <td style="padding:12px 8px;color:#1e293b;font-size:13px;font-family:monospace;">${item.partNumber}</td>
             <td style="padding:12px 8px;color:#475569;font-size:13px;">${item.description}</td>
@@ -328,7 +328,7 @@ function generateRequestedItemsHTML(workflow: WorkflowRequest): string {
         </tr>
     `).join('');
 
-    return `
+  return `
     <!-- Requested Items Card -->
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin:0 0 20px 0;background:#f8fafc;border-radius:12px;border:1px solid #e2e8f0;">
         <tr>
@@ -357,67 +357,67 @@ function generateRequestedItemsHTML(workflow: WorkflowRequest): string {
  * Generates HTML email body for workflow status changes
  */
 function generateWorkflowEmailHTML(
-    requestNumber: string,
-    actionType: WebhookActionType,
-    previousStatus: WorkflowStatus,
-    newStatus: WorkflowStatus,
-    actor: { name: string; email: string; role: string },
-    comment?: string | null,
-    workflowData?: Partial<WorkflowRequest>
+  requestNumber: string,
+  actionType: WebhookActionType,
+  previousStatus: WorkflowStatus,
+  newStatus: WorkflowStatus,
+  actor: { name: string; email: string; role: string },
+  comment?: string | null,
+  workflowData?: Partial<WorkflowRequest>
 ): string {
-    const safeComment = comment && comment.trim().length > 0 ? comment.trim() : 'No additional comments provided.';
+  const safeComment = comment && comment.trim().length > 0 ? comment.trim() : 'No additional comments provided.';
 
-    // Enprotec brand colors from logo: Blue primary, Green accent, Dark grey
-    const ENPROTEC_BLUE = '#0B5FAA'; // Primary blue from logo
-    const ENPROTEC_GREEN = '#00A651'; // Green accent from logo
-    const ENPROTEC_DARK = '#2D2D2D';
-    const ENPROTEC_LIGHT_BLUE = '#1E7BC5';
+  // Enprotec brand colors from logo: Blue primary, Green accent, Dark grey
+  const ENPROTEC_BLUE = '#0B5FAA'; // Primary blue from logo
+  const ENPROTEC_GREEN = '#00A651'; // Green accent from logo
+  const ENPROTEC_DARK = '#2D2D2D';
+  const ENPROTEC_LIGHT_BLUE = '#1E7BC5';
 
-    let actionText = '';
-    let actionColor = ENPROTEC_BLUE;
-    let headerBg = `linear-gradient(135deg, ${ENPROTEC_BLUE} 0%, ${ENPROTEC_LIGHT_BLUE} 100%)`;
-    let statusBadgeBg = '#e0f2fe';
-    let statusBadgeColor = '#075985';
+  let actionText = '';
+  let actionColor = ENPROTEC_BLUE;
+  let headerBg = `linear-gradient(135deg, ${ENPROTEC_BLUE} 0%, ${ENPROTEC_LIGHT_BLUE} 100%)`;
+  let statusBadgeBg = '#e0f2fe';
+  let statusBadgeColor = '#075985';
 
-    switch (actionType) {
-        case 'APPROVAL':
-            actionText = 'Approved';
-            actionColor = ENPROTEC_GREEN;
-            headerBg = `linear-gradient(135deg, ${ENPROTEC_BLUE} 0%, ${ENPROTEC_LIGHT_BLUE} 100%)`;
-            statusBadgeBg = '#d1fae5';
-            statusBadgeColor = '#065f46';
-            break;
-        case 'DECLINE':
-            actionText = 'Declined';
-            actionColor = '#ef4444';
-            headerBg = `linear-gradient(135deg, ${ENPROTEC_DARK} 0%, #3d3d3d 100%)`;
-            statusBadgeBg = '#fee2e2';
-            statusBadgeColor = '#991b1b';
-            break;
-        case 'REJECTION':
-            actionText = 'Rejected';
-            actionColor = '#ef4444';
-            headerBg = `linear-gradient(135deg, ${ENPROTEC_DARK} 0%, #3d3d3d 100%)`;
-            statusBadgeBg = '#fed7aa';
-            statusBadgeColor = '#9a3412';
-            break;
-        case 'ACCEPTANCE':
-            actionText = 'Accepted';
-            actionColor = ENPROTEC_GREEN;
-            headerBg = `linear-gradient(135deg, ${ENPROTEC_BLUE} 0%, ${ENPROTEC_LIGHT_BLUE} 100%)`;
-            statusBadgeBg = '#d1fae5';
-            statusBadgeColor = '#065f46';
-            break;
-        case 'SALVAGE_DECISION':
-            actionText = 'Updated';
-            actionColor = ENPROTEC_BLUE;
-            headerBg = `linear-gradient(135deg, ${ENPROTEC_BLUE} 0%, ${ENPROTEC_LIGHT_BLUE} 100%)`;
-            statusBadgeBg = '#e0f2fe';
-            statusBadgeColor = '#075985';
-            break;
-    }
+  switch (actionType) {
+    case 'APPROVAL':
+      actionText = 'Approved';
+      actionColor = ENPROTEC_GREEN;
+      headerBg = `linear-gradient(135deg, ${ENPROTEC_BLUE} 0%, ${ENPROTEC_LIGHT_BLUE} 100%)`;
+      statusBadgeBg = '#d1fae5';
+      statusBadgeColor = '#065f46';
+      break;
+    case 'DECLINE':
+      actionText = 'Declined';
+      actionColor = '#ef4444';
+      headerBg = `linear-gradient(135deg, ${ENPROTEC_DARK} 0%, #3d3d3d 100%)`;
+      statusBadgeBg = '#fee2e2';
+      statusBadgeColor = '#991b1b';
+      break;
+    case 'REJECTION':
+      actionText = 'Rejected';
+      actionColor = '#ef4444';
+      headerBg = `linear-gradient(135deg, ${ENPROTEC_DARK} 0%, #3d3d3d 100%)`;
+      statusBadgeBg = '#fed7aa';
+      statusBadgeColor = '#9a3412';
+      break;
+    case 'ACCEPTANCE':
+      actionText = 'Accepted';
+      actionColor = ENPROTEC_GREEN;
+      headerBg = `linear-gradient(135deg, ${ENPROTEC_BLUE} 0%, ${ENPROTEC_LIGHT_BLUE} 100%)`;
+      statusBadgeBg = '#d1fae5';
+      statusBadgeColor = '#065f46';
+      break;
+    case 'SALVAGE_DECISION':
+      actionText = 'Updated';
+      actionColor = ENPROTEC_BLUE;
+      headerBg = `linear-gradient(135deg, ${ENPROTEC_BLUE} 0%, ${ENPROTEC_LIGHT_BLUE} 100%)`;
+      statusBadgeBg = '#e0f2fe';
+      statusBadgeColor = '#075985';
+      break;
+  }
 
-    return `
+  return `
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -471,9 +471,9 @@ function generateWorkflowEmailHTML(
                 <h2 style="margin:0 0 16px 0;color:#1e293b;font-size:22px;font-weight:600;">Request ${requestNumber}</h2>
                 <p style="margin:0 0 24px 0;color:#475569;font-size:15px;line-height:1.6;">
                   ${newStatus === 'Awaiting Ops Manager' || newStatus === 'Awaiting Equip. Manager' || newStatus === 'Awaiting Stock Controller' || newStatus === 'Manager Approval'
-                    ? `<strong style="color:${ENPROTEC_BLUE};">This request requires your approval.</strong> Please review the details below and take action in the system.`
-                    : `This request has been <strong style="color:${actionColor};">${actionText.toLowerCase()}</strong> by <strong>${actor.name}</strong> (${actor.role}).`
-                  }
+      ? `<strong style="color:${ENPROTEC_BLUE};">This request requires your approval.</strong> Please review the details below and take action in the system.`
+      : `This request has been <strong style="color:${actionColor};">${actionText.toLowerCase()}</strong> by <strong>${actor.name}</strong> (${actor.role}).`
+    }
                 </p>
 
                 ${workflowData ? `
@@ -662,7 +662,7 @@ function generateWorkflowEmailHTML(
  * Generates HTML email body for dispatch notifications
  */
 function generateDispatchEmailHTML(request: WorkflowRequest, dispatchedBy: User): string {
-    const itemsHTML = request.items.map((item, index) => `
+  const itemsHTML = request.items.map((item, index) => `
         <tr style="border-bottom:${index < request.items.length - 1 ? '1px solid #e2e8f0' : 'none'};">
           <td style="padding:12px 0;color:#1e293b;font-size:13px;font-family:monospace;font-weight:600;">${item.partNumber}</td>
           <td style="padding:12px 0;color:#475569;font-size:13px;">${item.description}</td>
@@ -670,7 +670,7 @@ function generateDispatchEmailHTML(request: WorkflowRequest, dispatchedBy: User)
         </tr>
     `).join('');
 
-    return `
+  return `
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -805,124 +805,124 @@ function generateDispatchEmailHTML(request: WorkflowRequest, dispatchedBy: User)
 }
 
 export const sendApprovalWebhook = async (
-    actionType: WebhookActionType,
-    request: Pick<WorkflowRequest, 'id' | 'requestNumber' | 'currentStatus' | 'requester_id'> | SalvageRequest,
-    newStatus: WorkflowStatus,
-    user: User,
-    comment?: string | null
+  actionType: WebhookActionType,
+  request: Pick<WorkflowRequest, 'id' | 'requestNumber' | 'currentStatus' | 'requester_id'> | SalvageRequest,
+  newStatus: WorkflowStatus,
+  user: User,
+  comment?: string | null
 ): Promise<void> => {
 
-    if (import.meta.env.VITE_APP_ENV === 'dev') {
-        console.log('[Webhook] Dev environment — approval webhook suppressed.');
-        return;
-    }
+  if (import.meta.env.VITE_APP_ENV === 'dev') {
+    console.log('[Webhook] Dev environment — approval webhook suppressed.');
+    return;
+  }
 
-    let recipients: RecipientInfo[] = [];
-    if (isWorkflowRequest(request)) {
-        recipients = await getNextApprovers(newStatus, request);
+  let recipients: RecipientInfo[] = [];
+  if (isWorkflowRequest(request)) {
+    recipients = await getNextApprovers(newStatus, request);
+  } else {
+    recipients = await getNextApproversForSalvage(newStatus);
+  }
+
+  console.log(`[Webhook] Action: ${actionType}, New Status: ${newStatus}, Recipients found: ${recipients.length}`);
+  if (recipients.length > 0) {
+    console.log('[Webhook] Recipients:', recipients.map(r => `${r.name} (${r.email})`).join(', '));
+  } else {
+    console.warn('[Webhook] WARNING: No recipients found for this workflow notification!');
+  }
+
+  const requestNumber = isWorkflowRequest(request) ? request.requestNumber : `SALVAGE-${request.partNumber}`;
+  const previousStatus = isWorkflowRequest(request) ? request.currentStatus : request.status;
+
+  // Generate HTML email body
+  const bodyHTML = generateWorkflowEmailHTML(
+    requestNumber,
+    actionType,
+    previousStatus,
+    newStatus,
+    {
+      name: user.name,
+      email: user.email,
+      role: user.role,
+    },
+    comment,
+    isWorkflowRequest(request) ? request as Partial<WorkflowRequest> : undefined
+  );
+
+  // Generate subject line
+  let subjectAction = '';
+  switch (actionType) {
+    case 'APPROVAL': subjectAction = 'Approved'; break;
+    case 'DECLINE': subjectAction = 'Declined'; break;
+    case 'REJECTION': subjectAction = 'Rejected'; break;
+    case 'ACCEPTANCE': subjectAction = 'Accepted'; break;
+    case 'SALVAGE_DECISION': subjectAction = 'Updated'; break;
+  }
+  const subject = `${requestNumber} - ${subjectAction}`;
+
+  // Build individual recipient fields (email1, name1, email2, name2, etc.)
+  // Send actual recipients in first N slots, then send ALL recipients as semicolon-separated string
+  const recipientFields: Record<string, string> = {};
+
+  // Populate individual fields for first 8 recipients
+  for (let i = 1; i <= 8; i++) {
+    const recipient = recipients[i - 1];
+    recipientFields[`email${i}`] = recipient?.email || '';
+    recipientFields[`name${i}`] = recipient?.name || '';
+  }
+
+  // Add a combined "to" field with all emails separated by semicolons for Outlook module
+  const allEmails = recipients.map(r => r.email).join(';');
+  const recipientCount = recipients.length;
+
+  const payload = {
+    subject,
+    body: bodyHTML,
+    to: allEmails,  // All recipients in one field for Outlook Send Email module
+    recipient_count: recipientCount,
+    ...recipientFields,
+  };
+
+  try {
+    const response = await fetch(WEBHOOK_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Webhook failed with status ${response.status}: ${errorText}`);
     } else {
-        recipients = await getNextApproversForSalvage(newStatus);
+      console.log(`Webhook for ${actionType} on ${requestNumber} sent successfully.`);
     }
-
-    console.log(`[Webhook] Action: ${actionType}, New Status: ${newStatus}, Recipients found: ${recipients.length}`);
-    if (recipients.length > 0) {
-        console.log('[Webhook] Recipients:', recipients.map(r => `${r.name} (${r.email})`).join(', '));
-    } else {
-        console.warn('[Webhook] WARNING: No recipients found for this workflow notification!');
-    }
-
-    const requestNumber = isWorkflowRequest(request) ? request.requestNumber : `SALVAGE-${request.partNumber}`;
-    const previousStatus = isWorkflowRequest(request) ? request.currentStatus : request.status;
-
-    // Generate HTML email body
-    const bodyHTML = generateWorkflowEmailHTML(
-        requestNumber,
-        actionType,
-        previousStatus,
-        newStatus,
-        {
-            name: user.name,
-            email: user.email,
-            role: user.role,
-        },
-        comment,
-        isWorkflowRequest(request) ? request as Partial<WorkflowRequest> : undefined
-    );
-
-    // Generate subject line
-    let subjectAction = '';
-    switch (actionType) {
-        case 'APPROVAL': subjectAction = 'Approved'; break;
-        case 'DECLINE': subjectAction = 'Declined'; break;
-        case 'REJECTION': subjectAction = 'Rejected'; break;
-        case 'ACCEPTANCE': subjectAction = 'Accepted'; break;
-        case 'SALVAGE_DECISION': subjectAction = 'Updated'; break;
-    }
-    const subject = `${requestNumber} - ${subjectAction}`;
-
-    // Build individual recipient fields (email1, name1, email2, name2, etc.)
-    // Send actual recipients in first N slots, then send ALL recipients as semicolon-separated string
-    const recipientFields: Record<string, string> = {};
-
-    // Populate individual fields for first 8 recipients
-    for (let i = 1; i <= 8; i++) {
-        const recipient = recipients[i - 1];
-        recipientFields[`email${i}`] = recipient?.email || '';
-        recipientFields[`name${i}`] = recipient?.name || '';
-    }
-
-    // Add a combined "to" field with all emails separated by semicolons for Outlook module
-    const allEmails = recipients.map(r => r.email).join(';');
-    const recipientCount = recipients.length;
-
-    const payload = {
-        subject,
-        body: bodyHTML,
-        to: allEmails,  // All recipients in one field for Outlook Send Email module
-        recipient_count: recipientCount,
-        ...recipientFields,
-    };
-
-    try {
-        const response = await fetch(WEBHOOK_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`Webhook failed with status ${response.status}: ${errorText}`);
-        } else {
-            console.log(`Webhook for ${actionType} on ${requestNumber} sent successfully.`);
-        }
-    } catch (error) {
-        console.error('Error sending webhook notification:', error);
-    }
+  } catch (error) {
+    console.error('Error sending webhook notification:', error);
+  }
 };
 
 export const sendDenialWebhook = async (request: WorkflowRequest, comment: string | null): Promise<void> => {
-    if (import.meta.env.VITE_APP_ENV === 'dev') {
-        console.log('[Webhook] Dev environment — denial webhook suppressed.');
-        return;
+  if (import.meta.env.VITE_APP_ENV === 'dev') {
+    console.log('[Webhook] Dev environment — denial webhook suppressed.');
+    return;
+  }
+  try {
+    const { data: requester, error } = await supabase
+      .from('en_users')
+      .select('email, name')
+      .eq('id', request.requester_id)
+      .single();
+
+    if (error || !requester?.email || !requester?.name) {
+      console.error('Denial webhook: could not load requester email/name', error);
+      return;
     }
-    try {
-        const { data: requester, error } = await supabase
-            .from('en_users')
-            .select('email, name')
-            .eq('id', request.requester_id)
-            .single();
 
-        if (error || !requester?.email || !requester?.name) {
-            console.error('Denial webhook: could not load requester email/name', error);
-            return;
-        }
-
-        const subject = `${request.requestNumber} - Denied`;
-        const safeComment = comment && comment.trim().length > 0 ? comment.trim() : 'No additional comments were provided.';
-        const body = `
+    const subject = `${request.requestNumber} - Denied`;
+    const safeComment = comment && comment.trim().length > 0 ? comment.trim() : 'No additional comments were provided.';
+    const body = `
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -1045,139 +1045,139 @@ export const sendDenialWebhook = async (request: WorkflowRequest, comment: strin
 </html>
 `.trim();
 
-        // Build individual recipient fields (email1, name1, email2, name2, etc.)
-        // Denial only goes to requester
-        const recipientFields: Record<string, string> = {};
-        for (let i = 1; i <= 8; i++) {
-            if (i === 1) {
-                recipientFields[`email${i}`] = requester.email;
-                recipientFields[`name${i}`] = requester.name;
-            } else {
-                recipientFields[`email${i}`] = '';
-                recipientFields[`name${i}`] = '';
-            }
-        }
-
-        const payload = {
-            subject,
-            body,
-            to: requester.email,  // Single recipient for Outlook module
-            recipient_count: 1,
-            ...recipientFields,
-        };
-
-        const response = await fetch(DENIAL_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-            console.error(`Denial webhook failed with status ${response.status}`);
-        } else {
-            console.log(`Denial webhook for ${request.requestNumber} sent successfully.`);
-        }
-    } catch (err) {
-        console.error('Error sending denial webhook:', err);
+    // Build individual recipient fields (email1, name1, email2, name2, etc.)
+    // Denial only goes to requester
+    const recipientFields: Record<string, string> = {};
+    for (let i = 1; i <= 8; i++) {
+      if (i === 1) {
+        recipientFields[`email${i}`] = requester.email;
+        recipientFields[`name${i}`] = requester.name;
+      } else {
+        recipientFields[`email${i}`] = '';
+        recipientFields[`name${i}`] = '';
+      }
     }
+
+    const payload = {
+      subject,
+      body,
+      to: requester.email,  // Single recipient for Outlook module
+      recipient_count: 1,
+      ...recipientFields,
+    };
+
+    const response = await fetch(DENIAL_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      console.error(`Denial webhook failed with status ${response.status}`);
+    } else {
+      console.log(`Denial webhook for ${request.requestNumber} sent successfully.`);
+    }
+  } catch (err) {
+    console.error('Error sending denial webhook:', err);
+  }
 };
 
 export const sendDispatchWebhook = async (request: WorkflowRequest, user: User): Promise<void> => {
-    if (import.meta.env.VITE_APP_ENV === 'dev') {
-        console.log('[Webhook] Dev environment — dispatch webhook suppressed.');
-        return;
+  if (import.meta.env.VITE_APP_ENV === 'dev') {
+    console.log('[Webhook] Dev environment — dispatch webhook suppressed.');
+    return;
+  }
+  try {
+    // Get all workflow participants - everyone involved in the workflow for this site/department
+    const allRoles: UserRole[] = [
+      UserRole.OperationsManager,
+      UserRole.StockController,
+      UserRole.EquipmentManager,
+      UserRole.Storeman,
+      UserRole.Driver,
+      UserRole.Security,
+      UserRole.Admin
+    ];
+
+    const { data: allUsers, error: usersError } = await supabase
+      .from('en_users')
+      .select('email, name, sites, departments, role, id')
+      .in('role', allRoles)
+      .eq('status', 'Active');
+
+    if (usersError || !allUsers) {
+      console.error('Dispatch webhook: could not load workflow participants', usersError);
+      return;
     }
-    try {
-        // Get all workflow participants - everyone involved in the workflow for this site/department
-        const allRoles: UserRole[] = [
-            UserRole.OperationsManager,
-            UserRole.StockController,
-            UserRole.EquipmentManager,
-            UserRole.Storeman,
-            UserRole.Driver,
-            UserRole.Security,
-            UserRole.Admin
-        ];
 
-        const { data: allUsers, error: usersError } = await supabase
-            .from('en_users')
-            .select('email, name, sites, departments, role, id')
-            .in('role', allRoles)
-            .eq('status', 'Active');
+    // Filter by site and department assignments + include original requester
+    const participants = allUsers.filter(participant => {
+      // Always include the original requester
+      if (participant.id === request.requester_id) {
+        return true;
+      }
 
-        if (usersError || !allUsers) {
-            console.error('Dispatch webhook: could not load workflow participants', usersError);
-            return;
+      // Admin bypass - admins with no sites/departments get all notifications
+      if (participant.role === UserRole.Admin) {
+        if (!participant.sites || participant.sites.length === 0) {
+          return true;
         }
+      }
 
-        // Filter by site and department assignments + include original requester
-        const participants = allUsers.filter(participant => {
-            // Always include the original requester
-            if (participant.id === request.requester_id) {
-                return true;
-            }
+      // Check site and department access
+      const hasSiteAccess = participant.sites && Array.isArray(participant.sites) && participant.sites.includes(request.projectCode);
+      const hasDepartmentAccess = participant.departments && Array.isArray(participant.departments) && participant.departments.includes(request.department);
 
-            // Admin bypass - admins with no sites/departments get all notifications
-            if (participant.role === UserRole.Admin) {
-                if (!participant.sites || participant.sites.length === 0) {
-                    return true;
-                }
-            }
+      return hasSiteAccess && hasDepartmentAccess;
+    });
 
-            // Check site and department access
-            const hasSiteAccess = participant.sites && Array.isArray(participant.sites) && participant.sites.includes(request.projectCode);
-            const hasDepartmentAccess = participant.departments && Array.isArray(participant.departments) && participant.departments.includes(request.department);
-
-            return hasSiteAccess && hasDepartmentAccess;
-        });
-
-        if (participants.length === 0) {
-            console.warn('Dispatch webhook: no participants found for this workflow');
-            return;
-        }
-
-        // Generate HTML email body
-        const bodyHTML = generateDispatchEmailHTML(request, user);
-
-        // Subject line
-        const subject = `${request.requestNumber} - Items Dispatched`;
-
-        // Build individual recipient fields (email1, name1, email2, name2, etc.)
-        // Send actual participants in first N slots, blank strings for unused slots
-        const recipientFields: Record<string, string> = {};
-
-        // Populate individual fields for first 8 participants
-        for (let i = 1; i <= 8; i++) {
-            const participant = participants[i - 1];
-            recipientFields[`email${i}`] = participant?.email || '';
-            recipientFields[`name${i}`] = participant?.name || '';
-        }
-
-        // Add a combined "to" field with all emails separated by semicolons for Outlook module
-        const allEmails = participants.map(p => p.email).join(';');
-        const participantCount = participants.length;
-
-        const payload = {
-            subject,
-            body: bodyHTML,
-            to: allEmails,  // All participants in one field for Outlook Send Email module
-            recipient_count: participantCount,
-            ...recipientFields,
-        };
-
-        const response = await fetch(DISPATCH_WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`Dispatch webhook failed with status ${response.status}: ${errorText}`);
-        } else {
-            console.log(`Dispatch webhook for ${request.requestNumber} sent successfully to ${participants.length} recipient(s).`);
-        }
-    } catch (err) {
-        console.error('Error sending dispatch webhook:', err);
+    if (participants.length === 0) {
+      console.warn('Dispatch webhook: no participants found for this workflow');
+      return;
     }
+
+    // Generate HTML email body
+    const bodyHTML = generateDispatchEmailHTML(request, user);
+
+    // Subject line
+    const subject = `${request.requestNumber} - Items Dispatched`;
+
+    // Build individual recipient fields (email1, name1, email2, name2, etc.)
+    // Send actual participants in first N slots, blank strings for unused slots
+    const recipientFields: Record<string, string> = {};
+
+    // Populate individual fields for first 8 participants
+    for (let i = 1; i <= 8; i++) {
+      const participant = participants[i - 1];
+      recipientFields[`email${i}`] = participant?.email || '';
+      recipientFields[`name${i}`] = participant?.name || '';
+    }
+
+    // Add a combined "to" field with all emails separated by semicolons for Outlook module
+    const allEmails = participants.map(p => p.email).join(';');
+    const participantCount = participants.length;
+
+    const payload = {
+      subject,
+      body: bodyHTML,
+      to: allEmails,  // All participants in one field for Outlook Send Email module
+      recipient_count: participantCount,
+      ...recipientFields,
+    };
+
+    const response = await fetch(DISPATCH_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Dispatch webhook failed with status ${response.status}: ${errorText}`);
+    } else {
+      console.log(`Dispatch webhook for ${request.requestNumber} sent successfully to ${participants.length} recipient(s).`);
+    }
+  } catch (err) {
+    console.error('Error sending dispatch webhook:', err);
+  }
 };

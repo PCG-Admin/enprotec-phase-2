@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabase/client';
 import { WorkflowRequest, User, WorkflowStatus } from '../types';
 import Card from './Card';
@@ -13,42 +14,29 @@ const getAttachments = (req: WorkflowRequest) => {
 
 interface MyDeliveriesProps {
     user: User;
-    onDataChange: () => void;
-    dataVersion: number;
 }
 
-const MyDeliveries: React.FC<MyDeliveriesProps> = ({ user, onDataChange, dataVersion }) => {
-    const [requests, setRequests] = useState<WorkflowRequest[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+const MyDeliveries: React.FC<MyDeliveriesProps> = ({ user }) => {
+    const queryClient = useQueryClient();
     const [updatingId, setUpdatingId] = useState<string | null>(null);
     const [rejectionComment, setRejectionComment] = useState('');
     const [rejectingId, setRejectingId] = useState<string | null>(null);
 
-    const fetchRequests = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
+    const { data: requests = [], isLoading: loading, isError } = useQuery({
+        queryKey: ['workflows', 'my-deliveries', user.id],
+        queryFn: async () => {
             const { data, error } = await supabase
                 .from('en_workflows_view')
                 .select('*')
                 .eq('currentStatus', WorkflowStatus.EPOD_CONFIRMED)
-                .eq('requester_id', user.id) // Filter for the logged-in user's requests
+                .eq('requester_id', user.id)
                 .order('createdAt', { ascending: true });
-
             if (error) throw error;
-            setRequests((data as unknown as WorkflowRequest[]) || []);
-        } catch (err) {
-            setError('Unable to load your deliveries. Please try again.');
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    }, [user.id]);
-
-    useEffect(() => {
-        fetchRequests();
-    }, [fetchRequests, dataVersion]);
+            return (data as unknown as WorkflowRequest[]) || [];
+        },
+        staleTime: 30_000,
+    });
+    const error = isError ? 'Unable to load your deliveries. Please try again.' : null;
 
     const handleAccept = async (requestId: string) => {
         setUpdatingId(requestId);
@@ -70,8 +58,7 @@ const MyDeliveries: React.FC<MyDeliveriesProps> = ({ user, onDataChange, dataVer
 
             await sendApprovalWebhook('ACCEPTANCE', requestToUpdate, newStatus, user);
 
-            setRequests(prev => prev.filter(req => req.id !== requestId));
-            onDataChange();
+            queryClient.invalidateQueries({ queryKey: ['workflows'] });
         } catch (err) {
             alert('Unable to accept this delivery. Please try again.');
             console.error(err);
@@ -106,9 +93,8 @@ const MyDeliveries: React.FC<MyDeliveriesProps> = ({ user, onDataChange, dataVer
             if (error) throw error;
             
             await sendApprovalWebhook('REJECTION', requestToUpdate, newStatus, user, rejectionComment.trim());
-            
-            setRequests(prev => prev.filter(req => req.id !== requestId));
-            onDataChange();
+
+            queryClient.invalidateQueries({ queryKey: ['workflows'] });
             setRejectingId(null);
             setRejectionComment('');
         } catch (err) {

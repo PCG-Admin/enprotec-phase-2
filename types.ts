@@ -22,22 +22,22 @@ export type FormType = 'PR' | 'GateRelease' | 'StockRequest' | 'EPOD' | 'StockIn
 
 // Keep existing Store enum for backward compatibility during migration
 export enum Store {
-    OEM = 'OEM',
-    Operations = 'Operations',
-    Projects = 'Projects',
-    SalvageYard = 'SalvageYard',
-    Satellite = 'Satellite'
+  OEM = 'OEM',
+  Operations = 'Operations',
+  Projects = 'Projects',
+  SalvageYard = 'SalvageYard',
+  Satellite = 'Satellite'
 }
 
 // New interface for database-driven departments
 export interface Department {
-    id: string;
-    name: string;
-    code: string; // Maps to Store enum value for backward compatibility
-    description: string | null;
-    status: 'Active' | 'Frozen';
-    created_at: string;
-    updated_at: string;
+  id: string;
+  name: string;
+  code: string; // Maps to Store enum value for backward compatibility
+  description: string | null;
+  status: 'Active' | 'Frozen';
+  created_at: string;
+  updated_at: string;
 }
 
 export enum StoreType {
@@ -49,19 +49,19 @@ export enum StoreType {
 }
 
 export const departmentToStoreMap: Record<Store, StoreType> = {
-    [Store.OEM]: StoreType.OEM,
-    [Store.Operations]: StoreType.Operations,
-    [Store.Projects]: StoreType.Projects,
-    [Store.SalvageYard]: StoreType.SalvageYard,
-    [Store.Satellite]: StoreType.Satellite,
+  [Store.OEM]: StoreType.OEM,
+  [Store.Operations]: StoreType.Operations,
+  [Store.Projects]: StoreType.Projects,
+  [Store.SalvageYard]: StoreType.SalvageYard,
+  [Store.Satellite]: StoreType.Satellite,
 };
 
 export const storeToStoreMap: Record<StoreType, Store> = {
-    [StoreType.OEM]: Store.OEM,
-    [StoreType.Operations]: Store.Operations,
-    [StoreType.Projects]: Store.Projects,
-    [StoreType.SalvageYard]: Store.SalvageYard,
-    [StoreType.Satellite]: Store.Satellite,
+  [StoreType.OEM]: Store.OEM,
+  [StoreType.Operations]: Store.Operations,
+  [StoreType.Projects]: Store.Projects,
+  [StoreType.SalvageYard]: Store.SalvageYard,
+  [StoreType.Satellite]: Store.Satellite,
 };
 
 export enum WorkflowStatus {
@@ -151,30 +151,81 @@ export interface StockItem {
 }
 
 export enum UserRole {
-    Admin = 'Admin',
-    OperationsManager = 'Operations Manager',
-    EquipmentManager = 'Equipment Manager',
-    StockController = 'Stock Controller',
-    Storeman = 'Storeman',
-    SiteManager = 'Site Manager',
-    ProjectManager = 'Project Manager',
-    Driver = 'Driver',
-    Security = 'Security',
+  // Existing Roles
+  Admin = 'Admin',
+  OperationsManager = 'Operations Manager',
+  EquipmentManager = 'Equipment Manager',
+  StockController = 'Stock Controller',
+  Storeman = 'Storeman',
+  SiteManager = 'Site Manager',
+  ProjectManager = 'Project Manager',
+  Driver = 'Driver',
+  Security = 'Security',
+
+  // New Roles
+  GeneralManagerOps = 'General Manager: Operations and Equipment Support',
+  EngineeringManager = 'Engineering Manager: Maintenance and Equipment Support',
+  FinancialManager = 'Financial Manager',
+  EquipmentSupportManager = 'Equipment Support Manager',
+  PlantManagerBenificiation = 'Plant Manager: Benificiation Plants',
+  OpsManagerBenificiation = 'Operations Manager for Benificiation Plants',
+  PlantManager = 'Plant Manager',
+  ProductionTechAnalyst = 'Production & Technical Analyst',
+  EngineeringSupervisor = 'Engineering Supervisor',
+  SeniorSiteManager = 'Senior Site Manager',
+  OperationalReadinessEngineer = 'Operational Readiness Engineer',
+  SeniorProjectManager = 'Senior Project Manager',
+  ProjectEngineer = 'Project Engineer',
+  ProcurementLead = 'Procurement Lead',
+  ProductSpecialist = 'Product Specialist',
+  ProcurementQualityOfficer = 'Procurement, Quality and Expediting Officer',
 }
 
+export const getMappedRole = (role: UserRole | string | undefined | null): UserRole => {
+  switch (role) {
+    case UserRole.GeneralManagerOps:
+    case UserRole.EngineeringManager:
+    case UserRole.FinancialManager:
+      return UserRole.Admin;
+    case UserRole.EquipmentSupportManager:
+      return UserRole.EquipmentManager;
+    case UserRole.PlantManagerBenificiation:
+    case UserRole.OpsManagerBenificiation:
+    case UserRole.PlantManager:
+      return UserRole.OperationsManager;
+    case UserRole.SeniorSiteManager:
+    case UserRole.EngineeringSupervisor:
+    case UserRole.ProductionTechAnalyst:
+    case UserRole.ProcurementLead:
+      return UserRole.SiteManager;
+    case UserRole.SeniorProjectManager:
+    case UserRole.ProjectEngineer:
+    case UserRole.OperationalReadinessEngineer:
+    case UserRole.ProcurementQualityOfficer:
+    case UserRole.ProductSpecialist:
+      return UserRole.ProjectManager;
+    default:
+      return role as UserRole;
+  }
+};
+
+export const getRolesMappingTo = (baseRole: UserRole): UserRole[] => {
+  return Object.values(UserRole).filter(r => getMappedRole(r) === baseRole);
+};
+
 export enum UserStatus {
-    Active = 'Active',
-    Inactive = 'Inactive',
+  Active = 'Active',
+  Inactive = 'Inactive',
 }
 
 export interface User {
-    id: string;
-    name: string;
-    email: string;
-    role: UserRole;
-    sites: string[] | null;
-    status: UserStatus;
-    departments: Store[] | null;
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  sites: string[] | null;
+  status: UserStatus;
+  departments: Store[] | null;
 }
 
 export enum SiteStatus {
@@ -202,24 +253,24 @@ export interface StockReceipt {
 }
 
 export interface WorkflowComment {
-    id: string;
-    comment_text: string;
-    created_at: string;
-    user: { name: string; } | null;
+  id: string;
+  comment_text: string;
+  created_at: string;
+  user: { name: string; } | null;
 }
 
 export interface SalvageRequest {
-    id: string;
-    stock_item_id: string;
-    partNumber: string;
-    description: string;
-    quantity: number;
-    status: WorkflowStatus;
-    notes: string | null;
-    sourceStore?: Store;
-    createdBy: string;
-    createdAt: string;
-    decisionBy: string | null;
-    decisionAt: string | null;
-    photoUrl?: string | null;
+  id: string;
+  stock_item_id: string;
+  partNumber: string;
+  description: string;
+  quantity: number;
+  status: WorkflowStatus;
+  notes: string | null;
+  sourceStore?: Store;
+  createdBy: string;
+  createdAt: string;
+  decisionBy: string | null;
+  decisionAt: string | null;
+  photoUrl?: string | null;
 }
