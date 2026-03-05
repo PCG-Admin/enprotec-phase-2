@@ -7,9 +7,9 @@ import {
 } from 'recharts';
 import { getInspections } from '../../supabase/services/inspections.service';
 import { getVehicles } from '../../supabase/services/vehicles.service';
-import { getMonthlyCostTotals } from '../../supabase/services/costs.service';
+import { getMonthlyCostTotals, getCosts } from '../../supabase/services/costs.service';
 import { getComplianceSchedule } from '../../supabase/services/compliance.service';
-import type { InspectionRow, VehicleRow } from '../../supabase/database.types';
+import type { InspectionRow, VehicleRow, CostRow } from '../../supabase/database.types';
 import type { ComplianceRow } from '../../supabase/database.types';
 
 /* ─── Constants ──────────────────────────────────────────────── */
@@ -47,9 +47,9 @@ function groupByMonth(inspections: InspectionRow[]) {
     if (passed) buckets[key].completed++;
     else if (i.status === 'fail') buckets[key].failed++;
     const t = (i.inspection_type ?? '').toLowerCase();
-    if (t === 'forklift') buckets[key].forklift++;
+    if (t === 'forklift' || t === 'forklift inspection') buckets[key].forklift++;
     else if (t === 'generator') buckets[key].generator++;
-    else buckets[key].general++;
+    else buckets[key].general++; // 'General', 'Monthly Inspection', or anything else
   });
   return Object.entries(buckets)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -69,6 +69,22 @@ function groupByVehicle(inspections: InspectionRow[]) {
     .sort(([, a], [, b]) => b - a)
     .slice(0, 10)
     .map(([vehicle, count]) => ({ vehicle, count }));
+}
+
+function groupCostsByVehicle(costs: CostRow[], months: number) {
+  const since = new Date();
+  since.setMonth(since.getMonth() - months);
+  const filtered = costs.filter(c => new Date(c.date) >= since);
+  const map: Record<string, { vehicle: string; fuel: number; maintenance: number; other: number; total: number }> = {};
+  filtered.forEach(c => {
+    const v = c.vehicle_registration ?? c.vehicle_id ?? 'Unknown';
+    if (!map[v]) map[v] = { vehicle: v, fuel: 0, maintenance: 0, other: 0, total: 0 };
+    if (c.category === 'Fuel') map[v].fuel += c.amount;
+    else if (c.category === 'Maintenance') map[v].maintenance += c.amount;
+    else map[v].other += c.amount;
+    map[v].total += c.amount;
+  });
+  return Object.values(map).sort((a, b) => b.total - a.total);
 }
 
 function compliancePieData(rows: ComplianceRow[]) {
@@ -143,6 +159,7 @@ const FleetReports: React.FC = () => {
   const [vehicles, setVehicles]             = React.useState<VehicleRow[]>([]);
   const [monthlyCosts, setMonthlyCosts]     = React.useState<{ month: string; total: number; fuel: number; maintenance: number; other: number }[]>([]);
   const [compliance, setCompliance]         = React.useState<ComplianceRow[]>([]);
+  const [allCosts, setAllCosts]             = React.useState<CostRow[]>([]);
 
   /* load on mount and when dateRange changes */
   React.useEffect(() => {
@@ -157,13 +174,15 @@ const FleetReports: React.FC = () => {
       getVehicles(),
       getMonthlyCostTotals(months),
       getComplianceSchedule(),
+      getCosts(1000),
     ])
-      .then(([insp, veh, costs, comp]) => {
+      .then(([insp, veh, costs, comp, rawCosts]) => {
         if (cancelled) return;
         setAllInspections(insp);
         setVehicles(veh);
         setMonthlyCosts(costs);
         setCompliance(comp);
+        setAllCosts(rawCosts);
       })
       .catch(e => { if (!cancelled) setError(e.message ?? 'Failed to load data'); })
       .finally(() => { if (!cancelled) setLoading(false); });
@@ -194,11 +213,13 @@ const FleetReports: React.FC = () => {
   const activeVehicles    = vehicles.filter(v => v.status === 'Active').length;
   const inMaintenance     = vehicles.filter(v => v.status === 'In Maintenance').length;
 
-  const generalCount   = filteredInsp.filter(i => (i.inspection_type ?? '').toLowerCase() === 'general').length;
-  const forkliftCount  = filteredInsp.filter(i => (i.inspection_type ?? '').toLowerCase() === 'forklift').length;
-  const generatorCount = filteredInsp.filter(i => (i.inspection_type ?? '').toLowerCase() === 'generator').length;
+  const typeOf = (t: string) => { const l = t.toLowerCase(); return l.includes('forklift') ? 'forklift' : l === 'generator' ? 'generator' : 'general'; };
+  const generalCount   = filteredInsp.filter(i => typeOf(i.inspection_type ?? '') === 'general').length;
+  const forkliftCount  = filteredInsp.filter(i => typeOf(i.inspection_type ?? '') === 'forklift').length;
+  const generatorCount = filteredInsp.filter(i => typeOf(i.inspection_type ?? '') === 'generator').length;
 
-  const rangeLabel = DATE_RANGE_LABELS[dateRange];
+  const rangeLabel  = DATE_RANGE_LABELS[dateRange];
+  const vehicleCosts = groupCostsByVehicle(allCosts, months);
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -243,6 +264,7 @@ const FleetReports: React.FC = () => {
               <option value="costs">Cost Analysis</option>
               <option value="compliance">Compliance Status</option>
               <option value="utilization">Vehicle Utilisation</option>
+              <option value="pervehicle">Cost Per Vehicle</option>
             </select>
           </div>
           <div>
@@ -501,6 +523,68 @@ const FleetReports: React.FC = () => {
                 <Bar dataKey="count" name="Inspections" fill="#3b82f6" radius={[0, 3, 3, 0]} />
               </BarChart>
             </ResponsiveContainer>
+          )}
+        </div>
+      )}
+
+      {/* ── Cost Per Vehicle ── */}
+      {reportType === 'pervehicle' && (
+        <div className="bg-white rounded-lg shadow p-6">
+          <h3 className="text-base font-semibold text-zinc-800 mb-4">Cost Per Vehicle ({rangeLabel})</h3>
+          {vehicleCosts.length === 0 ? (
+            <p className="text-sm text-zinc-400 text-center py-12">No cost data for this period</p>
+          ) : (
+            <>
+              <div className="overflow-x-auto mb-6">
+                <table className="w-full text-sm border-collapse">
+                  <thead>
+                    <tr className="bg-zinc-100">
+                      <th className="text-left px-4 py-2 font-semibold text-zinc-600">Vehicle</th>
+                      <th className="text-right px-4 py-2 font-semibold text-zinc-600">Fuel (R)</th>
+                      <th className="text-right px-4 py-2 font-semibold text-zinc-600">Maintenance (R)</th>
+                      <th className="text-right px-4 py-2 font-semibold text-zinc-600">Other (R)</th>
+                      <th className="text-right px-4 py-2 font-semibold text-zinc-600">Total (R)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {vehicleCosts.map((row, i) => {
+                      const veh = vehicles.find(v => v.id === row.vehicle) ?? null;
+                      const label = veh?.registration ?? row.vehicle.slice(0, 8);
+                      return (
+                        <tr key={row.vehicle} className={i % 2 === 0 ? '' : 'bg-zinc-50'}>
+                          <td className="px-4 py-2 font-medium text-zinc-800">{label}</td>
+                          <td className="px-4 py-2 text-right text-zinc-600">{fmtR(row.fuel)}</td>
+                          <td className="px-4 py-2 text-right text-zinc-600">{fmtR(row.maintenance)}</td>
+                          <td className="px-4 py-2 text-right text-zinc-600">{fmtR(row.other)}</td>
+                          <td className="px-4 py-2 text-right font-bold text-zinc-900">{fmtR(row.total)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-zinc-300 bg-zinc-50">
+                      <td className="px-4 py-2 font-bold">Total</td>
+                      <td className="px-4 py-2 text-right font-bold">{fmtR(vehicleCosts.reduce((s,r)=>s+r.fuel,0))}</td>
+                      <td className="px-4 py-2 text-right font-bold">{fmtR(vehicleCosts.reduce((s,r)=>s+r.maintenance,0))}</td>
+                      <td className="px-4 py-2 text-right font-bold">{fmtR(vehicleCosts.reduce((s,r)=>s+r.other,0))}</td>
+                      <td className="px-4 py-2 text-right font-bold text-sky-700">{fmtR(vehicleCosts.reduce((s,r)=>s+r.total,0))}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={vehicleCosts.map(r => ({ ...r, vehicle: vehicles.find(v=>v.id===r.vehicle)?.registration ?? r.vehicle.slice(0,8) }))}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="vehicle" stroke="#888" tick={{ fontSize: 12 }} />
+                  <YAxis stroke="#888" tick={{ fontSize: 12 }} tickFormatter={v => `R${(v/1000).toFixed(0)}k`} />
+                  <Tooltip formatter={(v: number) => fmtR(v)} />
+                  <Legend />
+                  <Bar dataKey="fuel"        name="Fuel"        fill="#f97316" stackId="a" />
+                  <Bar dataKey="maintenance" name="Maintenance"  fill="#3b82f6" stackId="a" />
+                  <Bar dataKey="other"       name="Other"        fill="#8b5cf6" stackId="a" radius={[3,3,0,0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </>
           )}
         </div>
       )}

@@ -173,7 +173,7 @@ const Costs: React.FC = () => {
         quote_number: form.quote_number || null,
         km_reading: form.km_reading || null,
         receipt_url: null,
-        created_by: form.created_by,
+        created_by: null,
       };
       if (editId) {
         const updated = await updateCost(editId, payload);

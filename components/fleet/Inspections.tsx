@@ -8,8 +8,11 @@ import {
   getInspections, createInspection, deleteInspection,
 } from '../../supabase/services/inspections.service';
 import { getVehicles } from '../../supabase/services/vehicles.service';
+import { createCost } from '../../supabase/services/costs.service';
 import type { InspectionRow } from '../../supabase/database.types';
 import type { VehicleRow } from '../../supabase/database.types';
+import type { User } from '../../types';
+import { UserRole } from '../../types';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -441,200 +444,317 @@ const CheckRow: React.FC<{ label: string; children: React.ReactNode }> = ({ labe
 
 /** Opens a formatted print window for the given inspection record */
 const printInspection = async (insp: InspectionRecord) => {
-  /* Fetch Enprotec logo and convert to base64 so it works in the new window */
+  /* Fetch Enprotec logo → base64 so it renders in the new window */
   let logoSrc = '';
   try {
     const resp = await fetch('/BR002-Full%20colour%20w%20slogan%20Landscape-2500px-Rev03%20(1).jpg');
     if (resp.ok) {
       const blob = await resp.blob();
       logoSrc = await new Promise<string>(res => {
-        const r = new FileReader();
-        r.onload = () => res(r.result as string);
-        r.readAsDataURL(blob);
+        const r = new FileReader(); r.onload = () => res(r.result as string); r.readAsDataURL(blob);
       });
     }
   } catch { /* logo unavailable */ }
 
-  const typeLabel = insp.inspectionType === 'Forklift' ? 'FORKLIFT'
-                  : insp.inspectionType === 'Generator' ? 'GENERATOR'
-                  : 'VEHICLE';
+  /* ── helpers ── */
+  const ph = (src: string, label: string) => src
+    ? `<div class="photo-cell"><img src="${src}" class="photo-img" alt="${label}"/><p class="photo-label">${label}</p></div>`
+    : `<div class="photo-cell no-photo-cell"><p class="photo-label">${label}</p><p class="photo-none">No photo</p></div>`;
 
+  const chk = (label: string, val: string) => {
+    const cls = (val === 'Yes' || val === 'Good' || val === 'Ok' || val === 'None')
+      ? 'chk-pass' : (val === 'No' || val === 'Damaged' || val === 'Not Working') ? 'chk-fail' : 'chk-na';
+    return `<tr><td>${label}</td><td class="${cls}">${val || '—'}</td></tr>`;
+  };
+
+  const typeLabel  = insp.inspectionType === 'Forklift' ? 'FORKLIFT' : insp.inspectionType === 'Generator' ? 'GENERATOR' : 'VEHICLE';
   const fullTitle  = `MONTHLY ${typeLabel} INSPECTION REPORT`;
   const entityWord = insp.inspectionType === 'Generator' ? 'Generator' : 'Vehicle';
+  const isGen      = insp.inspectionType === 'Generator';
+  const logoHtml   = logoSrc ? `<img src="${logoSrc}" class="logo-img" alt="Enprotec"/>` : `<div class="logo-text">ENPROTEC</div>`;
+  const resultClass = insp.result === 'pass' ? 'result-pass' : insp.result === 'fail' ? 'result-fail' : 'result-attention';
+  const resultLabel = insp.result === 'requires_attention' ? 'REQUIRES ATTENTION' : insp.result.toUpperCase();
 
-  const frontPhotoHtml = insp.vehicleFrontPhoto
-    ? `<img src="${insp.vehicleFrontPhoto}" class="front-photo" alt="${entityWord} front" />`
-    : `<div class="front-photo no-photo">${entityWord} photo not captured</div>`;
+  /* ── row builders ── */
+  const weeklyRows = (insp.weeklyUse ?? []).map(w =>
+    `<tr><td>${w.weekLabel||'—'}</td><td>${w.operationalHours||'—'}</td>${!isGen ? `<td>${w.checklistsCompleted||'—'}</td><td>${w.findingsOnChecklists||'—'}</td><td>${w.findingsCommunicated||'—'}</td>` : ''}</tr>`
+  ).join('') || `<tr><td colspan="${isGen?2:5}" class="empty-row">No weekly data</td></tr>`;
 
-  const logoHtml = logoSrc
-    ? `<img src="${logoSrc}" class="logo-img" alt="Enprotec" />`
-    : `<div class="logo-text">ENPROTEC</div>`;
+  const findingRows = (insp.checklistFindings ?? []).map((f, i) =>
+    `<tr><td>${i+1}</td><td>${f.date||'—'}</td><td>${f.description||'—'}</td><td>${f.remedialAction||'—'}</td></tr>`
+  ).join('') || '<tr><td colspan="4" class="empty-row">No findings recorded</td></tr>';
 
-  const resultClass = insp.result === 'pass' ? 'result-pass'
-                    : insp.result === 'fail' ? 'result-fail'
-                    : 'result-attention';
-  const resultLabel = insp.result === 'requires_attention' ? 'REQUIRES ATTENTION'
-                    : insp.result.toUpperCase();
+  const breakdownRows = (insp.monthlyBreakdowns ?? []).map((b, i) =>
+    `<tr><td>${i+1}</td><td>${b.description||'—'}</td><td>${b.durationHrs||'—'}</td><td>${b.spareParts||'—'}</td><td>${b.costToRepair||'—'}</td></tr>`
+  ).join('') || '<tr><td colspan="5" class="empty-row">No breakdowns recorded</td></tr>';
 
-  const devRows = (insp.deviations ?? []).map((d, i) => `
-    <tr><td>${i + 1}</td><td>${d.item}</td><td>${d.deviation}</td></tr>`).join('') ||
-    '<tr><td colspan="3" class="empty-row">No deviations recorded</td></tr>';
+  const devRows = (insp.deviations ?? []).map((d, i) =>
+    `<tr><td>${i+1}</td><td>${d.item}</td><td>${d.deviation}</td></tr>`
+  ).join('') || '<tr><td colspan="3" class="empty-row">No deviations recorded</td></tr>';
 
-  const breakdownRows = (insp.monthlyBreakdowns ?? []).map((b, i) => `
-    <tr><td>${i + 1}</td><td>${b.description ?? ''}</td><td>${b.durationHrs ?? ''}</td><td>${b.spareParts ?? ''}</td><td>${b.costToRepair ?? ''}</td></tr>`).join('') ||
-    '<tr><td colspan="5" class="empty-row">No breakdowns recorded</td></tr>';
+  /* ── equipment checks HTML ── */
+  const e = insp.equipment;
+  const g = insp.generatorEquipment;
 
-  const weeklyRows = (insp.weeklyUse ?? []).map(w => `
-    <tr>
-      <td>${w.weekLabel}</td>
-      <td>${w.operationalHours || '—'}</td>
-      ${insp.inspectionType !== 'Generator' ? `<td>${w.checklistsCompleted || '—'}</td><td>${w.findingsOnChecklists || '—'}</td><td>${w.findingsCommunicated || '—'}</td>` : ''}
-    </tr>`).join('') || `<tr><td colspan="${insp.inspectionType !== 'Generator' ? 5 : 2}" class="empty-row">No weekly data</td></tr>`;
+  const wheelHtml = (label: string, w: typeof e.leftFrontWheel) => `
+    <div class="wheel-card">
+      <div class="wheel-title">${label}</div>
+      ${ph(w.photo, label + ' photo')}
+      <table style="margin-top:6px">
+        ${chk('Tyre Thread', w.tyreThreadCondition)}
+        ${chk('Bubbles / Damage', w.bubblesOrDamage)}
+        ${chk('All Nuts In Place', w.allWheelNutsInPlace)}
+      </table>
+    </div>`;
+
+  const equipChecksHtml = isGen ? `
+    <h2>6. Generator Equipment Checks</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div>
+        <h3 class="sub-h">Fluids</h3>
+        <table>
+          ${chk('Engine Oil Level OK', g.engineOilLevelOk)}
+          ${chk('Oil Leaks', g.oilLeaks)}
+          ${chk('Coolant Level OK', g.coolantLevelOk)}
+          ${chk('Coolant Leaks', g.coolantLeaks)}
+        </table>
+        <h3 class="sub-h">Engine</h3>
+        <table>
+          ${chk('Fan Belt', g.fanBelt)}
+          ${chk('Alternator Belt', g.alternatorBelt)}
+          ${chk('Water Hoses', g.waterHoses)}
+          ${chk('Radiator Level', g.radiatorLevel)}
+          ${chk('Engine Oil Level', g.engineOilLevelEngine)}
+          ${chk('Battery Water Level', g.batteryWaterLevel)}
+          ${chk('Fuel Leaks', g.fuelLeaks)}
+          ${chk('Temperature', g.temperature)}
+        </table>
+      </div>
+      <div>
+        <h3 class="sub-h">Fuel Gauge</h3>
+        <p style="font-size:10px;color:#555;margin-bottom:4px">Level: <strong>${g.fuelLevel || '—'}</strong></p>
+        ${g.fuelGaugePhoto ? `<img src="${g.fuelGaugePhoto}" style="max-width:100%;max-height:180px;object-fit:contain;border:1px solid #e5e7eb;border-radius:4px"/>` : '<div class="no-photo-cell" style="height:120px">No fuel gauge photo</div>'}
+      </div>
+    </div>
+  ` : `
+    <h2>6. Equipment Checks</h2>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+      <div>
+        <h3 class="sub-h">Windscreen &amp; Wipers</h3>
+        <table>
+          ${chk('Windscreen Condition', e.windscreenCondition)}
+          ${chk('Wipers Condition', e.wipersCondition)}
+        </table>
+        ${e.windscreenPhoto ? `<img src="${e.windscreenPhoto}" style="max-width:100%;max-height:120px;object-fit:contain;margin-top:6px;border:1px solid #e5e7eb;border-radius:4px"/>` : ''}
+
+        <h3 class="sub-h" style="margin-top:10px">Lights &amp; Signals</h3>
+        <table>
+          ${chk('Headlights Working', e.headlightsBothWorking)}
+          ${chk('Headlights Damage-Free', e.headlightsFreeFromDamage)}
+          ${chk('Headlight Lenses Clear', e.headlightsLensesClear)}
+          ${chk('Taillights Working', e.taillightsBothWorking)}
+          ${chk('Taillights Damage-Free', e.taillightsFreeFromDamage)}
+          ${chk('Taillight Lenses Clear', e.taillightsLensesClear)}
+          ${chk('Left Indicator', e.leftIndicatorWorking)}
+          ${chk('Right Indicator', e.rightIndicatorWorking)}
+          ${chk('Hazards', e.hazardsWorking)}
+          ${chk('Hooter', e.hooterWorking)}
+        </table>
+
+        <h3 class="sub-h" style="margin-top:10px">Emergency Kit</h3>
+        <table>
+          ${chk('Fire Extinguisher', e.fireExtinguisher)}
+          ${chk('Stop Block', e.stopBlock)}
+        </table>
+
+        <h3 class="sub-h" style="margin-top:10px">General</h3>
+        <table>
+          ${chk('Suspension', e.suspension)}
+          ${chk('Brakes', e.brakes)}
+          ${chk('Clutch', e.clutch)}
+          ${chk('Air Conditioner', e.airConditioner)}
+          ${chk('Rear View Mirrors', e.rearViewMirrors)}
+          ${chk('Seatbelts', e.seatbelts)}
+        </table>
+      </div>
+      <div>
+        <h3 class="sub-h">Fluids</h3>
+        <table>
+          ${chk('Engine Oil Level', e.engineOilLevel)}
+          ${chk('Oil Leaks', e.oilLeaks)}
+          ${chk('Coolant Level', e.coolantLevel)}
+          ${chk('Coolant Leaks', e.coolantLeaks)}
+        </table>
+        <p style="font-size:10px;margin-top:6px;color:#555">Hydraulics Note: ${e.hydraulicsNote || '—'}</p>
+        ${e.hydraulicsOilPhoto ? `<img src="${e.hydraulicsOilPhoto}" style="max-width:100%;max-height:120px;object-fit:contain;margin-top:6px;border:1px solid #e5e7eb;border-radius:4px"/>` : ''}
+
+        <h3 class="sub-h" style="margin-top:10px">Engine</h3>
+        <table>
+          ${chk('Fan Belt', e.fanBelt)}
+          ${chk('Alternator Belt', e.alternatorBelt)}
+          ${chk('Water Hoses', e.waterHoses)}
+          ${chk('Radiator Level', e.radiatorLevel)}
+          ${chk('Engine Oil Level', e.engineOilLevelEngine)}
+          ${chk('Battery Water Level', e.batteryWaterLevel)}
+          ${chk('Fuel Leaks', e.fuelLeaks)}
+          ${chk('Engine Temperature', e.engineTemperature)}
+        </table>
+      </div>
+    </div>
+
+    <h3 class="sub-h">Wheels</h3>
+    <div class="wheel-grid">
+      ${wheelHtml('Left Front', e.leftFrontWheel)}
+      ${wheelHtml('Right Front', e.rightFrontWheel)}
+      ${wheelHtml('Left Rear', e.leftRearWheel)}
+      ${wheelHtml('Right Rear', e.rightRearWheel)}
+    </div>
+  `;
 
   const html = `<!DOCTYPE html>
-<html lang="en"><head>
-<meta charset="UTF-8"/>
-<title>${fullTitle}</title>
+<html lang="en"><head><meta charset="UTF-8"/><title>${fullTitle}</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a1a;background:#fff}
 
-  /* ── Cover header ── */
-  .cover-header {
-    display: flex; align-items: stretch;
-    border-bottom: 3px solid #1d4ed8;
-    margin-bottom: 0;
-  }
-  .cover-left {
-    flex: 1; padding: 20px 24px; display: flex; flex-direction: column; justify-content: center; gap: 12px;
-  }
-  .logo-img  { max-width: 220px; max-height: 80px; object-fit: contain; }
-  .logo-text { font-size: 28px; font-weight: 900; color: #1d4ed8; letter-spacing: 2px; }
-  .company-line { font-size: 10px; color: #6b7280; }
-  .title-block { margin-top: 6px; }
-  .title-block h1 { font-size: 20px; font-weight: 800; color: #1d4ed8; line-height: 1.2; text-transform: uppercase; }
-  .title-block .subtitle { font-size: 11px; color: #6b7280; margin-top: 3px; }
+  /* cover */
+  .cover-header{display:flex;align-items:stretch;border-bottom:3px solid #1d4ed8}
+  .cover-left{flex:1;padding:20px 24px;display:flex;flex-direction:column;justify-content:center;gap:10px}
+  .logo-img{max-width:220px;max-height:80px;object-fit:contain}
+  .logo-text{font-size:28px;font-weight:900;color:#1d4ed8;letter-spacing:2px}
+  .company-line{font-size:10px;color:#6b7280}
+  .title-block h1{font-size:19px;font-weight:800;color:#1d4ed8;text-transform:uppercase;line-height:1.2}
+  .title-block .subtitle{font-size:10px;color:#6b7280;margin-top:3px}
+  .cover-right{width:260px;flex-shrink:0;overflow:hidden}
+  .front-photo{width:100%;height:100%;min-height:200px;object-fit:cover;display:block}
+  .no-photo-cover{width:100%;min-height:200px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;text-align:center;padding:16px}
 
-  .cover-right {
-    width: 260px; flex-shrink: 0; position: relative; overflow: hidden;
-  }
-  .front-photo {
-    width: 100%; height: 100%; min-height: 200px;
-    object-fit: cover; display: block;
-  }
-  .no-photo {
-    width: 100%; min-height: 200px; background: #f3f4f6;
-    display: flex; align-items: center; justify-content: center;
-    color: #9ca3af; font-size: 13px; text-align: center; padding: 16px;
-  }
+  /* result banner */
+  .result-banner{padding:8px 24px;display:flex;align-items:center;gap:12px;font-size:12px;font-weight:700}
+  .result-pass{background:#d1fae5;color:#065f46}
+  .result-fail{background:#fee2e2;color:#991b1b}
+  .result-attention{background:#fef3c7;color:#92400e}
+  .result-banner .badge{display:inline-block;padding:3px 14px;border-radius:20px;font-size:12px;font-weight:800;border:2px solid currentColor}
 
-  /* ── Result banner ── */
-  .result-banner {
-    padding: 8px 24px;
-    display: flex; align-items: center; gap: 12px;
-    font-size: 12px; font-weight: 700;
-  }
-  .result-pass       { background: #d1fae5; color: #065f46; }
-  .result-fail       { background: #fee2e2; color: #991b1b; }
-  .result-attention  { background: #fef3c7; color: #92400e; }
-  .result-banner .badge {
-    display: inline-block; padding: 3px 14px; border-radius: 20px;
-    font-size: 12px; font-weight: 800; border: 2px solid currentColor;
-  }
+  /* content */
+  .content{padding:16px 24px}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;border:1px solid #d1d5db;border-radius:4px;margin-bottom:16px;overflow:hidden}
+  .info-grid .lbl{background:#f9fafb;font-weight:700;padding:5px 10px;border-bottom:1px solid #e5e7eb;border-right:1px solid #e5e7eb}
+  .info-grid .val{padding:5px 10px;border-bottom:1px solid #e5e7eb}
+  h2{background:#1d4ed8;color:#fff;padding:6px 12px;font-size:12px;font-weight:700;margin:18px 0 8px;border-radius:3px;text-transform:uppercase}
+  .sub-h{font-size:11px;font-weight:700;color:#374151;background:#f3f4f6;padding:4px 8px;border-left:3px solid #1d4ed8;margin-bottom:4px}
+  table{width:100%;border-collapse:collapse;margin-bottom:8px;font-size:10.5px}
+  th,td{border:1px solid #d1d5db;padding:5px 8px;text-align:left}
+  th{background:#f3f4f6;font-weight:700;font-size:10px;text-transform:uppercase}
+  .empty-row{text-align:center;color:#9ca3af;font-style:italic}
 
-  /* ── Content ── */
-  .content { padding: 16px 24px; }
+  /* check colours */
+  .chk-pass{color:#065f46;background:#d1fae5;font-weight:600}
+  .chk-fail{color:#991b1b;background:#fee2e2;font-weight:600}
+  .chk-na{color:#6b7280}
 
-  .info-grid {
-    display: grid; grid-template-columns: 1fr 1fr;
-    border: 1px solid #d1d5db; border-radius: 4px;
-    margin-bottom: 16px; overflow: hidden;
-  }
-  .info-grid .row { display: contents; }
-  .info-grid .lbl { background: #f9fafb; font-weight: 700; padding: 5px 10px; border-bottom: 1px solid #e5e7eb; border-right: 1px solid #e5e7eb; }
-  .info-grid .val { padding: 5px 10px; border-bottom: 1px solid #e5e7eb; }
+  /* photos */
+  .photo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px}
+  .photo-cell{border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;text-align:center}
+  .photo-img{width:100%;height:140px;object-fit:cover;display:block}
+  .photo-label{font-size:9px;font-weight:700;text-transform:uppercase;color:#6b7280;padding:4px;background:#f9fafb}
+  .photo-none{font-size:9px;color:#9ca3af;padding:8px 0}
+  .no-photo-cell{background:#f9fafb;height:140px;display:flex;flex-direction:column;align-items:center;justify-content:center}
 
-  h2 {
-    background: #1d4ed8; color: white;
-    padding: 6px 12px; font-size: 12px; font-weight: 700;
-    margin: 18px 0 8px; border-radius: 3px; text-transform: uppercase;
-  }
-  table { width: 100%; border-collapse: collapse; margin-bottom: 12px; font-size: 10.5px; }
-  th, td { border: 1px solid #d1d5db; padding: 5px 8px; text-align: left; }
-  th { background: #f3f4f6; font-weight: 700; font-size: 10px; text-transform: uppercase; }
-  .empty-row { text-align: center; color: #9ca3af; font-style: italic; }
+  /* wheels */
+  .wheel-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+  .wheel-card{border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;padding:6px}
+  .wheel-title{font-size:10px;font-weight:700;color:#1d4ed8;margin-bottom:4px;text-align:center}
+  .wheel-card .photo-img{height:100px}
+  .wheel-card .photo-cell{margin-bottom:4px}
 
-  .footer { margin-top: 24px; border-top: 1px solid #e5e7eb; padding-top: 8px; font-size: 9px; color: #9ca3af; text-align: center; }
-
-  @media print {
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .cover-header { page-break-inside: avoid; }
-  }
+  .footer{margin-top:24px;border-top:1px solid #e5e7eb;padding-top:8px;font-size:9px;color:#9ca3af;text-align:center}
+  @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}.cover-header{page-break-inside:avoid}}
 </style>
 </head><body>
 
-<!-- ── Cover Header ── -->
+<!-- Cover -->
 <div class="cover-header">
   <div class="cover-left">
     ${logoHtml}
     <p class="company-line">enquiries@enprotec.com &nbsp;|&nbsp; www.enprotec.com</p>
     <div class="title-block">
       <h1>${fullTitle}</h1>
-      <p class="subtitle">Inspection Date: ${insp.inspectionDate || '—'} &nbsp;|&nbsp; Site: ${insp.siteAllocation || '—'}</p>
+      <p class="subtitle">Inspection Date: ${insp.inspectionDate||'—'} &nbsp;|&nbsp; Site: ${insp.siteAllocation||'—'}</p>
     </div>
   </div>
   <div class="cover-right">
-    ${frontPhotoHtml}
+    ${insp.vehicleFrontPhoto
+      ? `<img src="${insp.vehicleFrontPhoto}" class="front-photo" alt="${entityWord} front"/>`
+      : `<div class="no-photo-cover">${entityWord} front photo not captured</div>`}
   </div>
 </div>
 
-<!-- ── Result Banner ── -->
+<!-- Result Banner -->
 <div class="result-banner ${resultClass}">
   <span>Inspection Result:</span>
   <span class="badge">${resultLabel}</span>
-  <span style="margin-left:auto;font-weight:400">Inspected by: ${insp.inspectedBy || '—'}</span>
+  <span style="margin-left:auto;font-weight:400">Inspected by: ${insp.inspectedBy||'—'}</span>
 </div>
 
-<!-- ── Content ── -->
 <div class="content">
 
-  <!-- Info grid -->
+  <!-- 1. Header Info -->
   <div class="info-grid">
-    <div class="lbl">Previous Inspection Date</div><div class="val">${insp.previousInspectionDate || '—'}</div>
-    <div class="lbl">Inspection Date</div><div class="val">${insp.inspectionDate || '—'}</div>
-    <div class="lbl">Inspected By</div><div class="val">${insp.inspectedBy || '—'}</div>
-    <div class="lbl">Site Allocation</div><div class="val">${insp.siteAllocation || '—'}</div>
-    <div class="lbl">${entityWord} Make &amp; Model</div><div class="val">${insp.vehicleMakeModel || '—'}</div>
-    <div class="lbl">Registration / Serial</div><div class="val">${insp.registrationNumber || '—'}</div>
-    <div class="lbl">Current Hours / ODO</div><div class="val">${insp.currentHours || '—'}</div>
-    <div class="lbl">Last Service (Hours)</div><div class="val">${insp.lastServiceHours || '—'}</div>
-    <div class="lbl">Last Service (Date)</div><div class="val">${insp.lastServiceDate || '—'}</div>
-    <div class="lbl">Next Service (Hours)</div><div class="val">${insp.nextServiceHours || '—'}</div>
-    <div class="lbl">Next Service (Date)</div><div class="val">${insp.nextServiceDate || '—'}</div>
-    <div class="lbl">Total Maintenance Cost</div><div class="val">R ${insp.totalMaintenanceCost || '0'}</div>
-    <div class="lbl">Avg Monthly Maintenance Cost</div><div class="val">R ${insp.avgMonthlyMaintenanceCost || '0'}</div>
-    <div class="lbl">Serial Number</div><div class="val">${insp.serialNumberText || '—'}</div>
+    <div class="lbl">Previous Inspection Date</div><div class="val">${insp.previousInspectionDate||'—'}</div>
+    <div class="lbl">Inspection Date</div><div class="val">${insp.inspectionDate||'—'}</div>
+    <div class="lbl">Inspected By</div><div class="val">${insp.inspectedBy||'—'}</div>
+    <div class="lbl">Site Allocation</div><div class="val">${insp.siteAllocation||'—'}</div>
+    <div class="lbl">${entityWord} Make &amp; Model</div><div class="val">${insp.vehicleMakeModel||'—'}</div>
+    <div class="lbl">Registration / Serial</div><div class="val">${insp.registrationNumber||'—'}</div>
+    <div class="lbl">Current Hours / ODO</div><div class="val">${insp.currentHours||'—'}</div>
+    <div class="lbl">Last Service (Hours)</div><div class="val">${insp.lastServiceHours||'—'}</div>
+    <div class="lbl">Last Service (Date)</div><div class="val">${insp.lastServiceDate||'—'}</div>
+    <div class="lbl">Next Service (Hours)</div><div class="val">${insp.nextServiceHours||'—'}</div>
+    <div class="lbl">Next Service (Date)</div><div class="val">${insp.nextServiceDate||'—'}</div>
+    <div class="lbl">Total Maintenance Cost</div><div class="val">R ${insp.totalMaintenanceCost||'0'}</div>
+    <div class="lbl">Avg Monthly Maint. Cost</div><div class="val">R ${insp.avgMonthlyMaintenanceCost||'0'}</div>
+    <div class="lbl">Serial Number</div><div class="val">${insp.serialNumberText||'—'}</div>
+    <div class="lbl">Service Sticker</div><div class="val">${insp.serviceSticker||'—'} ${insp.serviceStickerDate ? '· '+insp.serviceStickerDate : ''}</div>
   </div>
 
-  <h2>1. Weekly Use</h2>
+  <!-- 2. Visual Photos -->
+  <h2>2. Visual Inspection Photos</h2>
+  <div class="photo-grid">
+    ${ph(insp.vehicleFrontPhoto,  entityWord+' Front')}
+    ${ph(insp.vehicleLeftPhoto,   entityWord+' Left')}
+    ${ph(insp.vehicleRightPhoto,  entityWord+' Right')}
+    ${ph(insp.vehicleBackPhoto,   entityWord+' Back')}
+    ${ph(insp.interiorPhoto,      'Interior')}
+    ${ph(insp.serialNumberPhoto,  'Serial Number Plate')}
+  </div>
+
+  <!-- 3. Weekly Use -->
+  <h2>3. Weekly Use</h2>
   <table>
-    <thead>
-      <tr>
-        <th>Week</th>
-        <th>Operational Hours</th>
-        ${insp.inspectionType !== 'Generator' ? '<th>Checklists Done?</th><th>Findings?</th><th>Findings Addressed?</th>' : ''}
-      </tr>
-    </thead>
+    <thead><tr><th>Week</th><th>Operational Hours</th>${!isGen ? '<th>Checklists Done?</th><th>Findings?</th><th>Findings Addressed?</th>' : ''}</tr></thead>
     <tbody>${weeklyRows}</tbody>
   </table>
 
-  <h2>2. Monthly Breakdowns</h2>
+  <!-- 4. Checklist Findings -->
+  <h2>4. Checklist Findings</h2>
+  <table>
+    <thead><tr><th>#</th><th>Date</th><th>Description</th><th>Remedial Action</th></tr></thead>
+    <tbody>${findingRows}</tbody>
+  </table>
+
+  <!-- 5. Monthly Breakdowns -->
+  <h2>5. Monthly Breakdowns</h2>
   <table>
     <thead><tr><th>#</th><th>Description</th><th>Duration (Hrs)</th><th>Spare Parts</th><th>Cost (ZAR)</th></tr></thead>
     <tbody>${breakdownRows}</tbody>
   </table>
 
-  <h2>3. Deviations</h2>
+  <!-- 6. Equipment Checks -->
+  ${equipChecksHtml}
+
+  <!-- 7. Deviations -->
+  <h2>7. Deviations / Defects</h2>
   <table>
     <thead><tr><th>No</th><th>Item</th><th>Deviation / Finding</th></tr></thead>
     <tbody>${devRows}</tbody>
@@ -646,16 +766,12 @@ const printInspection = async (insp: InspectionRecord) => {
 </div>
 
 <script>
-  (function waitAndPrint() {
-    var imgs = Array.from(document.images);
-    if (imgs.length === 0) { window.print(); return; }
-    var done = 0;
-    function check() { done++; if (done >= imgs.length) window.print(); }
-    imgs.forEach(function(img) {
-      if (img.complete) { done++; }
-      else { img.onload = check; img.onerror = check; }
-    });
-    if (done >= imgs.length) window.print();
+  (function(){
+    var imgs=Array.from(document.images),done=0,total=imgs.length;
+    if(!total){window.print();return;}
+    function tick(){done++;if(done>=total)window.print();}
+    imgs.forEach(function(i){if(i.complete)done++;else{i.onload=tick;i.onerror=tick;}});
+    if(done>=total)window.print();
   })();
 </script>
 </body></html>`;
@@ -673,12 +789,15 @@ const TABS = [
   { id: 5, label: 'Deviations & Submit' },
 ];
 
-const Inspections: React.FC = () => {
+const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
+  const isDriver = user?.role === UserRole.Driver;
   const [inspections, setInspections] = React.useState<InspectionRecord[]>([]);
   const [vehicles, setVehicles]       = React.useState<VehicleRow[]>([]);
   const [loadingList, setLoadingList] = React.useState(true);
   const [submitting, setSubmitting]   = React.useState(false);
   const [showForm, setShowForm] = React.useState(false);
+  const [breakdownCostModal, setBreakdownCostModal] = React.useState<{ vehicleId: string; vehicleReg: string; breakdowns: Breakdown[] } | null>(null);
+  const [savingCosts, setSavingCosts] = React.useState(false);
   const [activeTab, setActiveTab] = React.useState(0);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [typeFilter, setTypeFilter] = React.useState<'All' | 'General' | 'Forklift' | 'Generator'>('All');
@@ -805,7 +924,7 @@ const Inspections: React.FC = () => {
         vehicle_reg: form.registrationNumber || null,
         inspector_id: null as string | null,
         inspector_name: form.inspectedBy || null,
-        inspection_type: form.inspectionType === 'Forklift' ? 'Forklift Inspection' : 'Monthly Inspection',
+        inspection_type: form.inspectionType,
         started_at: form.inspectionDate ? new Date(form.inspectionDate).toISOString() : new Date().toISOString(),
         completed_at: new Date().toISOString(),
         status: result,
@@ -824,8 +943,15 @@ const Inspections: React.FC = () => {
       };
       setInspections(prev => [record, ...prev]);
       setShowForm(false);
-      setForm(defaultForm());
       setActiveTab(0);
+
+      // T47/T48: offer to log breakdown costs as cost entries
+      const breakdownsWithCost = form.monthlyBreakdowns.filter(b => b.costToRepair && parseFloat(b.costToRepair) > 0);
+      if (breakdownsWithCost.length > 0 && vehicle) {
+        setBreakdownCostModal({ vehicleId: vehicle.id, vehicleReg: form.registrationNumber, breakdowns: breakdownsWithCost });
+      } else {
+        setForm(defaultForm());
+      }
     } catch (e: any) {
       alert('Failed to save inspection: ' + e.message);
     } finally {
@@ -843,7 +969,20 @@ const Inspections: React.FC = () => {
     }
   };
 
+  // For drivers: match against slash-separated assigned_driver e.g. "Dumisane/Jabu/Sam"
+  const visibleVehicles = isDriver
+    ? vehicles.filter(v =>
+        v.assigned_driver
+          ?.split('/')
+          .map(n => n.trim().toLowerCase())
+          .includes(user?.name?.toLowerCase() ?? '')
+      )
+    : vehicles;
+
+  // For drivers: only show inspections for their assigned vehicles
+  const assignedRegs = new Set(visibleVehicles.map(v => v.registration));
   const filteredInspections = inspections.filter(i => {
+    if (isDriver && !assignedRegs.has(i.registrationNumber)) return false;
     if (typeFilter !== 'All' && (i.inspectionType ?? 'General') !== typeFilter) return false;
     return (
       i.registrationNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -872,6 +1011,32 @@ const Inspections: React.FC = () => {
   const renderTab0 = () => (
     <div className="space-y-4">
       <p className="text-sm text-gray-500 flex items-center"><MapPin className="h-4 w-4 mr-1" /> GPS timestamp will be captured on submission.</p>
+
+      {/* Driver: vehicle quick-select */}
+      {isDriver && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Select Vehicle
+            {visibleVehicles.length === 0 && (
+              <span className="ml-2 text-orange-500 text-xs font-normal">(no vehicle assigned yet — contact your admin)</span>
+            )}
+          </label>
+          <select
+            value={form.registrationNumber}
+            onChange={e => {
+              const pool = visibleVehicles.length > 0 ? visibleVehicles : vehicles;
+              const v = pool.find(v => v.registration === e.target.value);
+              if (v) { set('registrationNumber', v.registration); set('vehicleMakeModel', `${v.make} ${v.model}`.trim()); }
+            }}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">Select vehicle…</option>
+            {(visibleVehicles.length > 0 ? visibleVehicles : vehicles).map(v => (
+              <option key={v.id} value={v.registration}>{v.registration} — {v.make} {v.model}</option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Inspection Type */}
       <div>
@@ -1523,7 +1688,16 @@ const Inspections: React.FC = () => {
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">Inspections</h1>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => {
+            const base = defaultForm();
+            if (isDriver && user) {
+              base.inspectedBy = user.name;
+              const v = visibleVehicles[0];
+              if (v) { base.registrationNumber = v.registration; base.vehicleMakeModel = `${v.make} ${v.model}`.trim(); }
+            }
+            setForm(base);
+            setShowForm(true);
+          }}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
         >
           <Plus className="h-5 w-5 mr-2" />
@@ -1661,6 +1835,78 @@ const Inspections: React.FC = () => {
           </table>
         )}
       </div>
+
+      {/* ── T47/T48: Log breakdown costs modal ── */}
+      {breakdownCostModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between px-5 py-4 border-b">
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Log Breakdown Costs?</h3>
+                <p className="text-xs text-gray-500 mt-0.5">The following breakdown costs can be saved as cost entries for {breakdownCostModal.vehicleReg}.</p>
+              </div>
+              <button onClick={() => { setBreakdownCostModal(null); setForm(defaultForm()); }} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="px-5 py-4 space-y-2 max-h-60 overflow-y-auto">
+              {breakdownCostModal.breakdowns.map(b => (
+                <div key={b.id} className="flex items-center justify-between py-2 border-b border-gray-100 text-sm">
+                  <span className="text-gray-700 flex-1">{b.description || 'Breakdown'}</span>
+                  <span className="font-semibold text-gray-900 ml-4">R {parseFloat(b.costToRepair).toLocaleString('en-ZA')}</span>
+                </div>
+              ))}
+              <p className="text-sm font-bold text-gray-900 pt-1">
+                Total: R {breakdownCostModal.breakdowns.reduce((s, b) => s + (parseFloat(b.costToRepair) || 0), 0).toLocaleString('en-ZA')}
+              </p>
+            </div>
+            <div className="px-5 py-4 flex gap-3 justify-end border-t">
+              <button
+                onClick={() => { setBreakdownCostModal(null); setForm(defaultForm()); }}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
+              >
+                Skip
+              </button>
+              <button
+                disabled={savingCosts}
+                onClick={async () => {
+                  setSavingCosts(true);
+                  try {
+                    const today = new Date().toISOString().slice(0, 10);
+                    for (const b of breakdownCostModal.breakdowns) {
+                      await createCost({
+                        vehicle_id: breakdownCostModal.vehicleId,
+                        vehicle_registration: breakdownCostModal.vehicleReg || null,
+                        date: today,
+                        category: 'Maintenance',
+                        amount: parseFloat(b.costToRepair) || 0,
+                        description: b.description || 'Breakdown repair',
+                        supplier: null,
+                        invoice_number: null,
+                        receipt_url: null,
+                        rto_number: null,
+                        po_number: null,
+                        quote_number: null,
+                        km_reading: null,
+                        created_by: null,
+                      });
+                    }
+                    setBreakdownCostModal(null);
+                    setForm(defaultForm());
+                  } catch (e: any) {
+                    alert('Failed to save costs: ' + e.message);
+                  } finally {
+                    setSavingCosts(false);
+                  }
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+              >
+                {savingCosts ? 'Saving…' : 'Save as Cost Entries'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

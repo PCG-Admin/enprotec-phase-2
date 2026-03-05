@@ -66,7 +66,7 @@ const App: React.FC = () => {
     switch (currentView) {
       case 'FleetDashboard':  return <FleetDashboard user={user} />;
       case 'Vehicles':        return <Vehicles />;
-      case 'Inspections':     return <Inspections />;
+      case 'Inspections':     return <Inspections user={user} />;
       case 'Costs':           return <Costs />;
       case 'Licenses':        return <Licenses />;
       case 'FleetReports':    return <FleetReports />;

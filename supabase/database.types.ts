@@ -139,7 +139,7 @@ export interface CostRow {
 
 export interface ComplianceRow {
   id: string;
-  vehicle_id: string;
+  vehicle_id: string | null;
   vehicle_registration: string | null;
   inspection_type: string;
   due_date: string;

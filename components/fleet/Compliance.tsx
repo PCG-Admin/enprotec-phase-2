@@ -2,6 +2,7 @@ import * as React from 'react';
 import {
   AlertTriangle, CheckCircle, Clock, Calendar,
   Search, AlertCircle, RefreshCw, Plus, X, Loader2,
+  ChevronLeft, ChevronRight, LayoutList,
 } from 'lucide-react';
 import {
   getComplianceSchedule, createComplianceEntry, updateComplianceEntry,
@@ -77,6 +78,8 @@ const Compliance: React.FC = () => {
   const [form, setForm]                 = React.useState({ ...EMPTY_FORM });
   const [saving, setSaving]             = React.useState(false);
   const [saveError, setSaveError]       = React.useState<string | null>(null);
+  const [viewMode, setViewMode]         = React.useState<'list' | 'calendar'>('list');
+  const [calMonth, setCalMonth]         = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
 
   const load = React.useCallback(async (sync = false) => {
     setLoading(true);
@@ -111,7 +114,7 @@ const Compliance: React.FC = () => {
     return matchStatus && matchSearch;
   });
 
-  const handleVehicleSelect = (reg: string) => {
+  const handleVehicleInput = (reg: string) => {
     const v = vehicles.find(v => v.registration === reg);
     setForm(p => ({ ...p, vehicle_id: v?.id ?? '', vehicle_registration: reg }));
   };
@@ -124,7 +127,7 @@ const Compliance: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.vehicle_id || !form.due_date) return;
+    if (!form.due_date) return;
     setSaving(true);
     setSaveError(null);
     try {
@@ -135,7 +138,7 @@ const Compliance: React.FC = () => {
       else if (days <= 14) status = 'Due Soon';
 
       const payload: ComplianceInsert = {
-        vehicle_id: form.vehicle_id,
+        vehicle_id: form.vehicle_id || null,
         vehicle_registration: form.vehicle_registration || null,
         inspection_type: form.inspection_type,
         due_date: form.due_date,
@@ -190,14 +193,25 @@ const Compliance: React.FC = () => {
       {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold text-gray-900">Compliance & Scheduling</h1>
-        <div className="flex gap-3">
+        <div className="flex gap-2">
+          {/* List / Calendar toggle */}
+          <div className="flex border border-gray-300 rounded-lg overflow-hidden">
+            <button onClick={() => setViewMode('list')}
+              className={`px-3 py-2 flex items-center gap-1 text-sm ${viewMode === 'list' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
+              <LayoutList className="h-4 w-4" />List
+            </button>
+            <button onClick={() => setViewMode('calendar')}
+              className={`px-3 py-2 flex items-center gap-1 text-sm border-l border-gray-300 ${viewMode === 'calendar' ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}>
+              <Calendar className="h-4 w-4" />Calendar
+            </button>
+          </div>
           <button onClick={handleRefresh}
             className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-50 flex items-center text-sm">
             <RefreshCw className="h-4 w-4 mr-2" />Sync Status
           </button>
           <button onClick={openModal}
             className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center text-sm">
-            <Plus className="h-4 w-4 mr-2" />Schedule Inspection
+            <Plus className="h-4 w-4 mr-2" />Schedule
           </button>
         </div>
       </div>
@@ -262,8 +276,75 @@ const Compliance: React.FC = () => {
         </div>
       )}
 
-      {/* Filters */}
-      <div className="bg-white rounded-lg shadow p-4 flex flex-col sm:flex-row gap-3">
+      {/* ── Calendar View ── */}
+      {viewMode === 'calendar' && (() => {
+        const year  = calMonth.getFullYear();
+        const month = calMonth.getMonth();
+        const firstDay = new Date(year, month, 1).getDay();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+        const monthLabel = calMonth.toLocaleString('en-ZA', { month: 'long', year: 'numeric' });
+        const today = new Date().toISOString().slice(0, 10);
+
+        // Map due_date → items
+        const byDate: Record<string, ComplianceRow[]> = {};
+        schedule.forEach(s => {
+          const key = s.due_date.slice(0, 10);
+          if (!byDate[key]) byDate[key] = [];
+          byDate[key].push(s);
+        });
+
+        const statusDot: Record<string, string> = {
+          Overdue: 'bg-red-500', 'Due Soon': 'bg-orange-400',
+          Scheduled: 'bg-blue-400', Completed: 'bg-green-500',
+        };
+
+        const cells = Array.from({ length: firstDay }, (_, i) => <div key={`e${i}`} />);
+        for (let d = 1; d <= daysInMonth; d++) {
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          const items   = byDate[dateStr] ?? [];
+          const isToday = dateStr === today;
+          cells.push(
+            <div key={dateStr} className={`min-h-[80px] border border-gray-200 rounded p-1 ${isToday ? 'bg-blue-50 border-blue-300' : 'bg-white'}`}>
+              <p className={`text-xs font-bold mb-1 ${isToday ? 'text-blue-600' : 'text-gray-500'}`}>{d}</p>
+              {items.slice(0, 3).map(item => (
+                <div key={item.id} className={`text-[10px] rounded px-1 py-0.5 mb-0.5 text-white truncate ${statusDot[item.status] ?? 'bg-gray-400'}`}
+                  title={`${item.vehicle_registration} — ${item.inspection_type}`}>
+                  {item.vehicle_registration}: {item.inspection_type}
+                </div>
+              ))}
+              {items.length > 3 && <p className="text-[10px] text-gray-400">+{items.length - 3} more</p>}
+            </div>
+          );
+        }
+
+        return (
+          <div className="bg-white rounded-lg shadow p-4">
+            <div className="flex items-center justify-between mb-4">
+              <button onClick={() => setCalMonth(m => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+                className="p-1 rounded hover:bg-gray-100"><ChevronLeft className="h-5 w-5"/></button>
+              <h3 className="text-base font-semibold text-gray-800">{monthLabel}</h3>
+              <button onClick={() => setCalMonth(m => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+                className="p-1 rounded hover:bg-gray-100"><ChevronRight className="h-5 w-5"/></button>
+            </div>
+            <div className="grid grid-cols-7 gap-1 mb-1">
+              {['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => (
+                <div key={d} className="text-center text-xs font-semibold text-gray-500 py-1">{d}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-1">{cells}</div>
+            <div className="flex gap-4 mt-3 flex-wrap">
+              {Object.entries(statusDot).map(([s, cls]) => (
+                <span key={s} className="flex items-center gap-1 text-xs text-gray-600">
+                  <span className={`w-2 h-2 rounded-full ${cls}`}/>{s}
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Filters + Table (list view) */}
+      {viewMode === 'list' && <><div className="bg-white rounded-lg shadow p-4 flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
           <input type="text" placeholder="Search vehicle, inspection type, assigned to…"
@@ -337,7 +418,7 @@ const Compliance: React.FC = () => {
             </table>
           </div>
         )}
-      </div>
+      </div></>}
 
       {/* Add Modal */}
       {showModal && (
@@ -351,14 +432,15 @@ const Compliance: React.FC = () => {
             </div>
             <form onSubmit={handleSubmit} className="p-5 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle *</label>
-                <select required value={form.vehicle_registration} onChange={e => handleVehicleSelect(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
-                  <option value="">Select vehicle</option>
-                  {vehicles.map(v => (
-                    <option key={v.id} value={v.registration}>{v.registration}</option>
-                  ))}
-                </select>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
+                <input type="text" list="compliance-vehicles-datalist"
+                  value={form.vehicle_registration}
+                  onChange={e => handleVehicleInput(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                  placeholder="Type or select registration…" />
+                <datalist id="compliance-vehicles-datalist">
+                  {vehicles.map(v => <option key={v.id} value={v.registration} />)}
+                </datalist>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Inspection Type *</label>

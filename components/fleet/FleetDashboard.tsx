@@ -1,7 +1,7 @@
 import * as React from 'react';
 import {
   Truck, ClipboardCheck, AlertTriangle, DollarSign,
-  ArrowUpRight, Calendar, Loader2,
+  ArrowUpRight, Calendar, Loader2, X, Bell, ShieldAlert,
 } from 'lucide-react';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -39,6 +39,10 @@ const FleetDashboard: React.FC<Props> = ({ user }) => {
   const [complianceScore, setComplianceScore]   = React.useState(100);
   const [complianceCounts, setComplianceCounts] = React.useState({ compliant: 0, expiring: 0, overdue: 0 });
   const [expiringLicenses, setExpiringLicenses] = React.useState<LicenseRow[]>([]);
+  const [overdueVehicles, setOverdueVehicles]   = React.useState<string[]>([]);
+  const [dismissed, setDismissed]               = React.useState<Set<string>>(new Set());
+
+  const dismiss = (key: string) => setDismissed(prev => new Set([...prev, key]));
 
   const [date] = React.useState(new Date());
   const formattedDate = date.toLocaleDateString('en-ZA', {
@@ -49,13 +53,22 @@ const FleetDashboard: React.FC<Props> = ({ user }) => {
     const today = new Date().toISOString().slice(0, 10);
 
     if (isDriver && user) {
-      // Driver view: only their own inspections + vehicles they've inspected
+      // Driver view: assigned vehicles + their own inspections
       Promise.all([
         getRecentInspectionsByInspector(user.id, 7),
         getInspectionsByInspector(user.id),
-      ]).then(([recent, all]) => {
-        // Distinct vehicles from all their inspections
-        const vehicleRegs = [...new Set(all.map(i => i.vehicle_reg).filter(Boolean))];
+        getVehicles(),
+      ]).then(([recent, all, allVehicles]) => {
+        // Filter assigned vehicles — supports slash-separated e.g. "Dumisane/Jabu/Sam"
+        const myVehicles = allVehicles.filter(v =>
+          v.assigned_driver
+            ?.split('/')
+            .map(n => n.trim().toLowerCase())
+            .includes(user.name.toLowerCase())
+        );
+        const vehicleRegs = myVehicles.length > 0
+          ? myVehicles.map(v => v.registration)
+          : [...new Set(all.map(i => i.vehicle_reg).filter(Boolean))];
         setTotalVehicles(vehicleRegs.length);
 
         // Status breakdown from their inspections (most recent per vehicle)
@@ -116,6 +129,13 @@ const FleetDashboard: React.FC<Props> = ({ user }) => {
 
         setExpiringLicenses(expLicenses.slice(0, 4));
 
+        // Vehicles with overdue next_inspection_date
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const overdueVehs = vehicles
+          .filter(v => v.next_inspection_date && v.next_inspection_date < todayStr)
+          .map(v => v.registration);
+        setOverdueVehicles(overdueVehs);
+
       }).catch(() => {}).finally(() => setLoading(false));
     }
   }, [isDriver, user?.id]);
@@ -143,6 +163,46 @@ const FleetDashboard: React.FC<Props> = ({ user }) => {
           </span>
         </div>
       </div>
+
+      {/* ── Alert Banners (T36 / T41) ── */}
+      {!isDriver && (() => {
+        const critical7  = expiringLicenses.filter(l => daysLeft(l.expiry_date) <= 7);
+        const warning14  = expiringLicenses.filter(l => { const d = daysLeft(l.expiry_date); return d > 7 && d <= 14; });
+        const info30     = expiringLicenses.filter(l => { const d = daysLeft(l.expiry_date); return d > 14 && d <= 30; });
+
+        const alerts: { key: string; icon: React.ReactNode; bg: string; border: string; text: string; msg: string }[] = [];
+
+        if (overdueVehicles.length > 0)
+          alerts.push({ key:'insp-overdue', icon:<ShieldAlert className="h-5 w-5"/>, bg:'bg-red-50', border:'border-red-400', text:'text-red-800', msg:`${overdueVehicles.length} vehicle${overdueVehicles.length>1?'s':''} with overdue inspection: ${overdueVehicles.join(', ')}` });
+
+        if (complianceCounts.overdue > 0)
+          alerts.push({ key:'comp-overdue', icon:<AlertTriangle className="h-5 w-5"/>, bg:'bg-orange-50', border:'border-orange-400', text:'text-orange-800', msg:`${complianceCounts.overdue} compliance item${complianceCounts.overdue>1?'s':''} are overdue — review the Compliance page.` });
+
+        if (critical7.length > 0)
+          alerts.push({ key:'lic-7', icon:<Bell className="h-5 w-5"/>, bg:'bg-red-50', border:'border-red-400', text:'text-red-800', msg:`URGENT: ${critical7.length} license${critical7.length>1?'s':''} expire within 7 days: ${critical7.map(l=>l.license_number||l.license_type).join(', ')}` });
+
+        if (warning14.length > 0)
+          alerts.push({ key:'lic-14', icon:<Bell className="h-5 w-5"/>, bg:'bg-yellow-50', border:'border-yellow-400', text:'text-yellow-800', msg:`${warning14.length} license${warning14.length>1?'s':''} expire within 14 days.` });
+
+        if (info30.length > 0)
+          alerts.push({ key:'lic-30', icon:<Bell className="h-5 w-5"/>, bg:'bg-blue-50', border:'border-blue-400', text:'text-blue-800', msg:`${info30.length} license${info30.length>1?'s':''} expire within 30 days — review the Licenses page.` });
+
+        const visible = alerts.filter(a => !dismissed.has(a.key));
+        if (visible.length === 0) return null;
+        return (
+          <div className="space-y-2">
+            {visible.map(a => (
+              <div key={a.key} className={`flex items-start gap-3 ${a.bg} border-l-4 ${a.border} ${a.text} rounded-lg px-4 py-3`}>
+                <span className="flex-shrink-0 mt-0.5">{a.icon}</span>
+                <p className="flex-1 text-sm font-medium">{a.msg}</p>
+                <button onClick={() => dismiss(a.key)} className="flex-shrink-0 hover:opacity-70">
+                  <X className="h-4 w-4"/>
+                </button>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
