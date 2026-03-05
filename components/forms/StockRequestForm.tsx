@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Card from '../Card';
-import { User, Priority, WorkflowStatus, WorkflowRequest, Store, Site, UserRole } from '../../types';
+import { getMappedRole, User, Priority, WorkflowStatus, WorkflowRequest, Store, Site, UserRole } from '../../types';
 import { supabase } from '../../supabase/client';
 import Select from 'react-select';
 import { Database } from '../../supabase/database.types';
@@ -103,7 +103,7 @@ const StockRequestForm: React.FC<StockRequestFormProps> = ({ user, onSuccess, on
 
     const visibleSites = useMemo(() => {
         // Admin has access to all sites
-        if (user.role === UserRole.Admin) {
+        if (getMappedRole(user.role) === UserRole.Admin) {
             return allActiveSites;
         }
 

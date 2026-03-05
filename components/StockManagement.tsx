@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { supabase } from '../supabase/client';
-import { StockItem, StoreType, FormType, User, Store, departmentToStoreMap, UserRole, Department } from '../types';
+import { getMappedRole, StockItem, StoreType, FormType, User, Store, departmentToStoreMap, UserRole, Department } from '../types';
 import { fetchActiveDepartments } from '../services/departmentService';
 
 interface StockManagementProps {
@@ -84,7 +84,7 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
     const visibleStores = useMemo(() => {
         // If stores haven't loaded yet from database, use enum fallback
         if (availableStores.length === 0) {
-            if (user.role === 'Admin' || !user.departments || user.departments.length === 0) {
+            if (getMappedRole(user.role) === 'Admin' || !user.departments || user.departments.length === 0) {
                 return Object.values(StoreType);
             }
             const stores = user.departments.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
@@ -92,7 +92,7 @@ const StockManagement: React.FC<StockManagementProps> = ({ openForm, user }) => 
         }
 
         // Use database stores
-        if (user.role === 'Admin' || !user.departments || user.departments.length === 0) {
+        if (getMappedRole(user.role) === 'Admin' || !user.departments || user.departments.length === 0) {
             return availableStores.map(dept => dept.code as StoreType);
         }
 

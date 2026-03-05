@@ -2,16 +2,19 @@ import React, { useState, useCallback } from 'react';
 import Card from './Card';
 import { generateReportSummary, askStockQuestion, aiAvailable } from '../services/geminiService';
 import { supabase } from '../supabase/client';
-import { WorkflowRequest, StockItem, User, UserRole, departmentToStoreMap, Store } from '../types';
+import { getMappedRole, WorkflowRequest, StockItem, User, UserRole, departmentToStoreMap, Store } from '../types';
 
 interface ReportsProps {
     user: User;
 }
 
+type DateRange = '30' | '60' | '90';
+
 const Reports: React.FC<ReportsProps> = ({ user }) => {
   const [summary, setSummary] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
+  const [dateRange, setDateRange] = useState<DateRange>('30');
   const [question, setQuestion] = useState('');
   const [answer, setAnswer] = useState<string | null>(null);
   const [isAsking, setIsAsking] = useState(false);
@@ -21,10 +24,15 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
     setError('');
     setSummary('');
     try {
-      const isAdmin = user.role === UserRole.Admin;
+      const isAdmin = getMappedRole(user.role) === UserRole.Admin;
       const userStores = user.departments || [];
-      
-      let workflowsQuery = supabase.from('en_workflows_view').select('*');
+
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - parseInt(dateRange, 10));
+      const cutoffIso = cutoff.toISOString();
+
+      let workflowsQuery = supabase.from('en_workflows_view').select('*')
+        .gte('createdAt', cutoffIso);
       if (!isAdmin && userStores.length > 0) {
         workflowsQuery = workflowsQuery.in('department', userStores);
       }
@@ -34,7 +42,7 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
       if (!isAdmin && visibleStores.length > 0) {
         stockQuery = stockQuery.in('store', visibleStores);
       }
-      
+
       const [workflowsRes, stockRes] = await Promise.all([
         workflowsQuery,
         stockQuery,
@@ -56,7 +64,7 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
     } finally {
       setIsLoading(false);
     }
-  }, [user]);
+  }, [user, dateRange]);
 
   const handleAskQuestion = useCallback(async () => {
     if (!question.trim()) return;
@@ -65,7 +73,7 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
     setAnswer(null);
 
     try {
-      const isAdmin = user.role === UserRole.Admin;
+      const isAdmin = getMappedRole(user.role) === UserRole.Admin;
       const userStores = user.departments || [];
       const visibleStores = userStores.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
 
@@ -74,7 +82,7 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
         .select('*')
         .order('receivedAt', { ascending: false })
         .limit(50);
-      const receiptsRes = user.role === UserRole.Admin || visibleStores.length === 0
+      const receiptsRes = getMappedRole(user.role) === UserRole.Admin || visibleStores.length === 0
         ? await receiptsQuery
         : await receiptsQuery.in('store', visibleStores);
       if (receiptsRes.error) throw receiptsRes.error;
@@ -123,6 +131,18 @@ const Reports: React.FC<ReportsProps> = ({ user }) => {
               </div>
             ) : (
               <>
+                <div className="flex items-center gap-3">
+                  <label className="text-sm font-medium text-zinc-500">Date range:</label>
+                  <select
+                    value={dateRange}
+                    onChange={e => setDateRange(e.target.value as DateRange)}
+                    className="p-2 bg-white border border-zinc-300 rounded-md text-sm text-zinc-700 focus:ring-2 focus:ring-sky-500 focus:border-sky-500"
+                  >
+                    <option value="30">Last 30 days</option>
+                    <option value="60">Last 60 days</option>
+                    <option value="90">Last 90 days</option>
+                  </select>
+                </div>
                 <button
                     onClick={handleGenerateSummary}
                     disabled={isLoading}

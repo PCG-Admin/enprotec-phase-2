@@ -1,8 +1,9 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Card from './Card';
 import { supabase } from '../supabase/client';
 import WorkflowStatusIndicator from './WorkflowStatusIndicator';
-import { Priority, WorkflowRequest, View, FormType, WorkflowStatus, StockItem, User, UserRole, departmentToStoreMap, Store } from '../types';
+import { getMappedRole, Priority, WorkflowRequest, View, FormType, WorkflowStatus, StockItem, User, UserRole, departmentToStoreMap, Store } from '../types';
 import ClipboardListIcon from './icons/ClipboardListIcon';
 import ClockIcon from './icons/ClockIcon';
 import AlertTriangleIcon from './icons/AlertTriangleIcon';
@@ -40,62 +41,48 @@ const getPriorityChip = (priority: Priority) => {
 };
 
 const Dashboard: React.FC<DashboardProps> = ({ openForm, navigateTo, user }) => {
-  const [workflows, setWorkflows] = useState<WorkflowRequest[]>([]);
-  const [stock, setStock] = useState<StockItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowRequest | null>(null);
+  const queryClient = useQueryClient();
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const isAdmin = user.role === UserRole.Admin;
-      const userStores = user.departments || [];
+  const isAdmin = getMappedRole(user.role) === UserRole.Admin;
+  const userStores = user.departments || [];
+  const visibleStores = userStores.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
 
-      let workflowsQuery = supabase.from('en_workflows_view').select('*')
-          .order('createdAt', { ascending: false })
-          .limit(10); // PERFORMANCE: Only load 10 most recent for dashboard
-
-      // Filter by department unless the user is an Admin
+  const { data: workflows = [], isLoading: workflowsLoading, isError: workflowsError } = useQuery({
+    queryKey: ['workflows', 'dashboard', user.id],
+    queryFn: async () => {
+      let query = supabase.from('en_workflows_view').select('*')
+        .order('createdAt', { ascending: false })
+        .limit(10);
       if (!isAdmin && userStores.length > 0) {
-          workflowsQuery = workflowsQuery.in('department', userStores);
+        query = query.in('department', userStores);
       }
-
-      // Filter by sites unless the user is an Admin
       if (!isAdmin && user.sites && user.sites.length > 0) {
-          workflowsQuery = workflowsQuery.in('projectCode', user.sites);
+        query = query.in('projectCode', user.sites);
       }
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data as unknown as WorkflowRequest[]) || [];
+    },
+    staleTime: 30_000,
+  });
 
-      const visibleStores = userStores.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
-      let stockQuery = supabase.from('en_stock_view').select('*')
-          .limit(200); // PERFORMANCE: Only load subset for metrics calculation
+  const { data: stock = [], isLoading: stockLoading } = useQuery({
+    queryKey: ['stock', 'dashboard', user.id],
+    queryFn: async () => {
+      let query = supabase.from('en_stock_view').select('*').limit(200);
       if (!isAdmin && visibleStores.length > 0) {
-          stockQuery = stockQuery.in('store', visibleStores);
+        query = query.in('store', visibleStores);
       }
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data as unknown as StockItem[]) || [];
+    },
+    staleTime: 60_000,
+  });
 
-      const [workflowsRes, stockRes] = await Promise.all([
-        workflowsQuery,
-        stockQuery,
-      ]);
-
-      if (workflowsRes.error) throw workflowsRes.error;
-      if (stockRes.error) throw stockRes.error;
-
-      setWorkflows((workflowsRes.data as unknown as WorkflowRequest[]) || []);
-      setStock((stockRes.data as unknown as StockItem[]) || []);
-
-    } catch (err) {
-      setError("Failed to fetch dashboard data. Please try again later.");
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [user]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  const loading = workflowsLoading || stockLoading;
+  const error = workflowsError ? "Failed to fetch dashboard data. Please try again later." : null;
 
   if (loading) return <div className="text-center p-8 text-zinc-500">Loading Dashboard...</div>;
   if (error) return <div className="text-center p-8 text-red-600">{error}</div>;
@@ -178,7 +165,7 @@ const Dashboard: React.FC<DashboardProps> = ({ openForm, navigateTo, user }) => 
             onClose={() => setSelectedWorkflow(null)}
             onUpdate={() => {
                 setSelectedWorkflow(null);
-                fetchData();
+                queryClient.invalidateQueries({ queryKey: ['workflows'] });
             }}
         />
       )}

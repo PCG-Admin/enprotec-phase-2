@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabase/client';
-import { WorkflowRequest, User, WorkflowStatus, WorkflowItem, FormType, UserRole, Store, StoreType, StockItem, departmentToStoreMap } from '../types';
+import { getMappedRole, WorkflowRequest, User, WorkflowStatus, WorkflowItem, FormType, UserRole, Store, StoreType, StockItem, departmentToStoreMap } from '../types';
 import Card from './Card';
 import CommentSection from './CommentSection';
 import { sendApprovalWebhook, sendDenialWebhook } from '../services/webhookService';
@@ -16,8 +17,6 @@ const normalizeAttachments = (req: WorkflowRequest) => {
 interface RequestsProps {
     user: User;
     openForm: (type: FormType, context?: WorkflowRequest | null) => void;
-    onDataChange: () => void;
-    dataVersion: number;
 }
 
 const RequestItemRow: React.FC<{ item: WorkflowItem }> = ({ item }) => {
@@ -35,10 +34,8 @@ const RequestItemRow: React.FC<{ item: WorkflowItem }> = ({ item }) => {
     );
 };
 
-const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataVersion }) => {
-    const [requests, setRequests] = useState<WorkflowRequest[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+const Requests: React.FC<RequestsProps> = ({ user, openForm }) => {
+    const queryClient = useQueryClient();
     const [updatingId, setUpdatingId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedCommentId, setExpandedCommentId] = useState<string | null>(null);
@@ -46,16 +43,12 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
     const [rejectionComment, setRejectionComment] = useState('');
     const [actionError, setActionError] = useState<string | null>(null);
 
-    const hasSiteAccess = useCallback(
-        (siteName?: string | null) => {
-            // Admin has access to all sites
-            if (user.role === UserRole.Admin) return true;
-            const sites = user.sites || [];
-            if (!siteName || sites.length === 0) return false;
-            return sites.map(s => s.toLowerCase()).includes(siteName.toLowerCase());
-        },
-        [user]
-    );
+    const hasSiteAccess = (siteName?: string | null) => {
+        if (getMappedRole(user.role) === UserRole.Admin) return true;
+        const sites = user.sites || [];
+        if (!siteName || sites.length === 0) return false;
+        return sites.map(s => s.toLowerCase()).includes(siteName.toLowerCase());
+    };
 
     const canApprove = useMemo(() => [
         UserRole.Admin,
@@ -68,43 +61,26 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
         [user.role]
     );
 
-    const fetchRequests = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
+    const { data: requests = [], isLoading: loading, isError } = useQuery({
+        queryKey: ['workflows', 'requests', user.id],
+        queryFn: async () => {
             let requestsQuery = supabase
                 .from('en_workflows_view')
                 .select('*')
                 .in('currentStatus', [WorkflowStatus.REQUEST_SUBMITTED, WorkflowStatus.AWAITING_OPS_MANAGER, WorkflowStatus.STOCK_CONTROLLER_APPROVAL, WorkflowStatus.REJECTED_AT_DELIVERY, WorkflowStatus.DISPATCHED]);
-
-            // Filter by department unless the user is an Admin
-            if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
+            if (getMappedRole(user.role) !== UserRole.Admin && user.departments && user.departments.length > 0) {
                 requestsQuery = requestsQuery.in('department', user.departments);
             }
-
-            // Filter by sites unless the user is an Admin
-            if (user.role !== UserRole.Admin && user.sites && user.sites.length > 0) {
+            if (getMappedRole(user.role) !== UserRole.Admin && user.sites && user.sites.length > 0) {
                 requestsQuery = requestsQuery.in('projectCode', user.sites);
             }
-
             const { data, error } = await requestsQuery.order('createdAt', { ascending: true });
-
             if (error) throw error;
-
-            const fetched = (data as unknown as WorkflowRequest[]) || [];
-            setRequests(fetched);
-
-        } catch (err) {
-            setError('Unable to load requests. Please try again.');
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    }, [user]);
-
-    useEffect(() => {
-        fetchRequests();
-    }, [fetchRequests, dataVersion]);
+            return (data as unknown as WorkflowRequest[]) || [];
+        },
+        staleTime: 30_000,
+    });
+    const error = isError ? 'Unable to load requests. Please try again.' : null;
 
     const filteredRequests = useMemo(() => {
         if (!searchTerm) return requests;
@@ -202,8 +178,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
 
             await sendApprovalWebhook('APPROVAL', requestToUpdate, newStatus, user);
 
-            setRequests(prev => prev.filter(req => req.id !== requestId));
-            onDataChange();
+            queryClient.invalidateQueries({ queryKey: ['workflows'] });
         } catch (err) {
             alert('Unable to approve this request. Please check console for details.');
             console.error('Approval error:', err);
@@ -245,10 +220,9 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
             await sendApprovalWebhook('DECLINE', requestToUpdate, newStatus, user, rejectionComment.trim());
             await sendDenialWebhook(requestToUpdate, rejectionComment.trim());
 
-            setRequests(prev => prev.filter(req => req.id !== requestId));
             setRejectingId(null);
             setRejectionComment('');
-            onDataChange();
+            queryClient.invalidateQueries({ queryKey: ['workflows'] });
         } catch (err) {
             alert('Failed to decline request.');
             console.error(err);
@@ -318,7 +292,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                         {awaitingOpsManager.map(req => {
                             const attachments = normalizeAttachments(req);
                             const nextStepInfo = getNextStepInfo(req.currentStatus);
-                            const canApproveThisStep = user.role === UserRole.OperationsManager || user.role === UserRole.Admin;
+                            const canApproveThisStep = getMappedRole(user.role) === UserRole.OperationsManager || getMappedRole(user.role) === UserRole.Admin;
                             return (
                             <Card key={req.id} title="" padding="p-0">
                                 <div className="flex justify-between items-start p-4 border-b border-zinc-200">
@@ -432,7 +406,7 @@ const Requests: React.FC<RequestsProps> = ({ user, openForm, onDataChange, dataV
                         {awaitingStockController.map(req => {
                     const attachments = normalizeAttachments(req);
                     const nextStepInfo = getNextStepInfo(req.currentStatus);
-                    const canApproveThisStep = user.role === UserRole.StockController || user.role === UserRole.Admin;
+                    const canApproveThisStep = getMappedRole(user.role) === UserRole.StockController || getMappedRole(user.role) === UserRole.Admin;
                     return (
                     <Card key={req.id} title="" padding="p-0">
                         <div className="flex justify-between items-start p-4 border-b border-zinc-200">

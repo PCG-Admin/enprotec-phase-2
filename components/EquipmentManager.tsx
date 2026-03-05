@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabase/client';
-import { WorkflowRequest, User, WorkflowStatus, WorkflowItem, StoreType, UserRole, Store, departmentToStoreMap } from '../types';
+import { getMappedRole, WorkflowRequest, User, WorkflowStatus, WorkflowItem, StoreType, UserRole, Store, departmentToStoreMap } from '../types';
 import Card from './Card';
 import CommentSection from './CommentSection';
 import { sendApprovalWebhook, sendDenialWebhook } from '../services/webhookService';
@@ -8,7 +9,6 @@ import { getNextStepInfo } from '../utils/workflowSteps';
 
 interface EquipmentManagerProps {
     user: User;
-    onDataChange: () => void;
 }
 
 const RequestItemRow: React.FC<{ item: WorkflowItem }> = ({ item }) => {
@@ -26,63 +26,41 @@ const RequestItemRow: React.FC<{ item: WorkflowItem }> = ({ item }) => {
     );
 };
 
-const EquipmentManager: React.FC<EquipmentManagerProps> = ({ user, onDataChange }) => {
-    const [requests, setRequests] = useState<WorkflowRequest[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+const EquipmentManager: React.FC<EquipmentManagerProps> = ({ user }) => {
+    const queryClient = useQueryClient();
     const [updatingId, setUpdatingId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedCommentId, setExpandedCommentId] = useState<string | null>(null);
     const [rejectingId, setRejectingId] = useState<string | null>(null);
     const [rejectionComment, setRejectionComment] = useState('');
 
-    const hasSiteAccess = useCallback(
-        (siteName?: string | null) => {
-            // Admin has access to all sites
-            if (user.role === UserRole.Admin) return true;
-            const sites = user.sites || [];
-            if (!siteName || sites.length === 0) return false;
-            return sites.map(s => s.toLowerCase()).includes(siteName.toLowerCase());
-        },
-        [user]
-    );
+    const hasSiteAccess = (siteName?: string | null) => {
+        if (getMappedRole(user.role) === UserRole.Admin) return true;
+        const sites = user.sites || [];
+        if (!siteName || sites.length === 0) return false;
+        return sites.map(s => s.toLowerCase()).includes(siteName.toLowerCase());
+    };
 
-    const fetchRequests = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
+    const { data: requests = [], isLoading: loading, isError } = useQuery({
+        queryKey: ['workflows', 'equipment', user.id],
+        queryFn: async () => {
             let requestsQuery = supabase
                 .from('en_workflows_view')
                 .select('*')
                 .eq('currentStatus', WorkflowStatus.AWAITING_EQUIP_MANAGER);
-
-            // Filter by department unless the user is an Admin
-            if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
+            if (getMappedRole(user.role) !== UserRole.Admin && user.departments && user.departments.length > 0) {
                 requestsQuery = requestsQuery.in('department', user.departments);
             }
-
-            // Filter by sites unless the user is an Admin
-            if (user.role !== UserRole.Admin && user.sites && user.sites.length > 0) {
+            if (getMappedRole(user.role) !== UserRole.Admin && user.sites && user.sites.length > 0) {
                 requestsQuery = requestsQuery.in('projectCode', user.sites);
             }
-
             const { data, error } = await requestsQuery.order('createdAt', { ascending: true });
-
             if (error) throw error;
-            
-            setRequests((data as unknown as WorkflowRequest[]) || []);
-
-        } catch (err) {
-            setError('Unable to load approval requests. Please try again.');
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    }, [user]);
-
-    useEffect(() => {
-        fetchRequests();
-    }, [fetchRequests]);
+            return (data as unknown as WorkflowRequest[]) || [];
+        },
+        staleTime: 30_000,
+    });
+    const error = isError ? 'Unable to load approval requests. Please try again.' : null;
 
     const filteredRequests = useMemo(() => {
         if (!searchTerm) return requests;
@@ -118,8 +96,7 @@ const EquipmentManager: React.FC<EquipmentManagerProps> = ({ user, onDataChange 
             
             await sendApprovalWebhook('APPROVAL', requestToUpdate, newStatus, user);
 
-            setRequests(prev => prev.filter(req => req.id !== requestId));
-            onDataChange();
+            queryClient.invalidateQueries({ queryKey: ['workflows'] });
         } catch (err) {
             alert('Unable to approve this request. Please try again.');
             console.error(err);
@@ -161,10 +138,9 @@ const EquipmentManager: React.FC<EquipmentManagerProps> = ({ user, onDataChange 
             await sendApprovalWebhook('DECLINE', requestToUpdate, newStatus, user, rejectionComment.trim());
             await sendDenialWebhook(requestToUpdate, rejectionComment.trim());
 
-            setRequests(prev => prev.filter(req => req.id !== requestId));
             setRejectingId(null);
             setRejectionComment('');
-            onDataChange();
+            queryClient.invalidateQueries({ queryKey: ['workflows'] });
         } catch (err) {
             alert('Unable to decline this request. Please try again.');
             console.error(err);

@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../supabase/client';
-import { WorkflowRequest, User, WorkflowStatus, WorkflowItem, FormType, UserRole } from '../types';
+import { getMappedRole, WorkflowRequest, User, WorkflowStatus, WorkflowItem, FormType, UserRole } from '../types';
 import Card from './Card';
 import CommentSection from './CommentSection';
 
 interface DeliveriesProps {
     user: User;
     openForm: (type: FormType, context: WorkflowRequest) => void;
-    dataVersion: number;
 }
 
 const DeliveryRequestCard: React.FC<{
@@ -69,51 +69,32 @@ const DeliveryRequestCard: React.FC<{
 };
 
 
-const Deliveries: React.FC<DeliveriesProps> = ({ user, openForm, dataVersion }) => {
-    const [picked, setPicked] = useState<WorkflowRequest[]>([]);
-    const [dispatched, setDispatched] = useState<WorkflowRequest[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+const Deliveries: React.FC<DeliveriesProps> = ({ user, openForm }) => {
     const [searchTerm, setSearchTerm] = useState('');
 
-    const fetchRequests = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
+    const { data: allDeliveries = [], isLoading: loading, isError } = useQuery({
+        queryKey: ['workflows', 'deliveries', user.id],
+        queryFn: async () => {
             let query = supabase
                 .from('en_workflows_view')
                 .select('*')
                 .in('currentStatus', [WorkflowStatus.PICKED_AND_LOADED, WorkflowStatus.DISPATCHED]);
-
-            // Filter by department unless the user is an Admin
-            if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
+            if (getMappedRole(user.role) !== UserRole.Admin && user.departments && user.departments.length > 0) {
                 query = query.in('department', user.departments);
             }
-
-            // Filter by sites unless the user is an Admin
-            if (user.role !== UserRole.Admin && user.sites && user.sites.length > 0) {
+            if (getMappedRole(user.role) !== UserRole.Admin && user.sites && user.sites.length > 0) {
                 query = query.in('projectCode', user.sites);
             }
-            
             const { data, error } = await query.order('createdAt', { ascending: true });
-
             if (error) throw error;
-            
-            const reqs = (data as unknown as WorkflowRequest[]) || [];
-            setPicked(reqs.filter(r => r.currentStatus === WorkflowStatus.PICKED_AND_LOADED));
-            setDispatched(reqs.filter(r => r.currentStatus === WorkflowStatus.DISPATCHED));
+            return (data as unknown as WorkflowRequest[]) || [];
+        },
+        staleTime: 30_000,
+    });
+    const error = isError ? 'Unable to load delivery requests. Please try again.' : null;
 
-        } catch (err) {
-            setError('Unable to load delivery requests. Please try again.');
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    }, [user]);
-
-    useEffect(() => {
-        fetchRequests();
-    }, [fetchRequests, dataVersion]);
+    const picked = allDeliveries.filter(r => r.currentStatus === WorkflowStatus.PICKED_AND_LOADED);
+    const dispatched = allDeliveries.filter(r => r.currentStatus === WorkflowStatus.DISPATCHED);
 
     const filterRequests = (requests: WorkflowRequest[]) => {
         if (!searchTerm) return requests;

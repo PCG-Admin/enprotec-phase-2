@@ -8,7 +8,7 @@ import { fetchDepartments } from '../services/departmentService';
 
 const getRoleBadge = (role: UserRole) => {
     const baseClasses = "px-2.5 py-1 text-xs font-medium rounded-full inline-block border";
-    switch(role) {
+    switch (role) {
         case UserRole.Admin: return <span className={`${baseClasses} bg-red-100 text-red-800 border-red-200`}>Admin</span>
         case UserRole.OperationsManager: return <span className={`${baseClasses} bg-indigo-100 text-indigo-800 border-indigo-200`}>Ops Manager</span>
         case UserRole.EquipmentManager: return <span className={`${baseClasses} bg-purple-100 text-purple-800 border-purple-200`}>Equip. Manager</span>
@@ -18,13 +18,13 @@ const getRoleBadge = (role: UserRole) => {
         case UserRole.ProjectManager: return <span className={`${baseClasses} bg-cyan-100 text-cyan-800 border-cyan-200`}>Project Manager</span>
         case UserRole.Driver: return <span className={`${baseClasses} bg-teal-100 text-teal-800 border-teal-200`}>Driver</span>
         case UserRole.Security: return <span className={`${baseClasses} bg-zinc-100 text-zinc-800 border-zinc-200`}>Security</span>
-        default: return null;
+        default: return <span className={`${baseClasses} bg-zinc-100 text-zinc-700 border-zinc-300`}>{role}</span>;
     }
 }
 
 const getStatusBadge = (status: UserStatus) => {
     const baseClasses = "px-2.5 py-1 text-xs font-semibold rounded-full";
-     switch(status) {
+    switch (status) {
         case UserStatus.Active: return <span className={`${baseClasses} bg-emerald-100 text-emerald-800`}>Active</span>
         case UserStatus.Inactive: return <span className={`${baseClasses} bg-zinc-100 text-zinc-800`}>Inactive</span>
         default: return null;
@@ -134,7 +134,7 @@ const Users: React.FC = () => {
         setIsModalOpen(false);
         fetchUsers();
     };
-    
+
     const toggleUserStatus = async (user: User) => {
         const newStatus = user.status === UserStatus.Active ? UserStatus.Inactive : UserStatus.Active;
 
@@ -144,8 +144,8 @@ const Users: React.FC = () => {
             .eq('id', user.id);
 
         if (error) {
-             alert('Failed to update user status.');
-             console.error(error);
+            alert('Failed to update user status.');
+            console.error(error);
         } else {
             fetchUsers();
         }
@@ -176,7 +176,7 @@ const Users: React.FC = () => {
     return (
         <>
             <div className="space-y-6">
-                 <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                     <h1 className="text-2xl font-bold text-zinc-900 self-start md:self-center">Users & Roles</h1>
                     <div className="flex items-center gap-4 w-full md:w-auto">
                         <div className="w-full md:w-64 relative">
@@ -203,7 +203,7 @@ const Users: React.FC = () => {
                 <div className="bg-white rounded-lg border border-zinc-200">
                     <div className="overflow-x-auto">
                         <table className="min-w-full text-sm">
-                             <thead className="bg-zinc-50">
+                            <thead className="bg-zinc-50">
                                 <tr>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Name</th>
                                     <th className="px-6 py-3 text-left text-xs font-medium text-zinc-500 uppercase tracking-wider">Role</th>

@@ -1,58 +1,41 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../supabase/client';
-import { WorkflowRequest, User, WorkflowStatus, WorkflowItem, UserRole } from '../types';
+import { getMappedRole, WorkflowRequest, User, WorkflowStatus, WorkflowItem, UserRole } from '../types';
 import Card from './Card';
 import CommentSection from './CommentSection';
 import { sendApprovalWebhook } from '../services/webhookService';
 
 interface PickingProps {
     user: User;
-    onDataChange: () => void;
-    dataVersion: number;
 }
 
-const Picking: React.FC<PickingProps> = ({ user, onDataChange, dataVersion }) => {
-    const [requests, setRequests] = useState<WorkflowRequest[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+const Picking: React.FC<PickingProps> = ({ user }) => {
+    const queryClient = useQueryClient();
     const [updatingId, setUpdatingId] = useState<string | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [expandedCommentId, setExpandedCommentId] = useState<string | null>(null);
 
-    const fetchRequests = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        try {
+    const { data: requests = [], isLoading: loading, isError } = useQuery({
+        queryKey: ['workflows', 'picking', user.id],
+        queryFn: async () => {
             let query = supabase
                 .from('en_workflows_view')
                 .select('*')
                 .eq('currentStatus', WorkflowStatus.AWAITING_PICKING);
-
-            // Filter by department unless the user is an Admin
-            if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
+            if (getMappedRole(user.role) !== UserRole.Admin && user.departments && user.departments.length > 0) {
                 query = query.in('department', user.departments);
             }
-
-            // Filter by sites unless the user is an Admin
-            if (user.role !== UserRole.Admin && user.sites && user.sites.length > 0) {
+            if (getMappedRole(user.role) !== UserRole.Admin && user.sites && user.sites.length > 0) {
                 query = query.in('projectCode', user.sites);
             }
-
             const { data, error } = await query.order('createdAt', { ascending: true });
-
             if (error) throw error;
-            setRequests((data as unknown as WorkflowRequest[]) || []);
-        } catch (err) {
-            setError('Unable to load picking requests. Please try again.');
-            console.error(err);
-        } finally {
-            setLoading(false);
-        }
-    }, [user]);
-
-    useEffect(() => {
-        fetchRequests();
-    }, [fetchRequests, dataVersion]);
+            return (data as unknown as WorkflowRequest[]) || [];
+        },
+        staleTime: 30_000,
+    });
+    const error = isError ? 'Unable to load picking requests. Please try again.' : null;
     
     const filteredRequests = useMemo(() => {
         if (!searchTerm) return requests;
@@ -81,9 +64,8 @@ const Picking: React.FC<PickingProps> = ({ user, onDataChange, dataVersion }) =>
             if (error) throw error;
             
             await sendApprovalWebhook('APPROVAL', requestToUpdate, newStatus, user);
-            
-            setRequests(prev => prev.filter(req => req.id !== requestId));
-            onDataChange();
+
+            queryClient.invalidateQueries({ queryKey: ['workflows'] });
         } catch (err) {
             alert('Unable to update request status. Please try again.');
             console.error(err);

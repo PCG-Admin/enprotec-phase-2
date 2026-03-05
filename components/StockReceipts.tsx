@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../supabase/client';
-import { StockReceipt, FormType, User, UserRole, departmentToStoreMap, Store, StoreType } from '../types';
+import { getMappedRole, StockReceipt, FormType, User, UserRole, departmentToStoreMap, Store, StoreType } from '../types';
 
 interface StockReceiptsProps {
     openForm: (type: FormType) => void;
@@ -30,7 +30,7 @@ const StockReceipts: React.FC<StockReceiptsProps> = ({ openForm, user }) => {
                 .from('en_stock_receipts_view')
                 .select('*');
 
-            if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
+            if (getMappedRole(user.role) !== UserRole.Admin && user.departments && user.departments.length > 0) {
                 const visibleStores = user.departments.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
                 if (visibleStores.length > 0) {
                     query = query.in('store', visibleStores);

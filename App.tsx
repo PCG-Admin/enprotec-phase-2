@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
@@ -21,7 +22,7 @@ import SalvagePage from './components/SalvagePage';
 import InspectionReport from './components/InspectionReport';
 import MyInspections from './components/MyInspections';
 import StockReports from './components/StockReports';
-import { View, FormType, User, UserRole, WorkflowRequest, StockItem } from './types';
+import { View, FormType, User, UserRole, WorkflowRequest, StockItem, getMappedRole } from './types';
 import PRForm from './components/forms/PRForm';
 import GateReleaseForm from './components/forms/GateReleaseForm';
 import StockRequestForm from './components/forms/StockRequestForm';
@@ -62,6 +63,15 @@ type ProfileLoadResult =
 
 const profileTimeoutToken = Symbol('profile-timeout');
 
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 30_000,
+      retry: 1,
+    },
+  },
+});
+
 const fetchProfileWithTimeout = async (userId: string): Promise<ProfileLoadResult> => {
   try {
     const result = await Promise.race<User | null | symbol>([
@@ -88,7 +98,7 @@ const fetchProfileWithTimeout = async (userId: string): Promise<ProfileLoadResul
 };
 
 // Role-Based Access Control Configuration
-const viewPermissions: Record<UserRole, View[]> = {
+const viewPermissions: Partial<Record<UserRole, View[]>> = {
   [UserRole.Admin]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'InspectionReport', 'MyInspections', 'Salvage', 'Stock', 'Sites', 'Stores', 'Users', 'Reports', 'StockReports'],
   [UserRole.OperationsManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'Picking', 'Deliveries', 'MyDeliveries', 'InspectionReport', 'MyInspections', 'Salvage', 'Stock', 'Sites', 'Reports'],
   [UserRole.EquipmentManager]: ['Dashboard', 'Workflows', 'StockReceipts', 'Requests', 'EquipmentManager', 'RejectedRequests', 'InspectionReport', 'MyInspections', 'Salvage', 'Stock', 'Reports'],
@@ -101,7 +111,7 @@ const viewPermissions: Record<UserRole, View[]> = {
 };
 
 const getDefaultViewForRole = (role: UserRole): View => {
-  const allowedViews = viewPermissions[role];
+  const allowedViews = viewPermissions[getMappedRole(role)];
   // Always default to Dashboard if the user has access to it.
   if (allowedViews.includes('Dashboard')) {
     return 'Dashboard';
@@ -115,7 +125,7 @@ const getDefaultViewForRole = (role: UserRole): View => {
 };
 
 const canAccessView = (role: UserRole, view: View): boolean => {
-  return viewPermissions[role]?.includes(view) ?? false;
+  return viewPermissions[getMappedRole(role)]?.includes(view) ?? false;
 };
 
 const App: React.FC = () => {
@@ -135,12 +145,9 @@ const App: React.FC = () => {
     return storedView ?? 'Dashboard';
   });
   const [activeForm, setActiveForm] = useState<{ type: FormType; context?: any } | null>(null);
-  const [dataVersion, setDataVersion] = useState(0);
   const [showInspectionToast, setShowInspectionToast] = useState(false);
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [initialisingAuth, setInitialisingAuth] = useState(() => !readStoredUser());
-
-  const triggerRefresh = () => setDataVersion(v => v + 1);
 
   const handleLoginSuccess = (user: User) => {
     const defaultView = getDefaultViewForRole(user.role);
@@ -158,7 +165,7 @@ const App: React.FC = () => {
     }
     setCurrentView(view);
   };
-  
+
   const openForm = (type: FormType, context?: any) => {
     setActiveForm({ type, context });
   };
@@ -166,10 +173,9 @@ const App: React.FC = () => {
   const closeForm = () => {
     setActiveForm(null);
   };
-  
+
   const handleFormSuccess = () => {
     closeForm();
-    triggerRefresh();
   };
 
 
@@ -347,11 +353,11 @@ const App: React.FC = () => {
 
   const renderView = () => {
     if (!loggedInUser || !canAccessView(loggedInUser.role, currentView)) {
-        const defaultView = loggedInUser ? getDefaultViewForRole(loggedInUser.role) : 'Dashboard';
-        if (currentView !== defaultView) {
-            setCurrentView(defaultView);
-        }
-        return <Dashboard openForm={openForm} user={loggedInUser!} navigateTo={navigateTo} />;
+      const defaultView = loggedInUser ? getDefaultViewForRole(loggedInUser.role) : 'Dashboard';
+      if (currentView !== defaultView) {
+        setCurrentView(defaultView);
+      }
+      return <Dashboard openForm={openForm} user={loggedInUser!} navigateTo={navigateTo} />;
     }
 
     switch (currentView) {
@@ -362,18 +368,18 @@ const App: React.FC = () => {
       case 'StockReceipts':
         return <StockReceipts openForm={openForm} user={loggedInUser} />;
       case 'Requests':
-        return <Requests user={loggedInUser} openForm={openForm} onDataChange={triggerRefresh} dataVersion={dataVersion} />;
+        return <Requests user={loggedInUser} openForm={openForm} />;
       case 'EquipmentManager':
-        return <EquipmentManager user={loggedInUser} onDataChange={triggerRefresh} />;
+        return <EquipmentManager user={loggedInUser} />;
       case 'RejectedRequests':
         return <RejectedRequests user={loggedInUser} />;
       case 'Picking':
-        return <Picking user={loggedInUser} onDataChange={triggerRefresh} dataVersion={dataVersion} />;
+        return <Picking user={loggedInUser} />;
       case 'Deliveries':
-        return <Deliveries user={loggedInUser} openForm={openForm} dataVersion={dataVersion} />;
+        return <Deliveries user={loggedInUser} openForm={openForm} />;
       case 'MyDeliveries':
-        return <MyDeliveries user={loggedInUser} onDataChange={triggerRefresh} dataVersion={dataVersion} />;
-       case 'Salvage':
+        return <MyDeliveries user={loggedInUser} />;
+      case 'Salvage':
         return <SalvagePage user={loggedInUser} />;
       case 'Stock':
         return <StockManagement user={loggedInUser} openForm={openForm} />;
@@ -407,40 +413,40 @@ const App: React.FC = () => {
     if (!activeForm || !loggedInUser) return null;
 
     const formProps = {
-        user: loggedInUser,
-        onSuccess: handleFormSuccess,
-        onCancel: closeForm,
+      user: loggedInUser,
+      onSuccess: handleFormSuccess,
+      onCancel: closeForm,
     };
-    
+
     switch (activeForm.type) {
-        case 'StockRequest':
-            return <StockRequestForm {...formProps} />;
-        case 'StockIntake':
-            return <StockIntakeForm {...formProps} />;
-        case 'GateRelease':
-            return <GateReleaseForm {...formProps} workflow={activeForm.context as WorkflowRequest} />;
-        case 'EPOD':
-            return <EPODForm {...formProps} workflow={activeForm.context as WorkflowRequest} />;
-        case 'SalvageBooking': {
-            const ctx = activeForm.context as
-                | StockItem
-                | { stockItem: StockItem; maxQuantity?: number; workflowId?: string };
-            if ((ctx as any)?.stockItem) {
-                const { stockItem, maxQuantity, workflowId } = ctx as {
-                    stockItem: StockItem;
-                    maxQuantity?: number;
-                    workflowId?: string;
-                };
-                return <SalvageBookingForm {...formProps} stockItem={stockItem} maxQuantity={maxQuantity} workflowId={workflowId} />;
-            }
-            return <SalvageBookingForm {...formProps} stockItem={ctx as StockItem} />;
+      case 'StockRequest':
+        return <StockRequestForm {...formProps} />;
+      case 'StockIntake':
+        return <StockIntakeForm {...formProps} />;
+      case 'GateRelease':
+        return <GateReleaseForm {...formProps} workflow={activeForm.context as WorkflowRequest} />;
+      case 'EPOD':
+        return <EPODForm {...formProps} workflow={activeForm.context as WorkflowRequest} />;
+      case 'SalvageBooking': {
+        const ctx = activeForm.context as
+          | StockItem
+          | { stockItem: StockItem; maxQuantity?: number; workflowId?: string };
+        if ((ctx as any)?.stockItem) {
+          const { stockItem, maxQuantity, workflowId } = ctx as {
+            stockItem: StockItem;
+            maxQuantity?: number;
+            workflowId?: string;
+          };
+          return <SalvageBookingForm {...formProps} stockItem={stockItem} maxQuantity={maxQuantity} workflowId={workflowId} />;
         }
-        case 'ReturnIntake':
-            return <StockIntakeForm {...formProps} returnWorkflow={activeForm.context as WorkflowRequest} />;
-        case 'PR':
-            return <PRForm {...formProps} />;
-        default:
-            return null;
+        return <SalvageBookingForm {...formProps} stockItem={ctx as StockItem} />;
+      }
+      case 'ReturnIntake':
+        return <StockIntakeForm {...formProps} returnWorkflow={activeForm.context as WorkflowRequest} />;
+      case 'PR':
+        return <PRForm {...formProps} />;
+      default:
+        return null;
     }
   }
 
@@ -457,28 +463,30 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="flex h-screen bg-zinc-100 font-sans">
-      <Sidebar
-        user={loggedInUser}
-        currentView={currentView}
-        setCurrentView={navigateTo}
-        collapsed={isSidebarCollapsed}
-        onToggle={() => setSidebarCollapsed(prev => !prev)}
-      />
-      <div className="flex-1 flex flex-col overflow-hidden">
-        <Header user={loggedInUser} onLogout={handleLogout} />
-        <main className="flex-1 overflow-x-hidden overflow-y-auto bg-zinc-100 p-8">
-          {renderView()}
-        </main>
-        {activeForm && (
-             <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-center items-center p-4">
-                <div className="max-w-3xl w-full max-h-[90vh] overflow-y-auto rounded-lg">
-                   {renderFormModal()}
-                </div>
+    <QueryClientProvider client={queryClient}>
+      <div className="flex h-screen bg-zinc-100 font-sans">
+        <Sidebar
+          user={loggedInUser}
+          currentView={currentView}
+          setCurrentView={navigateTo}
+          collapsed={isSidebarCollapsed}
+          onToggle={() => setSidebarCollapsed(prev => !prev)}
+        />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <Header user={loggedInUser} onLogout={handleLogout} />
+          <main className="flex-1 overflow-x-hidden overflow-y-auto bg-zinc-100 p-8">
+            {renderView()}
+          </main>
+          {activeForm && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 z-40 flex justify-center items-center p-4">
+              <div className="max-w-3xl w-full max-h-[90vh] overflow-y-auto rounded-lg">
+                {renderFormModal()}
+              </div>
             </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+    </QueryClientProvider>
   );
 };
 

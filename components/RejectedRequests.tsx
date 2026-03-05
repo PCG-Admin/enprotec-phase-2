@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { supabase } from '../supabase/client';
-import { WorkflowRequest, User, WorkflowStatus, UserRole } from '../types';
+import { getMappedRole, WorkflowRequest, User, WorkflowStatus, UserRole } from '../types';
 
 interface RejectedRequestsProps {
     user: User;
@@ -22,7 +22,7 @@ const RejectedRequests: React.FC<RejectedRequestsProps> = ({ user }) => {
                 .eq('currentStatus', WorkflowStatus.REQUEST_DECLINED);
             
             // Filter by department unless the user is an Admin
-            if (user.role !== UserRole.Admin && user.departments && user.departments.length > 0) {
+            if (getMappedRole(user.role) !== UserRole.Admin && user.departments && user.departments.length > 0) {
                 query = query.in('department', user.departments);
             }
 

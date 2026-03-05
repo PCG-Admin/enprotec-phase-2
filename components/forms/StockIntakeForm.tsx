@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import Card from '../Card';
-import { StoreType, User, WorkflowRequest, UserRole, Store, departmentToStoreMap, WorkflowStatus, Department } from '../../types';
+import { getMappedRole, StoreType, User, WorkflowRequest, UserRole, Store, departmentToStoreMap, WorkflowStatus, Department } from '../../types';
 import { supabase } from '../../supabase/client';
 import { Database } from '../../supabase/database.types';
 import Select from 'react-select';
@@ -84,9 +85,6 @@ const FormTextarea: React.FC<React.TextareaHTMLAttributes<HTMLTextAreaElement>> 
 const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCancel, returnWorkflow }) => {
     const [intakeType, setIntakeType] = useState<IntakeType>(returnWorkflow ? 'return' : 'existing');
 
-    const [availableStockItems, setAvailableStockItems] = useState<StockItemRow[]>([]);
-    const [stockOptions, setStockOptions] = useState<{ value: string, label: string }[]>([]);
-    const [stockLoading, setStockLoading] = useState(true);
 
     const [selectedStockItemId, setSelectedStockItemId] = useState('');
     const [partNumber, setPartNumber] = useState('');
@@ -104,22 +102,18 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [availableStores, setAvailableStores] = useState<Department[]>([]);
-    const [storesLoading, setStoresLoading] = useState(true);
 
     const isReturnMode = intakeType === 'return';
 
     // Fetch available stores from database
     useEffect(() => {
         const loadStores = async () => {
-            setStoresLoading(true);
             try {
                 const departments = await fetchActiveDepartments();
                 setAvailableStores(departments);
             } catch (err) {
                 console.error('Failed to load stores:', err);
                 setAvailableStores([]);
-            } finally {
-                setStoresLoading(false);
             }
         };
         loadStores();
@@ -128,14 +122,14 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
     const visibleStores = useMemo(() => {
         // If stores haven't loaded yet from database, use enum fallback
         if (availableStores.length === 0) {
-            if (user.role === UserRole.Admin || !user.departments || user.departments.length === 0) {
+            if (getMappedRole(user.role) === UserRole.Admin || !user.departments || user.departments.length === 0) {
                 return Object.values(StoreType);
             }
             return user.departments.map(dep => departmentToStoreMap[dep as Store]).filter(Boolean);
         }
 
         // Use database stores
-        if (user.role === UserRole.Admin || !user.departments || user.departments.length === 0) {
+        if (getMappedRole(user.role) === UserRole.Admin || !user.departments || user.departments.length === 0) {
             return availableStores.map(dept => dept.code as StoreType);
         }
 
@@ -160,40 +154,41 @@ const StockIntakeForm: React.FC<StockIntakeFormProps> = ({ user, onSuccess, onCa
         }
     }, [intakeType, attachmentFile]);
 
-    useEffect(() => {
-        const fetchStockItems = async () => {
-            setStockLoading(true);
-            const { data, error } = await supabase.from('en_stock_items').select('*').order('part_number');
-            if (error) {
-                console.error("Failed to fetch stock items", error);
-                setError("Could not load existing stock items.");
-            } else {
-                const stockData = data || [];
-                setAvailableStockItems(stockData);
-                const options = stockData.map(item => ({
-                    value: item.id,
-                    label: `${item.part_number} - ${item.description}`
-                }));
-                setStockOptions(options);
+    const { data: availableStockItems = [], isLoading: stockLoading, isError: stockItemsError } = useQuery({
+        queryKey: ['stock', 'items-dropdown'],
+        queryFn: async () => {
+            const { data, error } = await supabase
+                .from('en_stock_items')
+                .select('id, part_number, description, min_stock_level')
+                .order('part_number');
+            if (error) throw error;
+            return (data || []) as StockItemRow[];
+        },
+        staleTime: 5 * 60_000,
+    });
 
-                if (returnWorkflow) {
-                    const firstItem = returnWorkflow.items[0];
-                    if (firstItem) {
-                        const returnedStockItem = stockData.find(s => s.part_number === firstItem.partNumber);
-                        if (returnedStockItem) {
-                            setSelectedStockItemId(returnedStockItem.id);
-                            setQuantity(String(returnWorkflow.items.reduce((sum, item) => sum + item.quantityRequested, 0)));
-                            setDeliveryNotePO(`RETURN from ${returnWorkflow.requestNumber}`);
-                            setComments(`Rejected by ${returnWorkflow.requester}: ${returnWorkflow.rejectionComment}`);
-                            setLocation('Awaiting placement');
-                        }
-                    }
-                }
-            }
-            setStockLoading(false);
-        };
-        fetchStockItems();
-    }, [returnWorkflow]);
+    const stockOptions = useMemo(() =>
+        availableStockItems.map(item => ({
+            value: item.id,
+            label: `${item.part_number} - ${item.description}`
+        })),
+        [availableStockItems]
+    );
+
+    // Pre-fill fields when opening as a return
+    useEffect(() => {
+        if (!returnWorkflow || availableStockItems.length === 0) return;
+        const firstItem = returnWorkflow.items[0];
+        if (!firstItem) return;
+        const returnedStockItem = availableStockItems.find(s => s.part_number === firstItem.partNumber);
+        if (returnedStockItem) {
+            setSelectedStockItemId(returnedStockItem.id);
+            setQuantity(String(returnWorkflow.items.reduce((sum, item) => sum + item.quantityRequested, 0)));
+            setDeliveryNotePO(`RETURN from ${returnWorkflow.requestNumber}`);
+            setComments(`Rejected by ${returnWorkflow.requester}: ${returnWorkflow.rejectionComment}`);
+            setLocation('Awaiting placement');
+        }
+    }, [availableStockItems, returnWorkflow]);
 
     useEffect(() => {
         if (intakeType === 'existing' || intakeType === 'return') {

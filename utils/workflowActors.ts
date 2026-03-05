@@ -1,27 +1,30 @@
 import { supabase } from '../supabase/client';
-import { WorkflowStatus, UserRole } from '../types';
+import { WorkflowStatus, UserRole, getRolesMappingTo } from '../types';
 
 /**
  * Get the roles that can act on a specific workflow status
  */
 export function getRolesForStatus(status: WorkflowStatus): UserRole[] {
-    switch (status) {
-        case WorkflowStatus.REQUEST_SUBMITTED:
-            return [UserRole.OperationsManager];
-        case WorkflowStatus.AWAITING_OPS_MANAGER:
-            return [UserRole.StockController];
-        case WorkflowStatus.AWAITING_EQUIP_MANAGER:
-            return [UserRole.EquipmentManager];
-        case WorkflowStatus.AWAITING_PICKING:
-            return [UserRole.StockController, UserRole.Storeman];
-        case WorkflowStatus.PICKED_AND_LOADED:
-            return [UserRole.Security, UserRole.Driver];
-        case WorkflowStatus.DISPATCHED:
-            // Special case: only requester can act
-            return [];
-        default:
-            return [];
-    }
+    const baseRoles = (() => {
+        switch (status) {
+            case WorkflowStatus.REQUEST_SUBMITTED:
+                return [UserRole.OperationsManager];
+            case WorkflowStatus.AWAITING_OPS_MANAGER:
+                return [UserRole.StockController];
+            case WorkflowStatus.AWAITING_EQUIP_MANAGER:
+                return [UserRole.EquipmentManager];
+            case WorkflowStatus.AWAITING_PICKING:
+                return [UserRole.StockController, UserRole.Storeman];
+            case WorkflowStatus.PICKED_AND_LOADED:
+                return [UserRole.Security, UserRole.Driver];
+            case WorkflowStatus.DISPATCHED:
+                // Special case: only requester can act
+                return [];
+            default:
+                return [];
+        }
+    })();
+    return baseRoles.flatMap(getRolesMappingTo);
 }
 
 /**
