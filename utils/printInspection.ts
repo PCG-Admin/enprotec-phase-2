@@ -466,16 +466,21 @@ const generateInspectionDownload = async (insp: InspectionRecord) => {
 
 </body></html>`;
 
-  const filename = `Inspection-${(insp.registrationNumber || 'report').replace(/[^a-z0-9]/gi, '-')}-${insp.inspectionDate || 'report'}.html`;
+  /* Open in a new tab so the user can click "Save as PDF" via the browser print dialog */
   const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const win = window.open(url, '_blank');
+  if (!win) {
+    /* Popup blocked — fall back to HTML download */
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Inspection-${(insp.registrationNumber || 'report').replace(/[^a-z0-9]/gi, '-')}-${insp.inspectionDate || 'report'}.html`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+  /* Revoke after 60 s — enough time for the tab to fully load */
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 };
 
 export const downloadInspection = generateInspectionDownload;

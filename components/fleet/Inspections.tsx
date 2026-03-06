@@ -296,6 +296,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [typeFilter, setTypeFilter] = React.useState<'All' | 'General' | 'Forklift' | 'Generator'>('All');
   const [viewInspection, setViewInspection] = React.useState<InspectionRecord | null>(null);
+  const [selectedVehicleId, setSelectedVehicleId] = React.useState('');
   const [form, setForm] = React.useState(defaultForm());
 
   // Auto-populate inspectedBy with the logged-in user's name when the form opens
@@ -421,7 +422,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
     try {
       const result = computeResult();
       const formWithDeviations = { ...form, deviations: computedDeviations };
-      const vehicle = vehicles.find(v => v.registration === form.registrationNumber);
+      const vehicle = vehicles.find(v => v.id === selectedVehicleId) ?? vehicles.find(v => v.registration.toLowerCase() === form.registrationNumber.toLowerCase());
       const payload = {
         vehicle_id: vehicle?.id ?? form.registrationNumber,
         vehicle_reg: form.registrationNumber || null,
@@ -450,13 +451,15 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
       setActiveTab(0);
 
       // T47/T48: offer to log breakdown costs as cost entries
+      // Use saved.vehicle_id (guaranteed valid UUID from persisted inspection)
       const breakdownsWithCost = form.monthlyBreakdowns.filter(b => b.costToRepair && parseFloat(b.costToRepair) > 0);
-      if (breakdownsWithCost.length > 0 && vehicle) {
-        setBreakdownCostModal({ vehicleId: vehicle.id, vehicleReg: form.registrationNumber, breakdowns: breakdownsWithCost });
+      if (breakdownsWithCost.length > 0 && saved.vehicle_id) {
+        setBreakdownCostModal({ vehicleId: saved.vehicle_id, vehicleReg: form.registrationNumber, breakdowns: breakdownsWithCost });
       } else {
         setForm(defaultForm());
         setTemplateId('');
         setTemplateAnswers({});
+        setSelectedVehicleId('');
       }
     } catch (e: any) {
       alert('Failed to save inspection: ' + e.message);
@@ -534,7 +537,11 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
             onChange={e => {
               const pool = visibleVehicles.length > 0 ? visibleVehicles : vehicles;
               const v = pool.find(v => v.registration === e.target.value);
-              if (v) { set('registrationNumber', v.registration); set('vehicleMakeModel', `${v.make} ${v.model}`.trim()); }
+              if (v) {
+                set('registrationNumber', v.registration);
+                set('vehicleMakeModel', `${v.make} ${v.model}`.trim());
+                setSelectedVehicleId(v.id);
+              }
             }}
             className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
           >
@@ -593,7 +600,14 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
             <input
               type={type}
               value={form[field] as string}
-              onChange={(e) => set(field, e.target.value)}
+              onChange={(e) => {
+                set(field, e.target.value);
+                if (field === 'registrationNumber') {
+                  const match = vehicles.find(v => v.registration.toLowerCase() === e.target.value.toLowerCase());
+                  setSelectedVehicleId(match?.id ?? '');
+                  if (match && !form.vehicleMakeModel) set('vehicleMakeModel', `${match.make} ${match.model}`.trim());
+                }
+              }}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -1235,7 +1249,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
         <div className="flex gap-3 pt-2">
           <button
             type="button"
-            onClick={() => { setShowForm(false); setForm(defaultForm()); setActiveTab(0); setTemplateId(''); setTemplateAnswers({}); }}
+            onClick={() => { setShowForm(false); setForm(defaultForm()); setActiveTab(0); setTemplateId(''); setTemplateAnswers({}); setSelectedVehicleId(''); }}
             className="flex-1 border border-gray-300 py-2 rounded-lg text-gray-700 hover:bg-gray-50"
           >
             Cancel
@@ -1267,7 +1281,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
             <h1 className="text-2xl font-bold text-gray-900">New Inspection</h1>
             <p className="text-sm text-gray-500">{TABS[activeTab].label}</p>
           </div>
-          <button onClick={() => { setShowForm(false); setForm(defaultForm()); setActiveTab(0); setTemplateId(''); setTemplateAnswers({}); }} className="text-gray-400 hover:text-gray-600">
+          <button onClick={() => { setShowForm(false); setForm(defaultForm()); setActiveTab(0); setTemplateId(''); setTemplateAnswers({}); setSelectedVehicleId(''); }} className="text-gray-400 hover:text-gray-600">
             <X className="h-6 w-6" />
           </button>
         </div>
@@ -1330,7 +1344,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
             if (isDriver && user) {
               base.inspectedBy = user.name;
               const v = visibleVehicles[0];
-              if (v) { base.registrationNumber = v.registration; base.vehicleMakeModel = `${v.make} ${v.model}`.trim(); }
+              if (v) { base.registrationNumber = v.registration; base.vehicleMakeModel = `${v.make} ${v.model}`.trim(); setSelectedVehicleId(v.id); }
             }
             setForm(base);
             setTemplateId('');
@@ -1812,7 +1826,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
                 <h3 className="text-base font-semibold text-gray-900">Log Breakdown Costs?</h3>
                 <p className="text-xs text-gray-500 mt-0.5">The following breakdown costs can be saved as cost entries for {breakdownCostModal.vehicleReg}.</p>
               </div>
-              <button onClick={() => { setBreakdownCostModal(null); setForm(defaultForm()); setTemplateId(''); setTemplateAnswers({}); }} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setBreakdownCostModal(null); setForm(defaultForm()); setTemplateId(''); setTemplateAnswers({}); setSelectedVehicleId(''); }} className="text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -1829,7 +1843,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
             </div>
             <div className="px-5 py-4 flex gap-3 justify-end border-t">
               <button
-                onClick={() => { setBreakdownCostModal(null); setForm(defaultForm()); setTemplateId(''); setTemplateAnswers({}); }}
+                onClick={() => { setBreakdownCostModal(null); setForm(defaultForm()); setTemplateId(''); setTemplateAnswers({}); setSelectedVehicleId(''); }}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
               >
                 Skip
@@ -1862,6 +1876,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
                     setForm(defaultForm());
                     setTemplateId('');
                     setTemplateAnswers({});
+                    setSelectedVehicleId('');
                   } catch (e: any) {
                     alert('Failed to save costs: ' + e.message);
                   } finally {

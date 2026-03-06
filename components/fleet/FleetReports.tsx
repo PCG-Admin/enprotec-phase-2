@@ -95,55 +95,184 @@ function compliancePieData(rows: ComplianceRow[]) {
   }));
 }
 
-/* ─── CSV export ─────────────────────────────────────────────── */
+function groupDeviations(inspections: InspectionRow[]) {
+  const counts: Record<string, { item: string; count: number; vehicles: Set<string> }> = {};
+  inspections.forEach(insp => {
+    const devs: { item?: string; deviation?: string }[] = (insp.answers as any)?.deviations ?? [];
+    devs.forEach(d => {
+      const key = d.item?.trim() || 'Unknown';
+      if (!counts[key]) counts[key] = { item: key, count: 0, vehicles: new Set() };
+      counts[key].count++;
+      if (insp.vehicle_reg) counts[key].vehicles.add(insp.vehicle_reg);
+    });
+  });
+  return Object.values(counts)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 15)
+    .map(r => ({ item: r.item, count: r.count, vehicles: r.vehicles.size }));
+}
+
+/* ─── TSV helpers — tab-separated so Excel opens correctly in all locales ── */
+/** Strip tabs/newlines from a cell value so they don't break columns */
+const tsvCell = (v: string | number | null | undefined): string =>
+  String(v ?? '').replace(/\t/g, ' ').replace(/\r?\n/g, ' ');
+
+const T = '\t'; // column separator
+
+/* ─── Export ─────────────────────────────────────────────────── */
 function exportCSV(
   reportType: string,
   dateRange: string,
-  monthlyInspections: ReturnType<typeof groupByMonth>,
-  monthlyCosts: { month: string; total: number; fuel: number; maintenance: number; other: number }[],
-  complianceData: { name: string; value: number }[],
-  vehicleUtilisation: { vehicle: string; count: number }[],
+  filteredInsp: InspectionRow[],
+  allCosts: CostRow[],
+  compliance: ComplianceRow[],
   vehicles: VehicleRow[],
 ) {
-  let rows: string[] = [];
+  const months = DATE_RANGE_MONTHS[dateRange] ?? 3;
+  const since = new Date(); since.setMonth(since.getMonth() - months);
+  const filteredCosts = allCosts.filter(c => new Date(c.date) >= since);
+
   let header = '';
+  let rows: string[] = [];
 
   if (reportType === 'inspections') {
-    header = 'Month,Completed,Failed,General,Forklift,Generator';
-    rows = monthlyInspections.map(r =>
-      `${r.month},${r.completed},${r.failed},${r.general},${r.forklift},${r.generator}`);
+    header = ['Date','Vehicle Reg','Make & Model','Inspection Type','Site','Inspected By','Result','Deviations','Breakdowns','Current Hours'].join(T);
+    rows = filteredInsp.map(i => {
+      const ans = i.answers as any;
+      const veh = vehicles.find(v => v.id === i.vehicle_id);
+      return [
+        tsvCell(i.started_at.slice(0, 10)),
+        tsvCell(i.vehicle_reg),
+        tsvCell(veh ? `${veh.make} ${veh.model}` : ''),
+        tsvCell(i.inspection_type),
+        tsvCell(ans?.siteAllocation),
+        tsvCell(i.inspector_name),
+        tsvCell(i.status === 'requires_attention' ? 'Requires Attention' : i.status),
+        ans?.deviations?.length ?? 0,
+        ans?.monthlyBreakdowns?.length ?? 0,
+        tsvCell(ans?.currentHours),
+      ].join(T);
+    });
+
   } else if (reportType === 'costs') {
-    header = 'Month,Fuel (R),Maintenance (R),Other (R),Total (R)';
-    rows = monthlyCosts.map(r => `${r.month},${r.fuel},${r.maintenance},${r.other},${r.total}`);
+    header = ['Date','Vehicle Reg','Category','Amount (R)','Description','Supplier','Invoice #','PO #','Quote #','RTO #','KM Reading'].join(T);
+    rows = filteredCosts.map(c => [
+      tsvCell(c.date),
+      tsvCell(c.vehicle_registration),
+      tsvCell(c.category),
+      c.amount.toFixed(2),
+      tsvCell(c.description),
+      tsvCell(c.supplier),
+      tsvCell(c.invoice_number),
+      tsvCell(c.po_number),
+      tsvCell(c.quote_number),
+      tsvCell(c.rto_number),
+      tsvCell(c.km_reading),
+    ].join(T));
+
   } else if (reportType === 'compliance') {
-    header = 'Status,Count';
-    rows = complianceData.map(r => `${r.name},${r.value}`);
+    header = ['Inspection Type','Vehicle Reg','Due Date','Scheduled Date','Completed Date','Status','Assigned To','Notes'].join(T);
+    rows = compliance.map(c => [
+      tsvCell(c.inspection_type),
+      tsvCell(c.vehicle_registration),
+      tsvCell(c.due_date),
+      tsvCell(c.scheduled_date),
+      tsvCell(c.completed_date),
+      tsvCell(c.status),
+      tsvCell(c.assigned_to),
+      tsvCell(c.notes),
+    ].join(T));
+
   } else if (reportType === 'utilization') {
-    header = 'Vehicle,Inspections';
-    rows = vehicleUtilisation.map(r => `${r.vehicle},${r.count}`);
+    header = ['Vehicle Reg','Make & Model','Site','Driver','Total Inspections','Pass','Requires Attention','Fail','Pass Rate %','Last Inspection'].join(T);
+    const map: Record<string, { reg: string; makeModel: string; site: string; driver: string; total: number; pass: number; attn: number; fail: number; last: string }> = {};
+    filteredInsp.forEach(i => {
+      const reg = i.vehicle_reg ?? i.vehicle_id;
+      const veh = vehicles.find(v => v.id === i.vehicle_id);
+      if (!map[reg]) map[reg] = { reg, makeModel: veh ? `${veh.make} ${veh.model}` : '', site: veh?.site_name ?? '', driver: veh?.assigned_driver ?? '', total: 0, pass: 0, attn: 0, fail: 0, last: '' };
+      map[reg].total++;
+      if (i.status === 'pass') map[reg].pass++;
+      else if (i.status === 'requires_attention') map[reg].attn++;
+      else map[reg].fail++;
+      if (i.started_at > map[reg].last) map[reg].last = i.started_at.slice(0, 10);
+    });
+    rows = Object.values(map).sort((a, b) => b.total - a.total).map(r => {
+      const rate = r.total > 0 ? ((r.pass + r.attn) / r.total * 100).toFixed(1) : '0';
+      return [tsvCell(r.reg), tsvCell(r.makeModel), tsvCell(r.site), tsvCell(r.driver), r.total, r.pass, r.attn, r.fail, rate, tsvCell(r.last)].join(T);
+    });
+
+  } else if (reportType === 'deviations') {
+    header = ['Inspection Date','Vehicle Reg','Make & Model','Inspection Type','Site','Deviation Item','Deviation Description'].join(T);
+    filteredInsp.forEach(i => {
+      const devs: { item?: string; deviation?: string }[] = (i.answers as any)?.deviations ?? [];
+      const veh = vehicles.find(v => v.id === i.vehicle_id);
+      devs.forEach(d => {
+        rows.push([
+          tsvCell(i.started_at.slice(0, 10)),
+          tsvCell(i.vehicle_reg),
+          tsvCell(veh ? `${veh.make} ${veh.model}` : ''),
+          tsvCell(i.inspection_type),
+          tsvCell((i.answers as any)?.siteAllocation),
+          tsvCell(d.item),
+          tsvCell(d.deviation),
+        ].join(T));
+      });
+    });
+
+  } else if (reportType === 'pervehicle') {
+    header = ['Vehicle Reg','Make & Model','Site','Fuel (R)','Maintenance (R)','Other (R)','Total (R)'].join(T);
+    const map: Record<string, { reg: string; makeModel: string; site: string; fuel: number; maint: number; other: number }> = {};
+    filteredCosts.forEach(c => {
+      const reg = c.vehicle_registration ?? c.vehicle_id;
+      const veh = vehicles.find(v => v.id === c.vehicle_id);
+      if (!map[reg]) map[reg] = { reg, makeModel: veh ? `${veh.make} ${veh.model}` : '', site: veh?.site_name ?? '', fuel: 0, maint: 0, other: 0 };
+      if (c.category === 'Fuel') map[reg].fuel += c.amount;
+      else if (c.category === 'Maintenance') map[reg].maint += c.amount;
+      else map[reg].other += c.amount;
+    });
+    rows = Object.values(map).sort((a, b) => (b.fuel + b.maint + b.other) - (a.fuel + a.maint + a.other)).map(r => [
+      tsvCell(r.reg), tsvCell(r.makeModel), tsvCell(r.site),
+      r.fuel.toFixed(2), r.maint.toFixed(2), r.other.toFixed(2),
+      (r.fuel + r.maint + r.other).toFixed(2),
+    ].join(T));
+
   } else {
-    const total = monthlyInspections.reduce((s, r) => s + r.completed + r.failed, 0);
-    const failed = monthlyInspections.reduce((s, r) => s + r.failed, 0);
-    const passRate = total > 0 ? ((total - failed) / total * 100).toFixed(1) : '0';
-    const totalCost = monthlyCosts.reduce((s, r) => s + r.total, 0);
-    const active = vehicles.filter(v => v.status === 'Active').length;
-    header = 'Metric,Value';
+    // summary
+    const total = filteredInsp.length;
+    const passed = filteredInsp.filter(i => i.status === 'pass').length;
+    const attn   = filteredInsp.filter(i => i.status === 'requires_attention').length;
+    const failed = filteredInsp.filter(i => i.status === 'fail').length;
+    const totalCost = filteredCosts.reduce((s, c) => s + c.amount, 0);
+    header = ['Category','Metric','Value'].join(T);
     rows = [
-      `Total Vehicles,${vehicles.length}`,
-      `Active,${active}`,
-      `In Maintenance,${vehicles.filter(v => v.status === 'In Maintenance').length}`,
-      `Inspections (${DATE_RANGE_LABELS[dateRange]}),${total}`,
-      `Pass Rate,${passRate}%`,
-      `Total Cost (R),${totalCost}`,
+      ['Fleet','Total Vehicles',vehicles.length].join(T),
+      ['Fleet','Active',vehicles.filter(v => v.status === 'Active').length].join(T),
+      ['Fleet','In Maintenance',vehicles.filter(v => v.status === 'In Maintenance').length].join(T),
+      ['Fleet','Inactive / Decommissioned',vehicles.filter(v => v.status === 'Inactive' || v.status === 'Decommissioned').length].join(T),
+      ['Inspections','Period',DATE_RANGE_LABELS[dateRange]].join(T),
+      ['Inspections','Total',total].join(T),
+      ['Inspections','Pass',passed].join(T),
+      ['Inspections','Requires Attention',attn].join(T),
+      ['Inspections','Fail',failed].join(T),
+      ['Inspections','Pass Rate',(total > 0 ? ((passed + attn) / total * 100).toFixed(1) : 0) + '%'].join(T),
+      ['Costs','Total (R)',totalCost.toFixed(2)].join(T),
+      ['Costs','Fuel (R)',filteredCosts.filter(c => c.category === 'Fuel').reduce((s,c) => s+c.amount,0).toFixed(2)].join(T),
+      ['Costs','Maintenance (R)',filteredCosts.filter(c => c.category === 'Maintenance').reduce((s,c) => s+c.amount,0).toFixed(2)].join(T),
+      ['Costs','Other (R)',filteredCosts.filter(c => c.category !== 'Fuel' && c.category !== 'Maintenance').reduce((s,c) => s+c.amount,0).toFixed(2)].join(T),
+      ['Compliance','Total Items',compliance.length].join(T),
+      ['Compliance','Overdue',compliance.filter(c => c.status === 'Overdue').length].join(T),
+      ['Compliance','Due Soon',compliance.filter(c => c.status === 'Due Soon').length].join(T),
+      ['Compliance','Scheduled',compliance.filter(c => c.status === 'Scheduled').length].join(T),
+      ['Compliance','Completed',compliance.filter(c => c.status === 'Completed').length].join(T),
     ];
   }
 
-  const csv  = [header, ...rows].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
+  const tsv  = [header, ...rows].join('\n');
+  const blob = new Blob(['\uFEFF' + tsv], { type: 'text/tab-separated-values;charset=utf-8' });
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement('a');
   a.href     = url;
-  a.download = `${reportType}-report-${dateRange}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.download = `enprotec-${reportType}-${dateRange}-${new Date().toISOString().slice(0, 10)}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -218,8 +347,9 @@ const FleetReports: React.FC = () => {
   const forkliftCount  = filteredInsp.filter(i => typeOf(i.inspection_type ?? '') === 'forklift').length;
   const generatorCount = filteredInsp.filter(i => typeOf(i.inspection_type ?? '') === 'generator').length;
 
-  const rangeLabel  = DATE_RANGE_LABELS[dateRange];
-  const vehicleCosts = groupCostsByVehicle(allCosts, months);
+  const rangeLabel      = DATE_RANGE_LABELS[dateRange];
+  const vehicleCosts    = groupCostsByVehicle(allCosts, months);
+  const deviationSummary = groupDeviations(filteredInsp);
 
   if (loading) return (
     <div className="flex items-center justify-center h-64">
@@ -245,7 +375,7 @@ const FleetReports: React.FC = () => {
             <Printer className="h-4 w-4" /> Print
           </button>
           <button
-            onClick={() => exportCSV(reportType, dateRange, monthlyInspections, monthlyCosts, complianceData, vehicleUtilisation, vehicles)}
+            onClick={() => exportCSV(reportType, dateRange, filteredInsp, allCosts, compliance, vehicles)}
             className="inline-flex items-center gap-2 bg-sky-600 text-white px-4 py-2 rounded-lg hover:bg-sky-700 text-sm font-medium">
             <Download className="h-4 w-4" /> Export CSV
           </button>
@@ -265,6 +395,7 @@ const FleetReports: React.FC = () => {
               <option value="compliance">Compliance Status</option>
               <option value="utilization">Vehicle Utilisation</option>
               <option value="pervehicle">Cost Per Vehicle</option>
+              <option value="deviations">Deviation Summary</option>
             </select>
           </div>
           <div>
@@ -589,6 +720,93 @@ const FleetReports: React.FC = () => {
         </div>
       )}
 
+      {/* ── Deviation Summary ── */}
+      {reportType === 'deviations' && (
+        <div className="space-y-6">
+          {/* Stats */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {[
+              { label: 'Total Deviations', value: deviationSummary.reduce((s, r) => s + r.count, 0), color: 'bg-red-100', text: 'text-red-600' },
+              { label: 'Unique Defect Types', value: deviationSummary.length, color: 'bg-orange-100', text: 'text-orange-600' },
+              { label: 'Vehicles Affected', value: new Set(filteredInsp.filter(i => ((i.answers as any)?.deviations?.length ?? 0) > 0).map(i => i.vehicle_reg)).size, color: 'bg-yellow-100', text: 'text-yellow-600' },
+            ].map(s => (
+              <div key={s.label} className="bg-white rounded-lg shadow p-5 flex items-center gap-4">
+                <div className={`${s.color} p-3 rounded-full`}>
+                  <span className={`text-xl font-bold ${s.text}`}>{s.value}</span>
+                </div>
+                <p className="text-sm font-medium text-zinc-600">{s.label} ({rangeLabel})</p>
+              </div>
+            ))}
+          </div>
+
+          {deviationSummary.length === 0 ? (
+            <div className="bg-white rounded-lg shadow p-12 text-center">
+              <p className="text-zinc-400">No deviations recorded in this period — fleet is in good shape!</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Bar chart */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-base font-semibold text-zinc-800 mb-4">Top Defects by Frequency</h3>
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart
+                    data={deviationSummary.slice(0, 10).map(r => ({ ...r, item: r.item.length > 22 ? r.item.slice(0, 22) + '…' : r.item }))}
+                    layout="vertical"
+                    margin={{ left: 8, right: 24 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
+                    <XAxis type="number" stroke="#888" tick={{ fontSize: 11 }} allowDecimals={false} />
+                    <YAxis type="category" dataKey="item" width={150} stroke="#888" tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(v: number) => [`${v} occurrence${v !== 1 ? 's' : ''}`, 'Count']} />
+                    <Bar dataKey="count" name="Occurrences" fill="#ef4444" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Ranked table */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-base font-semibold text-zinc-800 mb-4">Ranked Defect Table</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-zinc-100">
+                        <th className="text-center px-3 py-2 font-semibold text-zinc-600 w-10">#</th>
+                        <th className="text-left px-3 py-2 font-semibold text-zinc-600">Deviation Item</th>
+                        <th className="text-center px-3 py-2 font-semibold text-zinc-600">Count</th>
+                        <th className="text-center px-3 py-2 font-semibold text-zinc-600">Vehicles</th>
+                        <th className="text-left px-3 py-2 font-semibold text-zinc-600 w-28">Share</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deviationSummary.map((row, i) => {
+                        const total = deviationSummary.reduce((s, r) => s + r.count, 0);
+                        const pct = total > 0 ? Math.round(row.count / total * 100) : 0;
+                        return (
+                          <tr key={row.item} className={i % 2 === 0 ? '' : 'bg-zinc-50'}>
+                            <td className="px-3 py-2 text-center text-zinc-400 font-mono text-xs">{i + 1}</td>
+                            <td className="px-3 py-2 text-zinc-800 font-medium">{row.item}</td>
+                            <td className="px-3 py-2 text-center font-bold text-red-600">{row.count}</td>
+                            <td className="px-3 py-2 text-center text-zinc-600">{row.vehicles}</td>
+                            <td className="px-3 py-2">
+                              <div className="flex items-center gap-2">
+                                <div className="flex-1 bg-zinc-100 rounded-full h-2">
+                                  <div className="bg-red-400 h-2 rounded-full" style={{ width: `${pct}%` }} />
+                                </div>
+                                <span className="text-xs text-zinc-500 w-8 text-right">{pct}%</span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Recent Exports log */}
       <div className="bg-white rounded-lg shadow">
         <div className="px-6 py-4 border-b border-zinc-200">
@@ -611,7 +829,7 @@ const FleetReports: React.FC = () => {
                   </div>
                 </div>
                 <button
-                  onClick={() => exportCSV(type, dateRange, monthlyInspections, monthlyCosts, complianceData, vehicleUtilisation, vehicles)}
+                  onClick={() => exportCSV(type, dateRange, filteredInsp, allCosts, compliance, vehicles)}
                   className="text-sky-600 hover:text-sky-800">
                   <Download className="h-5 w-5" />
                 </button>

@@ -217,13 +217,13 @@ const Vehicles: React.FC<{ user: User | null }> = ({ user }) => {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-zinc-50 border-b border-zinc-200">
-              <tr>{['Photo','Registration','Make / Model','Type','Site','Driver','Status',''].map(h => (
+              <tr>{['Photo','Registration','Make / Model','Type','Site','Driver','Status','Next Inspection',''].map(h => (
                 <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-zinc-500 uppercase tracking-wide">{h}</th>
               ))}</tr>
             </thead>
             <tbody className="divide-y divide-zinc-100">
               {filtered.length === 0 ? (
-                <tr><td colSpan={8} className="text-center py-12 text-zinc-400 text-sm">
+                <tr><td colSpan={9} className="text-center py-12 text-zinc-400 text-sm">
                   {vehicles.length === 0 ? 'No vehicles yet. Click "Add Vehicle" to get started.' : 'No vehicles match your search.'}
                 </td></tr>
               ) : filtered.map(v => (
@@ -242,6 +242,17 @@ const Vehicles: React.FC<{ user: User | null }> = ({ user }) => {
                     <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[v.status] ?? 'bg-zinc-100 text-zinc-600'}`}>
                       {v.status}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {(() => {
+                      const today = new Date().toISOString().slice(0, 10);
+                      const d = v.next_inspection_date;
+                      if (!d) return <span className="text-zinc-400 text-xs">Not set</span>;
+                      const daysLeft = Math.round((new Date(d).getTime() - new Date(today).getTime()) / 86400000);
+                      if (daysLeft < 0) return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-red-100 text-red-700">Overdue · {d}</span>;
+                      if (daysLeft <= 7) return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-yellow-100 text-yellow-700">Due Soon · {d}</span>;
+                      return <span className="text-xs text-zinc-600">{d}</span>;
+                    })()}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
@@ -316,7 +327,23 @@ const Vehicles: React.FC<{ user: User | null }> = ({ user }) => {
                   <F label="Purchase Date"><input type="date" value={form.purchase_date ?? ''} onChange={e => field('purchase_date', e.target.value)} className={INPUT} /></F>
                   <F label="Acquisition Cost (R)"><input type="number" value={form.acquisition_cost ?? ''} onChange={e => field('acquisition_cost', e.target.value ? +e.target.value : null)} className={INPUT} min={0} /></F>
                   <F label="Last Inspection Date"><input type="date" value={form.last_inspection_date ?? ''} onChange={e => field('last_inspection_date', e.target.value)} className={INPUT} /></F>
-                  <F label="Next Inspection Date"><input type="date" value={form.next_inspection_date ?? ''} onChange={e => field('next_inspection_date', e.target.value)} className={INPUT} /></F>
+                  <div>
+                    <F label="Next Inspection Date"><input type="date" value={form.next_inspection_date ?? ''} onChange={e => field('next_inspection_date', e.target.value)} className={INPUT} /></F>
+                    <div className="flex gap-1 mt-1">
+                      <span className="text-xs text-zinc-400 self-center mr-1">Quick set:</span>
+                      {[['Daily', 1], ['Weekly', 7], ['Monthly', 30]] .map(([label, days]) => {
+                        const base = form.last_inspection_date ?? new Date().toISOString().slice(0, 10);
+                        const d = new Date(base); d.setDate(d.getDate() + (days as number));
+                        const val = d.toISOString().slice(0, 10);
+                        return (
+                          <button key={label as string} type="button" onClick={() => field('next_inspection_date', val)}
+                            className="px-2 py-0.5 text-xs border border-zinc-300 rounded hover:bg-sky-50 hover:border-sky-400 hover:text-sky-700 transition-colors">
+                            {label as string}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
 
                 <F label="Notes"><textarea value={form.notes ?? ''} onChange={e => field('notes', e.target.value)} className={INPUT + ' resize-none'} rows={3} placeholder="Additional notes…" /></F>
