@@ -65,13 +65,13 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (currentView) {
       case 'FleetDashboard':  return <FleetDashboard user={user} />;
-      case 'Vehicles':        return <Vehicles />;
+      case 'Vehicles':        return <Vehicles user={user} />;
       case 'Inspections':     return <Inspections user={user} />;
-      case 'Costs':           return <Costs />;
-      case 'Licenses':        return <Licenses />;
+      case 'Costs':           return <Costs user={user} />;
+      case 'Licenses':        return <Licenses user={user} />;
       case 'FleetReports':    return <FleetReports />;
       case 'Templates':       return <Templates user={user} />;
-      case 'Compliance':      return <Compliance />;
+      case 'Compliance':      return <Compliance user={user} />;
       case 'Administration':  return <Administration currentUser={user} />;
       default:                return <FleetDashboard user={user} />;
     }

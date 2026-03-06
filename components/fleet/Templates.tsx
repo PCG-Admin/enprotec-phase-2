@@ -1,6 +1,6 @@
 import * as React from 'react';
 import {
-  Plus, Edit, Trash2, X, Copy,
+  Plus, Edit, Trash2, X, Copy, Search,
   CheckSquare, List, Type, Image, Hash,
   ChevronUp, ChevronDown, Save, AlertCircle,
   GripVertical, ClipboardList, Loader2,
@@ -10,6 +10,7 @@ import {
   getTemplates, createTemplate, updateTemplate,
   deleteTemplate as deleteTemplateDB,
 } from '../../supabase/services/templates.service';
+import { logAction } from '../../supabase/services/audit.service';
 import type { TemplateRow } from '../../supabase/database.types';
 
 /* ─── Types ──────────────────────────────────────────────────────── */
@@ -368,6 +369,7 @@ const Templates: React.FC<TemplatesProps> = ({ user }) => {
   const [editing, setEditing]         = React.useState<Template | null>(null);
   const [showAddQ, setShowAddQ]       = React.useState(false);
   const [previewId, setPreviewId]     = React.useState<string | null>(null);
+  const [searchTerm, setSearchTerm]   = React.useState('');
 
   // Form state
   const [formName, setFormName]           = React.useState('');
@@ -426,10 +428,12 @@ const Templates: React.FC<TemplatesProps> = ({ user }) => {
         const saved = await updateTemplate(editing.id, payload);
         const tpl: Template = { id: saved.id, name: saved.name, description: saved.description, frequency: saved.frequency as Frequency, questions: saved.questions as Question[], lastUsed: saved.last_used ?? '', active: saved.active };
         setTemplates(prev => prev.map(t => t.id === editing.id ? tpl : t));
+        if (user) logAction(user.id, user.name, 'Updated', 'Templates', `Updated template "${payload.name}"`);
       } else {
         const saved = await createTemplate(payload);
         const tpl: Template = { id: saved.id, name: saved.name, description: saved.description, frequency: saved.frequency as Frequency, questions: saved.questions as Question[], lastUsed: saved.last_used ?? '', active: saved.active };
         setTemplates(prev => [...prev, tpl]);
+        if (user) logAction(user.id, user.name, 'Created', 'Templates', `Created template "${payload.name}" with ${payload.questions?.length ?? 0} questions`);
       }
       closeModal();
     } catch (e: any) {
@@ -469,6 +473,7 @@ const Templates: React.FC<TemplatesProps> = ({ user }) => {
         created_by: null,
       });
       setTemplates(prev => [...prev, { id: saved.id, name: saved.name, description: saved.description, frequency: saved.frequency as Frequency, questions: saved.questions as Question[], lastUsed: saved.last_used ?? '', active: saved.active }]);
+      if (user) logAction(user.id, user.name, 'Created', 'Templates', `Duplicated template "${tpl.name}"`);
     } catch (e: any) {
       alert('Duplicate failed: ' + e.message);
     }
@@ -479,6 +484,7 @@ const Templates: React.FC<TemplatesProps> = ({ user }) => {
     try {
       await deleteTemplateDB(id);
       setTemplates(prev => prev.filter(t => t.id !== id));
+      if (user) logAction(user.id, user.name, 'Deleted', 'Templates', `Deleted template ${id}`);
     } catch (e: any) {
       alert('Delete failed: ' + e.message);
     }
@@ -507,6 +513,12 @@ const Templates: React.FC<TemplatesProps> = ({ user }) => {
     );
   }
 
+  const filteredTemplates = templates.filter(t =>
+    !searchTerm ||
+    t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    t.description.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -521,103 +533,132 @@ const Templates: React.FC<TemplatesProps> = ({ user }) => {
         </button>
       </div>
 
-      {/* Template grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {templates.map(tpl => {
-          const freq    = FREQ_STYLE[tpl.frequency];
-          const isOpen  = previewId === tpl.id;
-          const qCounts = (Object.keys(QT) as QuestionType[]).map(type => ({
-            type, count: tpl.questions.filter(q => q.type === type).length,
-          })).filter(x => x.count > 0);
+      {/* Search bar */}
+      <div className="bg-white rounded-lg shadow p-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-zinc-400" />
+          <input
+            type="text"
+            placeholder="Search templates by name or description…"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 border border-zinc-300 rounded-lg focus:ring-2 focus:ring-sky-500 focus:border-transparent text-sm"
+          />
+        </div>
+      </div>
 
-          return (
-            <div key={tpl.id} className={`bg-white rounded-2xl shadow-sm border-t-4 ${freq.accent} flex flex-col hover:shadow-md transition-shadow`}>
-
-              {/* Card header */}
-              <div className="p-5 flex-1">
-                <div className="flex justify-between items-start mb-2">
-                  <div className="flex-1 pr-3">
-                    <h3 className="text-base font-bold text-zinc-900 leading-snug">{tpl.name}</h3>
-                    <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">{tpl.description}</p>
-                  </div>
-                  <div className="flex gap-1 flex-shrink-0">
-                    <button type="button" onClick={() => duplicateTemplate(tpl)}
-                      className="p-1.5 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-lg transition-all" title="Duplicate">
-                      <Copy className="h-4 w-4" />
-                    </button>
-                    <button type="button" onClick={() => openModal(tpl)}
-                      className="p-1.5 text-sky-500 hover:text-sky-700 hover:bg-sky-50 rounded-lg transition-all" title="Edit">
-                      <Edit className="h-4 w-4" />
-                    </button>
-                    <button type="button" onClick={() => handleDeleteTemplate(tpl.id)}
-                      className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all" title="Delete">
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Stats */}
-                <div className="flex items-center gap-3 mt-4 flex-wrap">
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${freq.badge}`}>
-                    {freq.label}
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-zinc-600">
-                    <ClipboardList className="h-3.5 w-3.5" />
-                    {tpl.questions.length} questions
-                  </span>
-                  <span className="text-xs text-zinc-400">Last used {tpl.lastUsed}</span>
-                </div>
-
-                {/* Question type breakdown */}
-                <div className="flex flex-wrap gap-1.5 mt-3">
-                  {qCounts.map(({ type, count }) => (
-                    <TypeBadge key={type} type={type} size="xs" />
-                  )).map((badge, i) => (
-                    <span key={i} className="flex items-center gap-0.5">
-                      {badge}
-                      <span className="text-xs text-zinc-400 font-medium">{qCounts[i].count}</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Card footer */}
-              <div className="px-5 py-3 border-t border-zinc-100 flex items-center justify-between bg-zinc-50 rounded-b-2xl">
-                <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${tpl.active ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
-                  <span className="text-xs font-medium text-zinc-600">{tpl.active ? 'Active' : 'Inactive'}</span>
-                </div>
-                <button onClick={() => setPreviewId(prev => prev === tpl.id ? null : tpl.id)}
-                  className="text-xs font-semibold text-sky-600 hover:text-sky-800 transition-colors">
-                  {isOpen ? 'Hide preview ↑' : 'Preview questions ↓'}
-                </button>
-              </div>
-
-              {/* Expandable question preview */}
-              {isOpen && (
-                <div className="border-t border-zinc-100 px-5 py-4 max-h-72 overflow-y-auto bg-zinc-50 rounded-b-2xl">
-                  <ol className="space-y-2">
-                    {tpl.questions.map((ques, i) => {
-                      const { Icon, badge } = QT[ques.type];
-                      return (
-                        <li key={ques.id} className="flex items-start gap-2.5 text-sm">
-                          <span className="w-5 h-5 rounded-full bg-zinc-200 flex items-center justify-center text-xs font-bold text-zinc-500 flex-shrink-0 mt-0.5">
-                            {i + 1}
+      {/* Template table */}
+      <div className="bg-white rounded-lg shadow">
+        {filteredTemplates.length === 0 ? (
+          <div className="p-12 text-center">
+            <ClipboardList className="mx-auto h-12 w-12 text-zinc-400" />
+            <h3 className="mt-2 text-lg font-medium text-zinc-900">
+              {searchTerm ? 'No templates match your search' : 'No templates yet'}
+            </h3>
+            <p className="mt-1 text-zinc-500">
+              {searchTerm ? 'Try a different keyword.' : 'Create your first inspection template to get started.'}
+            </p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-zinc-200 text-sm">
+              <thead className="bg-zinc-50">
+                <tr>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500 uppercase tracking-wide">Template</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500 uppercase tracking-wide">Frequency</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500 uppercase tracking-wide">Questions</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500 uppercase tracking-wide">Status</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-zinc-500 uppercase tracking-wide">Last Used</th>
+                  <th className="px-3 py-2 text-right text-xs font-medium text-zinc-500 uppercase tracking-wide">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-zinc-200">
+                {filteredTemplates.map(tpl => {
+                  const freq   = FREQ_STYLE[tpl.frequency];
+                  const isOpen = previewId === tpl.id;
+                  return (
+                    <React.Fragment key={tpl.id}>
+                      <tr className="hover:bg-zinc-50">
+                        <td className="px-3 py-2">
+                          <p className="font-medium text-zinc-900">{tpl.name}</p>
+                          {tpl.description && (
+                            <p className="text-xs text-zinc-500 mt-0.5 max-w-xs truncate">{tpl.description}</p>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${freq.badge}`}>
+                            {freq.label}
                           </span>
-                          <span className={`inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 font-medium ${badge}`}>
-                            <Icon className="h-2.5 w-2.5" />
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-zinc-600">
+                          <span className="inline-flex items-center gap-1">
+                            <ClipboardList className="h-3.5 w-3.5 text-zinc-400" />
+                            {tpl.questions.length}
                           </span>
-                          <span className="text-zinc-700 flex-1 leading-snug">{ques.text}</span>
-                          {ques.required && <span className="text-red-400 font-bold flex-shrink-0 text-xs">*</span>}
-                        </li>
-                      );
-                    })}
-                  </ol>
-                </div>
-              )}
-            </div>
-          );
-        })}
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <div className="flex items-center gap-2">
+                            <div className={`w-2 h-2 rounded-full ${tpl.active ? 'bg-emerald-500' : 'bg-zinc-400'}`} />
+                            <span className="text-xs font-medium text-zinc-600">{tpl.active ? 'Active' : 'Inactive'}</span>
+                          </div>
+                        </td>
+                        <td className="px-3 py-2 whitespace-nowrap text-xs text-zinc-500">{tpl.lastUsed || '—'}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => setPreviewId(prev => prev === tpl.id ? null : tpl.id)}
+                              className="text-xs font-medium text-sky-600 hover:text-sky-800 px-2 py-1 rounded hover:bg-sky-50 transition-colors whitespace-nowrap"
+                            >
+                              {isOpen ? 'Hide ↑' : 'Preview ↓'}
+                            </button>
+                            <button type="button" onClick={() => duplicateTemplate(tpl)}
+                              className="p-1.5 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-lg transition-all" title="Duplicate">
+                              <Copy className="h-4 w-4" />
+                            </button>
+                            <button type="button" onClick={() => openModal(tpl)}
+                              className="p-1.5 text-sky-500 hover:text-sky-700 hover:bg-sky-50 rounded-lg transition-all" title="Edit">
+                              <Edit className="h-4 w-4" />
+                            </button>
+                            <button type="button" onClick={() => handleDeleteTemplate(tpl.id)}
+                              className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all" title="Delete">
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                      {isOpen && (
+                        <tr>
+                          <td colSpan={6} className="bg-zinc-50 px-5 py-4 border-t border-zinc-100">
+                            <p className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2">
+                              Questions ({tpl.questions.length})
+                            </p>
+                            <ol className="space-y-1.5">
+                              {tpl.questions.map((ques, i) => {
+                                const { Icon, badge } = QT[ques.type];
+                                return (
+                                  <li key={ques.id} className="flex items-start gap-2.5 text-sm">
+                                    <span className="w-5 h-5 rounded-full bg-zinc-200 flex items-center justify-center text-xs font-bold text-zinc-500 flex-shrink-0 mt-0.5">
+                                      {i + 1}
+                                    </span>
+                                    <span className={`inline-flex items-center gap-0.5 text-xs px-1.5 py-0.5 rounded-full flex-shrink-0 font-medium ${badge}`}>
+                                      <Icon className="h-2.5 w-2.5" />
+                                    </span>
+                                    <span className="text-zinc-700 flex-1 leading-snug">{ques.text}</span>
+                                    {ques.required && <span className="text-red-400 font-bold flex-shrink-0 text-xs">*</span>}
+                                  </li>
+                                );
+                              })}
+                            </ol>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* ─── Editor Modal ─────────────────────────────────────────── */}

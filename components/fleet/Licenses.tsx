@@ -5,14 +5,15 @@ import {
 } from 'lucide-react';
 import {
   getLicenses, createLicense, updateLicense, deleteLicense,
-  uploadLicenseDoc, computeLicenseStatus,
+  uploadLicenseDoc, computeLicenseStatus, licenseUrgency,
 } from '../../supabase/services/licenses.service';
 import { getVehicles } from '../../supabase/services/vehicles.service';
+import { logAction } from '../../supabase/services/audit.service';
 import type { LicenseRow, LicenseCat } from '../../supabase/database.types';
 import type { VehicleRow } from '../../supabase/database.types';
+import type { User } from '../../types';
 
 type LicenseInsert = Omit<LicenseRow, 'id' | 'created_at' | 'updated_at'>;
-type LicenseStatus = 'active' | 'expiring' | 'expired';
 
 const VEHICLE_TYPES = ['Roadworthy', 'COF', 'Operating Permit', 'Vehicle Disc', 'Other'];
 const DRIVER_TYPES  = ["Driver's Licence", 'PDP', 'Other'];
@@ -21,13 +22,17 @@ const daysLeft = (exp: string) =>
   Math.ceil((new Date(exp).getTime() - Date.now()) / 86_400_000);
 
 const StatusBadge: React.FC<{ expiry: string }> = ({ expiry }) => {
-  const status = computeLicenseStatus(expiry);
-  const cfg: Record<LicenseStatus, { cls: string; Icon: React.FC<{ className?: string }>; label: string }> = {
-    active:   { cls: 'bg-green-100 text-green-800', Icon: CheckCircle, label: 'Active' },
-    expiring: { cls: 'bg-amber-100 text-amber-800', Icon: Clock,       label: 'Expiring Soon' },
-    expired:  { cls: 'bg-red-100 text-red-800',     Icon: AlertCircle, label: 'Expired' },
+  const days = daysLeft(expiry);
+  const urgency = licenseUrgency(expiry);
+  type Urgency = typeof urgency;
+  const cfg: Record<Urgency, { cls: string; Icon: React.FC<{ className?: string }>; label: string }> = {
+    expired:  { cls: 'bg-red-100 text-red-800',       Icon: AlertCircle, label: 'Expired' },
+    critical: { cls: 'bg-red-100 text-red-900',       Icon: AlertCircle, label: `${days}d — Critical` },
+    warning:  { cls: 'bg-orange-100 text-orange-800', Icon: Clock,       label: `${days}d — Warning` },
+    soon:     { cls: 'bg-amber-100 text-amber-800',   Icon: Clock,       label: 'Expiring Soon' },
+    active:   { cls: 'bg-green-100 text-green-800',   Icon: CheckCircle, label: 'Active' },
   };
-  const { cls, Icon, label } = cfg[status];
+  const { cls, Icon, label } = cfg[urgency];
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>
       <Icon className="h-3 w-3" />{label}
@@ -55,14 +60,14 @@ const EMPTY_D_FORM = {
   notes: '',
 };
 
-const Licenses: React.FC = () => {
+const Licenses: React.FC<{ user: User | null }> = ({ user }) => {
   const [licenses, setLicenses]     = React.useState<LicenseRow[]>([]);
   const [vehicles, setVehicles]     = React.useState<VehicleRow[]>([]);
   const [loading, setLoading]       = React.useState(true);
   const [error, setError]           = React.useState<string | null>(null);
   const [activeTab, setActiveTab]   = React.useState<'Vehicle' | 'Driver'>('Vehicle');
   const [searchTerm, setSearchTerm] = React.useState('');
-  const [statusFilter, setStatusFilter] = React.useState<'all' | LicenseStatus>('all');
+  const [statusFilter, setStatusFilter] = React.useState<'all' | 'active' | 'soon' | 'warning' | 'critical' | 'expired'>('all');
   const [showModal, setShowModal]   = React.useState(false);
   const [editId, setEditId]         = React.useState<string | null>(null);
   const [vForm, setVForm]           = React.useState({ ...EMPTY_V_FORM });
@@ -93,17 +98,18 @@ const Licenses: React.FC = () => {
     const matchSearch = !searchTerm ||
       name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       l.license_number.toLowerCase().includes(searchTerm.toLowerCase());
-    const status = computeLicenseStatus(l.expiry_date);
-    const matchStatus = statusFilter === 'all' || status === statusFilter;
+    const matchStatus = statusFilter === 'all' || licenseUrgency(l.expiry_date) === statusFilter;
     return matchSearch && matchStatus;
   });
 
   const counts = {
-    active:   current.filter(l => computeLicenseStatus(l.expiry_date) === 'active').length,
-    expiring: current.filter(l => computeLicenseStatus(l.expiry_date) === 'expiring').length,
-    expired:  current.filter(l => computeLicenseStatus(l.expiry_date) === 'expired').length,
+    active:   current.filter(l => licenseUrgency(l.expiry_date) === 'active').length,
+    soon:     current.filter(l => licenseUrgency(l.expiry_date) === 'soon').length,
+    warning:  current.filter(l => licenseUrgency(l.expiry_date) === 'warning').length,
+    critical: current.filter(l => licenseUrgency(l.expiry_date) === 'critical').length,
+    expired:  current.filter(l => licenseUrgency(l.expiry_date) === 'expired').length,
   };
-  const alertCount = counts.expiring + counts.expired;
+  const alertCount = counts.soon + counts.warning + counts.critical + counts.expired;
 
   const openAdd = () => {
     setSaveError(null);
@@ -180,9 +186,11 @@ const Licenses: React.FC = () => {
       if (editId) {
         saved = await updateLicense(editId, payload);
         setLicenses(p => p.map(l => l.id === editId ? saved : l));
+        if (user) logAction(user.id, user.name, 'Updated', 'Licenses', `Updated ${payload.license_type} license — expires ${payload.expiry_date}`);
       } else {
         saved = await createLicense(payload);
         setLicenses(p => [...p, saved]);
+        if (user) logAction(user.id, user.name, 'Created', 'Licenses', `Added ${payload.license_type} license — expires ${payload.expiry_date}`);
       }
 
       // Upload document if provided
@@ -208,6 +216,7 @@ const Licenses: React.FC = () => {
     try {
       await deleteLicense(id);
       setLicenses(p => p.filter(l => l.id !== id));
+      if (user) logAction(user.id, user.name, 'Deleted', 'Licenses', `Deleted license ${id}`);
     } catch (e: any) {
       alert('Delete failed: ' + e.message);
     }
@@ -269,13 +278,21 @@ const Licenses: React.FC = () => {
 
       {/* Alert banner */}
       {alertCount > 0 && (
-        <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 text-amber-800 rounded-lg p-4 text-sm">
+        <div className={`flex items-start gap-3 rounded-lg p-4 text-sm border ${
+          counts.critical > 0 || counts.expired > 0
+            ? 'bg-red-50 border-red-200 text-red-800'
+            : 'bg-amber-50 border-amber-200 text-amber-800'
+        }`}>
           <AlertCircle className="h-5 w-5 mt-0.5 flex-shrink-0" />
           <div>
-            <strong>{alertCount} license{alertCount > 1 ? 's' : ''} require attention</strong> in the current view —{' '}
-            {counts.expired > 0 && `${counts.expired} expired`}
-            {counts.expired > 0 && counts.expiring > 0 && ', '}
-            {counts.expiring > 0 && `${counts.expiring} expiring within 30 days`}.
+            <strong>{alertCount} license{alertCount > 1 ? 's' : ''} require attention</strong> —{' '}
+            {counts.expired  > 0 && <span className="font-semibold">{counts.expired} expired</span>}
+            {counts.expired  > 0 && counts.critical > 0 && ', '}
+            {counts.critical > 0 && <span className="font-semibold">{counts.critical} critical (≤7 days)</span>}
+            {(counts.expired > 0 || counts.critical > 0) && counts.warning > 0 && ', '}
+            {counts.warning  > 0 && `${counts.warning} warning (≤14 days)`}
+            {(counts.expired > 0 || counts.critical > 0 || counts.warning > 0) && counts.soon > 0 && ', '}
+            {counts.soon     > 0 && `${counts.soon} expiring within 30 days`}.
             {' '}Renew promptly to remain compliant.
           </div>
         </div>
@@ -299,23 +316,25 @@ const Licenses: React.FC = () => {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {([
-          { key: 'active',   label: 'Active',       Icon: CheckCircle, color: 'green' },
-          { key: 'expiring', label: 'Expiring Soon', Icon: Clock,       color: 'amber' },
-          { key: 'expired',  label: 'Expired',       Icon: AlertCircle, color: 'red'   },
-        ] as const).map(({ key, label, Icon, color }) => (
+          { key: 'active',   label: 'Active',        Icon: CheckCircle, bg: 'bg-green-100',  icon: 'text-green-600',  ring: 'ring-green-400'  },
+          { key: 'soon',     label: '≤30 Days',       Icon: Clock,       bg: 'bg-amber-100',  icon: 'text-amber-600',  ring: 'ring-amber-400'  },
+          { key: 'warning',  label: '≤14 Days',       Icon: Clock,       bg: 'bg-orange-100', icon: 'text-orange-600', ring: 'ring-orange-400' },
+          { key: 'critical', label: '≤7 Days',        Icon: AlertCircle, bg: 'bg-red-100',    icon: 'text-red-700',    ring: 'ring-red-400'    },
+          { key: 'expired',  label: 'Expired',        Icon: AlertCircle, bg: 'bg-red-200',    icon: 'text-red-900',    ring: 'ring-red-600'    },
+        ] as const).map(({ key, label, Icon, bg, icon, ring }) => (
           <button key={key}
             onClick={() => setStatusFilter(p => p === key ? 'all' : key)}
-            className={`bg-white rounded-lg shadow p-5 flex items-center gap-4 text-left ring-2 transition-all ${
-              statusFilter === key ? `ring-${color}-400` : 'ring-transparent hover:ring-zinc-200'
+            className={`bg-white rounded-lg shadow p-4 flex items-center gap-3 text-left ring-2 transition-all ${
+              statusFilter === key ? ring : 'ring-transparent hover:ring-zinc-200'
             }`}>
-            <div className={`bg-${color}-100 p-3 rounded-full flex-shrink-0`}>
-              <Icon className={`h-6 w-6 text-${color}-600`} />
+            <div className={`${bg} p-2 rounded-full flex-shrink-0`}>
+              <Icon className={`h-5 w-5 ${icon}`} />
             </div>
             <div>
-              <p className="text-sm font-medium text-zinc-600">{label}</p>
-              <p className="text-2xl font-bold text-zinc-900">{counts[key]}</p>
+              <p className="text-xs font-medium text-zinc-500">{label}</p>
+              <p className="text-xl font-bold text-zinc-900">{counts[key]}</p>
             </div>
           </button>
         ))}

@@ -9,8 +9,10 @@ import {
   markCompleted, syncComplianceStatuses,
 } from '../../supabase/services/compliance.service';
 import { getVehicles } from '../../supabase/services/vehicles.service';
+import { logAction } from '../../supabase/services/audit.service';
 import type { ComplianceRow, CompStatus } from '../../supabase/database.types';
 import type { VehicleRow } from '../../supabase/database.types';
+import type { User } from '../../types';
 
 type ComplianceInsert = Omit<ComplianceRow, 'id' | 'created_at' | 'updated_at'>;
 
@@ -67,7 +69,7 @@ const EMPTY_FORM = {
   assigned_to: '',
 };
 
-const Compliance: React.FC = () => {
+const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
   const [schedule, setSchedule]         = React.useState<ComplianceRow[]>([]);
   const [vehicles, setVehicles]         = React.useState<VehicleRow[]>([]);
   const [loading, setLoading]           = React.useState(true);
@@ -150,6 +152,7 @@ const Compliance: React.FC = () => {
       };
       const created = await createComplianceEntry(payload);
       setSchedule(p => [...p, created].sort((a, b) => a.due_date.localeCompare(b.due_date)));
+      if (user) logAction(user.id, user.name, 'Created', 'Compliance', `Scheduled ${payload.inspection_type} for ${payload.vehicle_registration ?? 'vehicle'} — due ${payload.due_date}`);
       setShowModal(false);
     } catch (e: any) {
       setSaveError(e.message ?? 'Save failed');
@@ -162,6 +165,7 @@ const Compliance: React.FC = () => {
     try {
       const updated = await markCompleted(id);
       setSchedule(p => p.map(s => s.id === id ? updated : s));
+      if (user) logAction(user.id, user.name, 'Completed', 'Compliance', `Marked compliance entry ${id} as completed`);
     } catch (e: any) {
       alert('Failed to mark as completed: ' + e.message);
     }

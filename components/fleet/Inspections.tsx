@@ -2,15 +2,16 @@ import * as React from 'react';
 import {
   ClipboardList, CheckCircle, AlertCircle, XCircle,
   Plus, Search, X, Camera, MapPin, ChevronRight, ChevronLeft,
-  Trash2, Loader2, Download,
+  Trash2, Loader2, Download, Eye,
 } from 'lucide-react';
 import {
   getInspections, createInspection, deleteInspection,
 } from '../../supabase/services/inspections.service';
 import { getVehicles } from '../../supabase/services/vehicles.service';
 import { createCost } from '../../supabase/services/costs.service';
-import type { InspectionRow } from '../../supabase/database.types';
-import type { VehicleRow } from '../../supabase/database.types';
+import { getActiveTemplates } from '../../supabase/services/templates.service';
+import { logAction } from '../../supabase/services/audit.service';
+import type { InspectionRow, VehicleRow, TemplateRow, DbQuestion } from '../../supabase/database.types';
 import type { User } from '../../types';
 import { UserRole } from '../../types';
 import {
@@ -274,15 +275,19 @@ const TABS = [
   { id: 2, label: 'Findings & Breakdowns' },
   { id: 3, label: 'Visual Inspection' },
   { id: 4, label: 'Equipment Checks' },
-  { id: 5, label: 'Deviations & Submit' },
+  { id: 5, label: 'Custom Checklist' },
+  { id: 6, label: 'Deviations & Submit' },
 ];
 
 const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   const isDriver = user?.role === UserRole.Driver;
   const isAdmin  = user?.role === UserRole.Admin;
-  const [inspections, setInspections] = React.useState<InspectionRecord[]>([]);
-  const [vehicles, setVehicles]       = React.useState<VehicleRow[]>([]);
-  const [loadingList, setLoadingList] = React.useState(true);
+  const [inspections, setInspections]       = React.useState<InspectionRecord[]>([]);
+  const [vehicles, setVehicles]             = React.useState<VehicleRow[]>([]);
+  const [templates, setTemplates]           = React.useState<TemplateRow[]>([]);
+  const [templateId, setTemplateId]         = React.useState('');
+  const [templateAnswers, setTemplateAnswers] = React.useState<Record<string, string>>({});
+  const [loadingList, setLoadingList]       = React.useState(true);
   const [submitting, setSubmitting]   = React.useState(false);
   const [showForm, setShowForm] = React.useState(false);
   const [breakdownCostModal, setBreakdownCostModal] = React.useState<{ vehicleId: string; vehicleReg: string; breakdowns: Breakdown[] } | null>(null);
@@ -290,6 +295,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   const [activeTab, setActiveTab] = React.useState(0);
   const [searchTerm, setSearchTerm] = React.useState('');
   const [typeFilter, setTypeFilter] = React.useState<'All' | 'General' | 'Forklift' | 'Generator'>('All');
+  const [viewInspection, setViewInspection] = React.useState<InspectionRecord | null>(null);
   const [form, setForm] = React.useState(defaultForm());
 
   // Auto-populate inspectedBy with the logged-in user's name when the form opens
@@ -300,8 +306,9 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   }, [showForm]);
 
   React.useEffect(() => {
-    Promise.all([getInspections(), getVehicles()])
-      .then(([rows, vehs]) => {
+    Promise.all([getInspections(), getVehicles(), getActiveTemplates()])
+      .then(([rows, vehs, tpls]) => {
+        setTemplates(tpls);
         setVehicles(vehs);
         setInspections(rows.map((r): InspectionRecord => ({
           id: r.id,
@@ -424,12 +431,12 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
         started_at: form.inspectionDate ? new Date(form.inspectionDate).toISOString() : new Date().toISOString(),
         completed_at: new Date().toISOString(),
         status: result,
-        answers: formWithDeviations as any,
+        answers: { ...formWithDeviations, templateId, templateAnswers } as any,
         notes: computedDeviations.map(d => `${d.item}: ${d.deviation}`).join('; ') || null,
         odometer: form.currentHours ? parseInt(form.currentHours) || null : null,
         hour_meter: null as number | null,
         signature_url: null as string | null,
-        template_id: null as string | null,
+        template_id: templateId || null,
       };
       const saved = await createInspection(payload);
       const record: InspectionRecord = {
@@ -438,6 +445,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
         result,
       };
       setInspections(prev => [record, ...prev]);
+      if (user) logAction(user.id, user.name, 'Created', 'Inspections', `Submitted ${form.inspectionType} inspection for ${form.registrationNumber} — result: ${result}`);
       setShowForm(false);
       setActiveTab(0);
 
@@ -447,6 +455,8 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
         setBreakdownCostModal({ vehicleId: vehicle.id, vehicleReg: form.registrationNumber, breakdowns: breakdownsWithCost });
       } else {
         setForm(defaultForm());
+        setTemplateId('');
+        setTemplateAnswers({});
       }
     } catch (e: any) {
       alert('Failed to save inspection: ' + e.message);
@@ -460,6 +470,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
     try {
       await deleteInspection(id);
       setInspections(prev => prev.filter(i => i.id !== id));
+      if (user) logAction(user.id, user.name, 'Deleted', 'Inspections', `Deleted inspection ${id}`);
     } catch (e: any) {
       alert('Delete failed: ' + e.message);
     }
@@ -588,6 +599,31 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
           </div>
         ))}
       </div>
+
+      {/* Custom checklist template selector */}
+      {templates.length > 0 && (
+        <div className="border-t border-gray-200 pt-4">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Custom Checklist Template{' '}
+            <span className="text-gray-400 font-normal text-xs">(optional)</span>
+          </label>
+          <select
+            value={templateId}
+            onChange={e => { setTemplateId(e.target.value); setTemplateAnswers({}); }}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">None — skip custom checklist</option>
+            {templates.map(t => (
+              <option key={t.id} value={t.id}>{t.name} ({t.frequency})</option>
+            ))}
+          </select>
+          {templateId && (
+            <p className="text-xs text-blue-600 mt-1">
+              Custom questions will appear in the "Custom Checklist" tab.
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -1007,6 +1043,110 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   };
 
   const renderTab5 = () => {
+    const selectedTemplate = templates.find((t: TemplateRow) => t.id === templateId);
+
+    if (!selectedTemplate) {
+      return (
+        <div className="flex flex-col items-center justify-center h-48 text-center space-y-3">
+          <ClipboardList className="h-12 w-12 text-gray-300" />
+          <p className="text-sm font-medium text-gray-500">No template selected</p>
+          <p className="text-xs text-gray-400">
+            Go back to "Vehicle Info" and choose a template to add custom questions here.
+          </p>
+        </div>
+      );
+    }
+
+    const questions: DbQuestion[] = selectedTemplate.questions as DbQuestion[];
+    const setAnswer = (qId: string, value: string) =>
+      setTemplateAnswers(prev => ({ ...prev, [qId]: value }));
+
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold text-gray-800">{selectedTemplate.name}</h3>
+            <p className="text-xs text-gray-500">{selectedTemplate.description}</p>
+          </div>
+          <span className="text-xs text-gray-400">{questions.length} questions</span>
+        </div>
+
+        <div className="space-y-3">
+          {questions.map((question, idx) => {
+            const answer = templateAnswers[question.id] ?? '';
+            return (
+              <div key={question.id} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <div className="flex items-start gap-2 mb-3">
+                  <span className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-xs font-bold text-blue-700 flex-shrink-0 mt-0.5">
+                    {idx + 1}
+                  </span>
+                  <p className="text-sm font-medium text-gray-800 flex-1">
+                    {question.text}
+                    {question.required && <span className="text-red-500 ml-1">*</span>}
+                  </p>
+                </div>
+
+                {question.type === 'checkbox' && (
+                  <div className="flex gap-3 ml-8">
+                    <button type="button"
+                      onClick={() => setAnswer(question.id, answer === 'Pass' ? '' : 'Pass')}
+                      className={`px-4 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+                        answer === 'Pass'
+                          ? 'bg-green-100 border-green-300 text-green-800'
+                          : 'bg-white border-gray-300 text-gray-600 hover:border-green-300'
+                      }`}>Pass</button>
+                    <button type="button"
+                      onClick={() => setAnswer(question.id, answer === 'Fail' ? '' : 'Fail')}
+                      className={`px-4 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+                        answer === 'Fail'
+                          ? 'bg-red-100 border-red-300 text-red-800'
+                          : 'bg-white border-gray-300 text-gray-600 hover:border-red-300'
+                      }`}>Fail</button>
+                  </div>
+                )}
+
+                {question.type === 'text' && (
+                  <input type="text" value={answer}
+                    onChange={e => setAnswer(question.id, e.target.value)}
+                    className="ml-8 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter your response…" />
+                )}
+
+                {question.type === 'number' && (
+                  <div className="ml-8 flex items-center gap-2">
+                    <input type="number" value={answer}
+                      onChange={e => setAnswer(question.id, e.target.value)}
+                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 w-32"
+                      placeholder="0" />
+                    {question.unit && <span className="text-sm text-gray-500">{question.unit}</span>}
+                  </div>
+                )}
+
+                {question.type === 'select' && (
+                  <select value={answer}
+                    onChange={e => setAnswer(question.id, e.target.value)}
+                    className="ml-8 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+                    <option value="">Select an option…</option>
+                    {(question.options ?? []).map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                )}
+
+                {question.type === 'photo' && (
+                  <div className="ml-8">
+                    <PhotoUpload label={question.text} value={answer} onChange={v => setAnswer(question.id, v)} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTab6 = () => {
     const manualDeviations = form.deviations.filter(d => !d.id.startsWith('auto-'));
     return (
       <div className="space-y-6">
@@ -1095,7 +1235,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
         <div className="flex gap-3 pt-2">
           <button
             type="button"
-            onClick={() => { setShowForm(false); setForm(defaultForm()); setActiveTab(0); }}
+            onClick={() => { setShowForm(false); setForm(defaultForm()); setActiveTab(0); setTemplateId(''); setTemplateAnswers({}); }}
             className="flex-1 border border-gray-300 py-2 rounded-lg text-gray-700 hover:bg-gray-50"
           >
             Cancel
@@ -1114,7 +1254,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
     );
   };
 
-  const tabContent = [renderTab0, renderTab1, renderTab2, renderTab3, renderTab4, renderTab5];
+  const tabContent = [renderTab0, renderTab1, renderTab2, renderTab3, renderTab4, renderTab5, renderTab6];
 
   // ── Main list view ──────────────────────────────────────────────────────────
 
@@ -1127,7 +1267,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
             <h1 className="text-2xl font-bold text-gray-900">New Inspection</h1>
             <p className="text-sm text-gray-500">{TABS[activeTab].label}</p>
           </div>
-          <button onClick={() => { setShowForm(false); setForm(defaultForm()); setActiveTab(0); }} className="text-gray-400 hover:text-gray-600">
+          <button onClick={() => { setShowForm(false); setForm(defaultForm()); setActiveTab(0); setTemplateId(''); setTemplateAnswers({}); }} className="text-gray-400 hover:text-gray-600">
             <X className="h-6 w-6" />
           </button>
         </div>
@@ -1193,6 +1333,9 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
               if (v) { base.registrationNumber = v.registration; base.vehicleMakeModel = `${v.make} ${v.model}`.trim(); }
             }
             setForm(base);
+            setTemplateId('');
+            setTemplateAnswers({});
+            setActiveTab(0);
             setShowForm(true);
           }}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
@@ -1243,7 +1386,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
             <div className="bg-blue-100 p-3 rounded-full"><ClipboardList className="h-6 w-6 text-blue-600" /></div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Total Inspections</p>
-              <p className="text-2xl font-bold text-gray-900">{inspections.length}</p>
+              <p className="text-2xl font-bold text-gray-900">{filteredInspections.length}</p>
             </div>
           </div>
         </div>
@@ -1252,7 +1395,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
             <div className="bg-green-100 p-3 rounded-full"><CheckCircle className="h-6 w-6 text-green-600" /></div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Pass</p>
-              <p className="text-2xl font-bold text-gray-900">{inspections.filter(i => i.result === 'pass').length}</p>
+              <p className="text-2xl font-bold text-gray-900">{filteredInspections.filter(i => i.result === 'pass').length}</p>
             </div>
           </div>
         </div>
@@ -1261,7 +1404,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
             <div className="bg-yellow-100 p-3 rounded-full"><AlertCircle className="h-6 w-6 text-yellow-600" /></div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600">Attention / Fail</p>
-              <p className="text-2xl font-bold text-gray-900">{inspections.filter(i => i.result !== 'pass').length}</p>
+              <p className="text-2xl font-bold text-gray-900">{filteredInspections.filter(i => i.result !== 'pass').length}</p>
             </div>
           </div>
         </div>
@@ -1317,6 +1460,9 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
                     <td className="px-3 py-2 whitespace-nowrap"><ResultBadge result={insp.result} /></td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => setViewInspection(insp)} className="text-indigo-500 hover:text-indigo-700" title="View Inspection">
+                          <Eye className="h-4 w-4" />
+                        </button>
                         <button onClick={() => downloadInspection(insp)} className="text-blue-500 hover:text-blue-700" title="Download Inspection">
                           <Download className="h-4 w-4" />
                         </button>
@@ -1335,6 +1481,328 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
         )}
       </div>
 
+      {/* ── T25: Inspection read-only view modal ── */}
+      {viewInspection && (
+        <div className="fixed inset-0 bg-black/60 z-50 overflow-y-auto">
+          <div className="min-h-screen flex items-start justify-center p-4 py-8">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b sticky top-0 bg-white z-10 rounded-t-xl">
+                <div className="flex items-center gap-3 min-w-0">
+                  <ClipboardList className="h-5 w-5 text-blue-600 shrink-0" />
+                  <div className="min-w-0">
+                    <h2 className="text-base font-semibold text-gray-900 truncate">
+                      {viewInspection.vehicleMakeModel} — {viewInspection.registrationNumber}
+                    </h2>
+                    <p className="text-xs text-gray-500">{viewInspection.inspectionDate} · {viewInspection.inspectedBy}</p>
+                  </div>
+                  <ResultBadge result={viewInspection.result} />
+                </div>
+                <div className="flex items-center gap-2 ml-4 shrink-0">
+                  <button onClick={() => downloadInspection(viewInspection)} className="flex items-center gap-1 px-3 py-1.5 text-sm text-blue-600 border border-blue-300 rounded-lg hover:bg-blue-50">
+                    <Download className="h-4 w-4" />
+                    Download
+                  </button>
+                  <button onClick={() => setViewInspection(null)} className="text-gray-400 hover:text-gray-600">
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Body */}
+              <div className="px-6 py-6 space-y-8">
+
+                {/* Vehicle Info */}
+                <section>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Vehicle Information</h3>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-x-6 gap-y-3 text-sm">
+                    {([
+                      ['Type', viewInspection.inspectionType],
+                      ['Site', viewInspection.siteAllocation],
+                      ['Make / Model', viewInspection.vehicleMakeModel],
+                      ['Registration', viewInspection.registrationNumber],
+                      ['Current Hours', viewInspection.currentHours],
+                      ['Last Service Date', viewInspection.lastServiceDate],
+                      ['Last Service Hours', viewInspection.lastServiceHours],
+                      ['Next Service Date', viewInspection.nextServiceDate],
+                      ['Next Service Hours', viewInspection.nextServiceHours],
+                      ['Prev Load Test', viewInspection.previousLoadTestDate],
+                      ['Next Load Test', viewInspection.nextLoadTestDate],
+                      ['Serial Number', viewInspection.serialNumberText],
+                      ['Total Maint. Cost', viewInspection.totalMaintenanceCost ? `R ${viewInspection.totalMaintenanceCost}` : ''],
+                      ['Avg Monthly Cost', viewInspection.avgMonthlyMaintenanceCost ? `R ${viewInspection.avgMonthlyMaintenanceCost}` : ''],
+                    ] as [string, string][]).filter(([, v]) => v).map(([label, val]) => (
+                      <div key={label}>
+                        <p className="text-xs text-gray-500">{label}</p>
+                        <p className="font-medium text-gray-900">{val}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                {/* Vehicle Photos */}
+                {(() => {
+                  const photos = [
+                    { label: 'Front', src: viewInspection.vehicleFrontPhoto },
+                    { label: 'Left', src: viewInspection.vehicleLeftPhoto },
+                    { label: 'Right', src: viewInspection.vehicleRightPhoto },
+                    { label: 'Back', src: viewInspection.vehicleBackPhoto },
+                    { label: 'Interior', src: viewInspection.interiorPhoto },
+                    { label: 'Serial No.', src: viewInspection.serialNumberPhoto },
+                    { label: 'Service Sticker', src: viewInspection.serviceSticker },
+                  ].filter(p => p.src);
+                  if (!photos.length) return null;
+                  return (
+                    <section>
+                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Photos</h3>
+                      <div className="grid grid-cols-3 md:grid-cols-4 gap-3">
+                        {photos.map(p => (
+                          <div key={p.label} className="text-center">
+                            <img src={p.src} alt={p.label} className="w-full h-24 object-cover rounded-lg border" />
+                            <p className="text-xs text-gray-500 mt-1">{p.label}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })()}
+
+                {/* Weekly Use */}
+                {viewInspection.weeklyUse?.length > 0 && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Weekly Use</h3>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Week</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Hours</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Checklists Done</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Findings</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Communicated</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {viewInspection.weeklyUse.map((w, i) => (
+                            <tr key={i} className="bg-white">
+                              <td className="px-3 py-1.5">{w.weekLabel || `Week ${i + 1}`}</td>
+                              <td className="px-3 py-1.5">{w.operationalHours || '—'}</td>
+                              <td className="px-3 py-1.5"><span className={`px-1.5 py-0.5 rounded text-xs ${w.checklistsCompleted === 'Yes' ? 'bg-green-100 text-green-800' : w.checklistsCompleted === 'No' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-500'}`}>{w.checklistsCompleted || '—'}</span></td>
+                              <td className="px-3 py-1.5"><span className={`px-1.5 py-0.5 rounded text-xs ${w.findingsOnChecklists === 'No' ? 'bg-green-100 text-green-800' : w.findingsOnChecklists === 'Yes' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-500'}`}>{w.findingsOnChecklists || '—'}</span></td>
+                              <td className="px-3 py-1.5"><span className={`px-1.5 py-0.5 rounded text-xs ${w.findingsCommunicated === 'Yes' ? 'bg-green-100 text-green-800' : w.findingsCommunicated === 'No' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-500'}`}>{w.findingsCommunicated || '—'}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )}
+
+                {/* Checklist Findings */}
+                {viewInspection.checklistFindings?.length > 0 && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Checklist Findings</h3>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Date</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Description</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Remedial Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {viewInspection.checklistFindings.map((f, i) => (
+                            <tr key={i} className="bg-white">
+                              <td className="px-3 py-1.5 whitespace-nowrap">{f.date || '—'}</td>
+                              <td className="px-3 py-1.5">{f.description || '—'}</td>
+                              <td className="px-3 py-1.5">{f.remedialAction || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )}
+
+                {/* Monthly Breakdowns */}
+                {viewInspection.monthlyBreakdowns?.length > 0 && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Monthly Breakdowns</h3>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">#</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Description</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Duration (hrs)</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Spare Parts</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Cost (R)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {viewInspection.monthlyBreakdowns.map((b, i) => (
+                            <tr key={i} className="bg-white">
+                              <td className="px-3 py-1.5 text-gray-500">{i + 1}</td>
+                              <td className="px-3 py-1.5">{b.description || '—'}</td>
+                              <td className="px-3 py-1.5">{b.durationHrs || '—'}</td>
+                              <td className="px-3 py-1.5">{b.spareParts || '—'}</td>
+                              <td className="px-3 py-1.5 font-medium">{b.costToRepair ? `R ${parseFloat(b.costToRepair).toLocaleString('en-ZA')}` : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )}
+
+                {/* Equipment Checks */}
+                <section>
+                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Equipment Checks</h3>
+                  {(() => {
+                    const eq = viewInspection.equipment;
+                    const yn = (v: string) => (
+                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${v === 'Yes' ? 'bg-green-100 text-green-800' : v === 'No' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-500'}`}>{v || '—'}</span>
+                    );
+                    const cond = (v: string) => (
+                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${v === 'Good' || v === 'Ok' ? 'bg-green-100 text-green-800' : v === 'Damaged' ? 'bg-yellow-100 text-yellow-800' : v === 'Not Working' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-500'}`}>{v || '—'}</span>
+                    );
+                    const row = (label: string, val: React.ReactNode) => (
+                      <div className="flex items-center justify-between py-1.5 border-b border-gray-100 last:border-0">
+                        <span className="text-xs text-gray-600">{label}</span>
+                        <span>{val}</span>
+                      </div>
+                    );
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                          <p className="text-xs font-semibold text-gray-400 mb-2 uppercase">Exterior / Safety</p>
+                          {row('Windscreen', cond(eq.windscreenCondition))}
+                          {row('Wipers', cond(eq.wipersCondition))}
+                          {row('Headlights Working', yn(eq.headlightsBothWorking))}
+                          {row('Headlights Free from Damage', yn(eq.headlightsFreeFromDamage))}
+                          {row('Taillights Working', yn(eq.taillightsBothWorking))}
+                          {row('Left Indicator', yn(eq.leftIndicatorWorking))}
+                          {row('Right Indicator', yn(eq.rightIndicatorWorking))}
+                          {row('Hazards', yn(eq.hazardsWorking))}
+                          {row('Hooter', yn(eq.hooterWorking))}
+                          {row('Fire Extinguisher', yn(eq.fireExtinguisher))}
+                          {row('Stop Block', yn(eq.stopBlock))}
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-gray-400 mb-2 uppercase">Engine / Mechanical</p>
+                          {row('Engine Oil Level', yn(eq.engineOilLevel))}
+                          {row('Oil Leaks', yn(eq.oilLeaks))}
+                          {row('Coolant Level', yn(eq.coolantLevel))}
+                          {row('Coolant Leaks', yn(eq.coolantLeaks))}
+                          {row('Fan Belt', cond(eq.fanBelt))}
+                          {row('Alternator Belt', cond(eq.alternatorBelt))}
+                          {row('Water Hoses', cond(eq.waterHoses))}
+                          {row('Suspension', yn(eq.suspension))}
+                          {row('Brakes', yn(eq.brakes))}
+                          {row('Clutch', yn(eq.clutch))}
+                          {row('Air Conditioner', yn(eq.airConditioner))}
+                          {row('Seatbelts', yn(eq.seatbelts))}
+                        </div>
+                        <div className="md:col-span-2">
+                          <p className="text-xs font-semibold text-gray-400 mb-2 uppercase">Wheels</p>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            {(['leftFrontWheel', 'rightFrontWheel', 'leftRearWheel', 'rightRearWheel'] as const).map(w => {
+                              const wheel = eq[w];
+                              const label = { leftFrontWheel: 'Left Front', rightFrontWheel: 'Right Front', leftRearWheel: 'Left Rear', rightRearWheel: 'Right Rear' }[w];
+                              return (
+                                <div key={w} className="border border-gray-200 rounded-lg p-3">
+                                  <p className="text-xs font-medium text-gray-700 mb-2">{label}</p>
+                                  {wheel.photo && <img src={wheel.photo} alt={label} className="w-full h-16 object-cover rounded mb-2" />}
+                                  <div className="space-y-1 text-xs">
+                                    <div className="flex justify-between"><span className="text-gray-500">Tread</span>{cond(wheel.tyreThreadCondition)}</div>
+                                    <div className="flex justify-between"><span className="text-gray-500">Bubbles</span>{yn(wheel.bubblesOrDamage)}</div>
+                                    <div className="flex justify-between"><span className="text-gray-500">Nuts OK</span>{yn(wheel.allWheelNutsInPlace)}</div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </section>
+
+                {/* Custom Checklist */}
+                {(() => {
+                  const raw = viewInspection as any;
+                  const tId = raw.templateId as string | undefined;
+                  const tAnswers = raw.templateAnswers as Record<string, string> | undefined;
+                  const tpl = tId ? templates.find(t => t.id === tId) : null;
+                  if (!tpl || !tAnswers) return null;
+                  return (
+                    <section>
+                      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Custom Checklist — {tpl.name}</h3>
+                      <div className="space-y-1">
+                        {(tpl.questions as any[]).map((q: any, i: number) => (
+                          <div key={q.id || i} className="flex items-start justify-between py-2 border-b border-gray-100 last:border-0">
+                            <p className="text-sm text-gray-800">{q.text}{q.required && <span className="text-red-500 ml-0.5">*</span>}</p>
+                            <div className="ml-4 shrink-0">
+                              {tAnswers[q.id] ? (
+                                q.type === 'checkbox' ? (
+                                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${tAnswers[q.id] === 'pass' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                    {tAnswers[q.id] === 'pass' ? 'Pass' : 'Fail'}
+                                  </span>
+                                ) : q.type === 'photo' ? (
+                                  <img src={tAnswers[q.id]} alt={q.text} className="max-h-16 rounded border" />
+                                ) : (
+                                  <span className="text-sm text-gray-700">{tAnswers[q.id]}{q.unit ? ` ${q.unit}` : ''}</span>
+                                )
+                              ) : <span className="text-xs text-gray-400">—</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  );
+                })()}
+
+                {/* Deviations */}
+                {viewInspection.deviations?.length > 0 && (
+                  <section>
+                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Deviations ({viewInspection.deviations.length})</h3>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500 w-8">#</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Item</th>
+                            <th className="px-3 py-2 text-left font-medium text-gray-500">Deviation</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {viewInspection.deviations.map((d, i) => (
+                            <tr key={i} className="bg-white">
+                              <td className="px-3 py-1.5 text-gray-500">{i + 1}</td>
+                              <td className="px-3 py-1.5 font-medium text-gray-800">{d.item || '—'}</td>
+                              <td className="px-3 py-1.5 text-gray-600">{d.deviation || '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                )}
+
+              </div>
+
+              {/* Footer */}
+              <div className="px-6 py-4 border-t flex justify-end rounded-b-xl">
+                <button onClick={() => setViewInspection(null)} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg text-sm hover:bg-gray-200">
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── T47/T48: Log breakdown costs modal ── */}
       {breakdownCostModal && (
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
@@ -1344,7 +1812,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
                 <h3 className="text-base font-semibold text-gray-900">Log Breakdown Costs?</h3>
                 <p className="text-xs text-gray-500 mt-0.5">The following breakdown costs can be saved as cost entries for {breakdownCostModal.vehicleReg}.</p>
               </div>
-              <button onClick={() => { setBreakdownCostModal(null); setForm(defaultForm()); }} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => { setBreakdownCostModal(null); setForm(defaultForm()); setTemplateId(''); setTemplateAnswers({}); }} className="text-gray-400 hover:text-gray-600">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -1361,7 +1829,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
             </div>
             <div className="px-5 py-4 flex gap-3 justify-end border-t">
               <button
-                onClick={() => { setBreakdownCostModal(null); setForm(defaultForm()); }}
+                onClick={() => { setBreakdownCostModal(null); setForm(defaultForm()); setTemplateId(''); setTemplateAnswers({}); }}
                 className="px-4 py-2 border border-gray-300 rounded-lg text-sm text-gray-700 hover:bg-gray-50"
               >
                 Skip
@@ -1392,6 +1860,8 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
                     }
                     setBreakdownCostModal(null);
                     setForm(defaultForm());
+                    setTemplateId('');
+                    setTemplateAnswers({});
                   } catch (e: any) {
                     alert('Failed to save costs: ' + e.message);
                   } finally {

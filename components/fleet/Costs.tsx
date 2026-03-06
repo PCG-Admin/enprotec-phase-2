@@ -11,8 +11,10 @@ import {
   getCosts, createCost, updateCost, deleteCost, getMonthlyCostTotals,
 } from '../../supabase/services/costs.service';
 import { getVehicles } from '../../supabase/services/vehicles.service';
+import { logAction } from '../../supabase/services/audit.service';
 import type { CostRow, CostCat } from '../../supabase/database.types';
 import type { VehicleRow } from '../../supabase/database.types';
+import type { User } from '../../types';
 
 type CostInsert = Omit<CostRow, 'id' | 'created_at' | 'updated_at'>;
 
@@ -67,7 +69,7 @@ const exportCSV = (data: CostRow[]) => {
   URL.revokeObjectURL(url);
 };
 
-const Costs: React.FC = () => {
+const Costs: React.FC<{ user: User | null }> = ({ user }) => {
   const [costs, setCosts]           = React.useState<CostRow[]>([]);
   const [vehicles, setVehicles]     = React.useState<VehicleRow[]>([]);
   const [trendData, setTrendData]   = React.useState<{ month: string; total: number }[]>([]);
@@ -178,9 +180,11 @@ const Costs: React.FC = () => {
       if (editId) {
         const updated = await updateCost(editId, payload);
         setCosts(p => p.map(c => c.id === editId ? updated : c));
+        if (user) logAction(user.id, user.name, 'Updated', 'Costs', `Updated ${payload.category} cost for ${payload.vehicle_registration ?? 'vehicle'} — R${payload.amount}`);
       } else {
         const created = await createCost(payload);
         setCosts(p => [created, ...p]);
+        if (user) logAction(user.id, user.name, 'Created', 'Costs', `Added ${payload.category} cost for ${payload.vehicle_registration ?? 'vehicle'} — R${payload.amount}`);
       }
       setShowModal(false);
     } catch (e: any) {
@@ -195,6 +199,7 @@ const Costs: React.FC = () => {
     try {
       await deleteCost(id);
       setCosts(p => p.filter(c => c.id !== id));
+      if (user) logAction(user.id, user.name, 'Deleted', 'Costs', `Deleted cost entry ${id}`);
     } catch (e: any) {
       alert('Delete failed: ' + e.message);
     }

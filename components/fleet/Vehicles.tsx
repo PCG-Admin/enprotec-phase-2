@@ -5,7 +5,9 @@ import {
   type VehicleInsert,
 } from '../../supabase/services/vehicles.service';
 import { getSites } from '../../supabase/services/sites.service';
+import { logAction } from '../../supabase/services/audit.service';
 import type { VehicleRow, SiteRow } from '../../supabase/database.types';
+import type { User } from '../../types';
 
 const STATUS_COLORS: Record<string, string> = {
   'Active':           'bg-emerald-100 text-emerald-700',
@@ -33,7 +35,7 @@ const F: React.FC<{ label: string; children: React.ReactNode }> = ({ label, chil
   </div>
 );
 
-const Vehicles: React.FC = () => {
+const Vehicles: React.FC<{ user: User | null }> = ({ user }) => {
   const [vehicles, setVehicles]     = React.useState<VehicleRow[]>([]);
   const [sites, setSites]           = React.useState<SiteRow[]>([]);
   const [loading, setLoading]       = React.useState(true);
@@ -112,6 +114,7 @@ const Vehicles: React.FC = () => {
           updated = await updateVehicle(editId, { photo_url: url });
         }
         setVehicles(vs => vs.map(v => v.id === editId ? updated : v));
+        if (user) logAction(user.id, user.name, 'Updated', 'Vehicles', `Updated vehicle ${form.registration}`);
       } else {
         const created = await createVehicle(form);
         let final = created;
@@ -120,6 +123,7 @@ const Vehicles: React.FC = () => {
           final = await updateVehicle(created.id, { photo_url: url });
         }
         setVehicles(vs => [final, ...vs]);
+        if (user) logAction(user.id, user.name, 'Created', 'Vehicles', `Added vehicle ${form.registration} (${form.make} ${form.model})`);
       }
       setShowModal(false);
     } catch (e: any) {
@@ -134,6 +138,7 @@ const Vehicles: React.FC = () => {
     try {
       await deleteVehicle(id);
       setVehicles(vs => vs.filter(v => v.id !== id));
+      if (user) logAction(user.id, user.name, 'Deleted', 'Vehicles', `Deleted vehicle ${id}`);
     } catch (e: any) {
       alert(e.message ?? 'Delete failed.');
     }

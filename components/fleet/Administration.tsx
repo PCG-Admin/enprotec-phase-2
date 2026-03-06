@@ -9,7 +9,7 @@ import type { ProfileRow, SiteRow, AuditRow, UserStatus } from '../../supabase/d
 import { getProfiles, updateProfile, setUserStatus } from '../../supabase/services/profiles.service';
 import { createFleetUser, deleteFleetUser } from '../../supabase/services/auth.service';
 import { getSites, createSite, updateSite, deleteSite } from '../../supabase/services/sites.service';
-import { getAuditLog } from '../../supabase/services/audit.service';
+import { getAuditLog, logAction } from '../../supabase/services/audit.service';
 
 const TABS = ['Users', 'Sites', 'Settings', 'Audit Log'];
 
@@ -58,15 +58,35 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
   const [auditLoading, setAuditLoading]   = React.useState(false);
   const [auditLoaded, setAuditLoaded]     = React.useState(false);
 
-  // ── Settings state (local-only for now) ──────────────────────────────────
-  const [settings, setSettings] = React.useState({
-    companyName:         'Enprotec',
-    notifyOverdue:       true,
-    notifyLicenseExpiry: true,
-    notifyCostThreshold: false,
-    costThreshold:       '50000',
-    defaultFrequency:    'Monthly',
+  // ── Settings state (persisted to localStorage) ────────────────────────────
+  const [settings, setSettings] = React.useState(() => {
+    try {
+      const saved = localStorage.getItem('enprotec_settings');
+      if (saved) return JSON.parse(saved);
+    } catch { /* ignore */ }
+    return {
+      companyName:         'Enprotec',
+      companyEmail:        '',
+      companyPhone:        '',
+      companyAddress:      '',
+      companyWebsite:      '',
+      notifyOverdue:       true,
+      notifyLicenseExpiry: true,
+      notifyCostThreshold: false,
+      costThreshold:       '50000',
+      defaultFrequency:    'Monthly',
+      licenseWarnDays30:   true,
+      licenseWarnDays14:   true,
+      licenseWarnDays7:    true,
+    };
   });
+  const [settingsSaved, setSettingsSaved] = React.useState(false);
+
+  const saveSettings = () => {
+    localStorage.setItem('enprotec_settings', JSON.stringify(settings));
+    setSettingsSaved(true);
+    setTimeout(() => setSettingsSaved(false), 2500);
+  };
 
   // ── Load data ────────────────────────────────────────────────────────────
   React.useEffect(() => {
@@ -129,6 +149,7 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
       if (editingProfile) {
         const updated = await updateProfile(editingProfile.id, { name: userForm.name, role: userForm.role as any });
         setProfiles(p => p.map(u => u.id === editingProfile.id ? updated : u));
+        logAction(currentUser.id, currentUser.name, 'Updated', 'Administration', `Updated user "${userForm.name}" role to ${userForm.role}`);
       } else {
         if (!userForm.password || userForm.password.length < 6) {
           setUserSaveErr('Password must be at least 6 characters.');
@@ -140,6 +161,7 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
         // Reload profiles to get the new user
         const fresh = await getProfiles();
         setProfiles(fresh);
+        logAction(currentUser.id, currentUser.name, 'Created', 'Administration', `Created user "${userForm.name}" (${userForm.email}) as ${userForm.role}`);
       }
       setShowUserModal(false);
     } catch (e: any) {
@@ -168,6 +190,7 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
     const { error } = await deleteFleetUser(profile.id);
     if (error) { alert('Delete failed: ' + error); return; }
     setProfiles(p => p.filter(u => u.id !== profile.id));
+    logAction(currentUser.id, currentUser.name, 'Deleted', 'Administration', `Deleted user "${profile.name}" (${profile.email})`);
   };
 
   // ── Site helpers ─────────────────────────────────────────────────────────
@@ -198,6 +221,7 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
           contact: siteForm.contact || null,
         });
         setSites(p => p.map(s => s.id === editingSite.id ? updated : s));
+        logAction(currentUser.id, currentUser.name, 'Updated', 'Administration', `Updated site "${siteForm.name}"`);
       } else {
         const created = await createSite({
           name: siteForm.name,
@@ -206,6 +230,7 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
           status: 'Active',
         });
         setSites(p => [...p, created]);
+        logAction(currentUser.id, currentUser.name, 'Created', 'Administration', `Created site "${siteForm.name}" at ${siteForm.location}`);
       }
       setShowSiteModal(false);
     } catch (e: any) {
@@ -220,6 +245,7 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
     try {
       await deleteSite(id);
       setSites(p => p.filter(s => s.id !== id));
+      logAction(currentUser.id, currentUser.name, 'Deleted', 'Administration', `Deleted site ${id}`);
     } catch (e: any) {
       alert('Delete failed: ' + e.message);
     }
@@ -402,13 +428,30 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
       {/* ── Settings Tab ──────────────────────────────────────────────────── */}
       {activeTab === 2 && (
         <div className="max-w-2xl space-y-6">
+
+          {/* Company Details */}
           <div className="bg-white rounded-lg shadow p-6 space-y-4">
-            <h3 className="font-semibold text-gray-900">Company Settings</h3>
+            <h3 className="font-semibold text-gray-900">Company Details</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {([
+                { key: 'companyName',    label: 'Company Name',    type: 'text'  },
+                { key: 'companyEmail',   label: 'Email Address',   type: 'email' },
+                { key: 'companyPhone',   label: 'Phone Number',    type: 'tel'   },
+                { key: 'companyWebsite', label: 'Website',         type: 'url'   },
+              ] as { key: keyof typeof settings; label: string; type: string }[]).map(({ key, label, type }) => (
+                <div key={key}>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+                  <input type={type} value={settings[key] as string}
+                    onChange={e => setSettings(p => ({ ...p, [key]: e.target.value }))}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+                </div>
+              ))}
+            </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
-              <input type="text" value={settings.companyName}
-                onChange={e => setSettings(p => ({ ...p, companyName: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+              <label className="block text-sm font-medium text-gray-700 mb-1">Company Address</label>
+              <textarea rows={2} value={settings.companyAddress}
+                onChange={e => setSettings(p => ({ ...p, companyAddress: e.target.value }))}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 resize-none" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Default Inspection Frequency</label>
@@ -422,13 +465,14 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
             </div>
           </div>
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="font-semibold text-gray-900 mb-4">Notification Preferences</h3>
-            <div className="space-y-4">
+          {/* Notification Preferences */}
+          <div className="bg-white rounded-lg shadow p-6 space-y-4">
+            <h3 className="font-semibold text-gray-900">Notification Preferences</h3>
+            <div className="space-y-3">
               {([
-                { key: 'notifyOverdue',       label: 'Overdue inspection alerts',    desc: 'Alert when inspection is past due date' },
-                { key: 'notifyLicenseExpiry', label: 'License expiry reminders',     desc: '30, 14 and 7 days before expiry' },
-                { key: 'notifyCostThreshold', label: 'Monthly cost threshold alerts', desc: 'Alert when costs exceed set limit' },
+                { key: 'notifyOverdue',       label: 'Overdue inspection alerts',    desc: 'Show alert when an inspection is past its due date' },
+                { key: 'notifyLicenseExpiry', label: 'License expiry reminders',     desc: 'Show warnings when licenses are nearing expiry' },
+                { key: 'notifyCostThreshold', label: 'Monthly cost threshold alerts', desc: 'Alert when vehicle costs exceed a set monthly limit' },
               ] as { key: keyof typeof settings; label: string; desc: string }[]).map(({ key, label, desc }) => (
                 <div key={key} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                   <div>
@@ -438,17 +482,48 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
                   <Toggle on={!!settings[key]} onChange={() => setSettings(p => ({ ...p, [key]: !p[key] }))} />
                 </div>
               ))}
-              {settings.notifyCostThreshold && (
-                <div className="pl-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cost Threshold (R)</label>
-                  <input type="number" value={settings.costThreshold}
-                    onChange={e => setSettings(p => ({ ...p, costThreshold: e.target.value }))}
-                    className="w-40 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
-                </div>
-              )}
             </div>
+
+            {/* License warning thresholds */}
+            {settings.notifyLicenseExpiry && (
+              <div className="pl-2 pt-1 space-y-2">
+                <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Warn me at:</p>
+                {([
+                  { key: 'licenseWarnDays30', label: '30 days before expiry', color: 'amber'  },
+                  { key: 'licenseWarnDays14', label: '14 days before expiry', color: 'orange' },
+                  { key: 'licenseWarnDays7',  label: '7 days before expiry',  color: 'red'    },
+                ] as { key: keyof typeof settings; label: string; color: string }[]).map(({ key, label }) => (
+                  <label key={key} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                    <input type="checkbox" checked={!!settings[key]}
+                      onChange={() => setSettings(p => ({ ...p, [key]: !p[key] }))}
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            )}
+
+            {/* Cost threshold input */}
+            {settings.notifyCostThreshold && (
+              <div className="pl-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Cost Threshold (R)</label>
+                <input type="number" value={settings.costThreshold}
+                  onChange={e => setSettings(p => ({ ...p, costThreshold: e.target.value }))}
+                  className="w-48 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+              </div>
+            )}
           </div>
-          <button className="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 font-medium text-sm">Save Settings</button>
+
+          <button
+            onClick={saveSettings}
+            className={`w-full py-2.5 rounded-lg font-medium text-sm transition-colors ${
+              settingsSaved
+                ? 'bg-green-600 text-white'
+                : 'bg-blue-600 text-white hover:bg-blue-700'
+            }`}
+          >
+            {settingsSaved ? '✓ Settings Saved' : 'Save Settings'}
+          </button>
         </div>
       )}
 

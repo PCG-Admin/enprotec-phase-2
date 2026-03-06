@@ -12,6 +12,16 @@ export function computeLicenseStatus(expiryDate: string): 'active' | 'expiring' 
   return 'active';
 }
 
+/** Granular urgency: expired / critical (≤7d) / warning (≤14d) / soon (≤30d) / active */
+export function licenseUrgency(expiryDate: string): 'expired' | 'critical' | 'warning' | 'soon' | 'active' {
+  const days = Math.ceil((new Date(expiryDate).getTime() - Date.now()) / 86_400_000);
+  if (days <= 0)  return 'expired';
+  if (days <= 7)  return 'critical';
+  if (days <= 14) return 'warning';
+  if (days <= 30) return 'soon';
+  return 'active';
+}
+
 export async function getLicenses(): Promise<LicenseRow[]> {
   const { data, error } = await supabase
     .from('licenses')
