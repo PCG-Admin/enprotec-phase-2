@@ -598,7 +598,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
         >
           <option value="">— Select site —</option>
-          {sites.filter((s: SiteRow) => s.status === 'Active').map((s: SiteRow) => (
+          {[...new Map(sites.filter((s: SiteRow) => s.status === 'Active').map((s: SiteRow) => [s.name, s])).values()].map((s: SiteRow) => (
             <option key={s.id} value={s.name}>{s.name}{s.location ? ` — ${s.location}` : ''}</option>
           ))}
         </select>

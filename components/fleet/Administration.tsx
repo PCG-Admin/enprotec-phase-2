@@ -224,6 +224,9 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
 
   const saveSite = async () => {
     if (!siteForm.name || !siteForm.location) return;
+    // Prevent duplicate site names
+    const nameExists = sites.some(s => s.name.toLowerCase() === siteForm.name.toLowerCase() && s.id !== editingSite?.id);
+    if (nameExists) { setSiteSaveErr(`A site named "${siteForm.name}" already exists.`); return; }
     setSiteSaving(true);
     setSiteSaveErr(null);
     try {
