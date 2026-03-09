@@ -316,7 +316,9 @@ const Costs: React.FC<{ user: User | null }> = ({ user }) => {
             <select value={filterVeh} onChange={e => setFilterVeh(e.target.value)}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
               <option value="All">All Vehicles</option>
-              {uniqueVehicleRegs.map(r => <option key={r!} value={r!}>{r}</option>)}
+              {vehicles.filter(v => uniqueVehicleRegs.includes(v.registration)).map(v => (
+                <option key={v.id} value={v.registration}>{v.registration} — {v.make} {v.model}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -394,7 +396,7 @@ const Costs: React.FC<{ user: User | null }> = ({ user }) => {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
                     <option value="">Select vehicle</option>
                     {vehicles.map(v => (
-                      <option key={v.id} value={v.registration}>{v.registration}</option>
+                      <option key={v.id} value={v.registration}>{v.registration} — {v.make} {v.model}</option>
                     ))}
                   </select>
                 </div>

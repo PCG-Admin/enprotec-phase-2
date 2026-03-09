@@ -9,8 +9,9 @@ import {
   markCompleted, syncComplianceStatuses,
 } from '../../supabase/services/compliance.service';
 import { getVehicles } from '../../supabase/services/vehicles.service';
+import { getInspections } from '../../supabase/services/inspections.service';
 import { logAction } from '../../supabase/services/audit.service';
-import type { ComplianceRow, CompStatus } from '../../supabase/database.types';
+import type { ComplianceRow, CompStatus, InspectionRow } from '../../supabase/database.types';
 import type { VehicleRow } from '../../supabase/database.types';
 import type { User } from '../../types';
 
@@ -37,13 +38,17 @@ const INSPECTION_TYPES = [
 const daysRemaining = (dueDate: string) =>
   Math.round((new Date(dueDate).getTime() - Date.now()) / (1000 * 86400));
 
-const StatusBadge: React.FC<{ status: CompStatus; due_date: string }> = ({ status, due_date }) => {
+const StatusBadge: React.FC<{ status: CompStatus; due_date: string; notifyOverdue: boolean }> = ({ status, due_date, notifyOverdue }) => {
   const days = daysRemaining(due_date);
   switch (status) {
     case 'Overdue':
-      return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-        <AlertTriangle className="h-3 w-3 mr-1" />{Math.abs(days)}d overdue
-      </span>;
+      return notifyOverdue
+        ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            <AlertTriangle className="h-3 w-3 mr-1" />{Math.abs(days)}d overdue
+          </span>
+        : <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-600">
+            Overdue
+          </span>;
     case 'Due Soon':
       return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
         <Clock className="h-3 w-3 mr-1" />Due in {days}d
@@ -70,8 +75,13 @@ const EMPTY_FORM = {
 };
 
 const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
-  const [schedule, setSchedule]         = React.useState<ComplianceRow[]>([]);
-  const [vehicles, setVehicles]         = React.useState<VehicleRow[]>([]);
+  const notifyOverdue: boolean = React.useMemo(() => {
+    try { const s = JSON.parse(localStorage.getItem('enprotec_settings') ?? '{}'); return s.notifyOverdue !== false; } catch { return true; }
+  }, []);
+
+  const [schedule, setSchedule]           = React.useState<ComplianceRow[]>([]);
+  const [vehicles, setVehicles]           = React.useState<VehicleRow[]>([]);
+  const [inspectionRecs, setInspectionRecs] = React.useState<InspectionRow[]>([]);
   const [loading, setLoading]           = React.useState(true);
   const [error, setError]               = React.useState<string | null>(null);
   const [filterStatus, setFilterStatus] = React.useState('all');
@@ -88,9 +98,10 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
     setError(null);
     try {
       if (sync) await syncComplianceStatuses();
-      const [s, v] = await Promise.all([getComplianceSchedule(), getVehicles()]);
+      const [s, v, insp] = await Promise.all([getComplianceSchedule(), getVehicles(), getInspections()]);
       setSchedule(s);
       setVehicles(v);
+      setInspectionRecs(insp);
     } catch (e: any) {
       setError(e.message ?? 'Failed to load compliance data');
     } finally {
@@ -404,17 +415,33 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
                     <td className="px-6 py-4 text-gray-700 text-sm">{entry.inspection_type}</td>
                     <td className="px-6 py-4 text-gray-600 text-sm font-medium">{entry.due_date}</td>
                     <td className="px-6 py-4">
-                      <StatusBadge status={entry.status} due_date={entry.due_date} />
+                      <StatusBadge status={entry.status} due_date={entry.due_date} notifyOverdue={notifyOverdue} />
                     </td>
                     <td className="px-6 py-4 text-gray-500 text-sm">{entry.assigned_to ?? '—'}</td>
                     <td className="px-6 py-4 text-gray-400 text-sm max-w-xs truncate">{entry.notes ?? '—'}</td>
                     <td className="px-6 py-4">
-                      {entry.status !== 'Completed' && (
-                        <button onClick={() => handleMarkCompleted(entry.id)}
-                          className="text-xs text-green-700 border border-green-300 bg-green-50 px-2.5 py-1 rounded-lg hover:bg-green-100 font-medium">
-                          Mark Done
-                        </button>
-                      )}
+                      {(() => {
+                        const vehicleInspections = inspectionRecs
+                          .filter(r => r.vehicle_reg === entry.vehicle_registration && r.completed_at)
+                          .sort((a, b) => b.completed_at!.localeCompare(a.completed_at!));
+                        const match = vehicleInspections[0];
+                        return (
+                          <div className="flex flex-col gap-1.5">
+                            {match && (
+                              <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-0.5">
+                                <CheckCircle className="h-3 w-3" />
+                                Inspected {match.completed_at!.slice(0, 10)}
+                              </span>
+                            )}
+                            {entry.status !== 'Completed' && (
+                              <button onClick={() => handleMarkCompleted(entry.id)}
+                                className="text-xs text-green-700 border border-green-300 bg-green-50 px-2.5 py-1 rounded-lg hover:bg-green-100 font-medium">
+                                Mark Done
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
                     </td>
                   </tr>
                 ))}
@@ -437,14 +464,15 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
             <form onSubmit={handleSubmit} className="p-5 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
-                <input type="text" list="compliance-vehicles-datalist"
+                <select
                   value={form.vehicle_registration}
                   onChange={e => handleVehicleInput(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                  placeholder="Type or select registration…" />
-                <datalist id="compliance-vehicles-datalist">
-                  {vehicles.map(v => <option key={v.id} value={v.registration} />)}
-                </datalist>
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                  <option value="">— Select vehicle —</option>
+                  {vehicles.map(v => (
+                    <option key={v.id} value={v.registration}>{v.registration} — {v.make} {v.model}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Inspection Type *</label>

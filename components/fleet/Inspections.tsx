@@ -8,10 +8,11 @@ import {
   getInspections, createInspection, deleteInspection,
 } from '../../supabase/services/inspections.service';
 import { getVehicles } from '../../supabase/services/vehicles.service';
+import { getSites } from '../../supabase/services/sites.service';
 import { createCost } from '../../supabase/services/costs.service';
 import { getActiveTemplates } from '../../supabase/services/templates.service';
 import { logAction } from '../../supabase/services/audit.service';
-import type { InspectionRow, VehicleRow, TemplateRow, DbQuestion } from '../../supabase/database.types';
+import type { InspectionRow, VehicleRow, TemplateRow, DbQuestion, SiteRow } from '../../supabase/database.types';
 import type { User } from '../../types';
 import { UserRole } from '../../types';
 import {
@@ -284,6 +285,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   const isAdmin  = user?.role === UserRole.Admin;
   const [inspections, setInspections]       = React.useState<InspectionRecord[]>([]);
   const [vehicles, setVehicles]             = React.useState<VehicleRow[]>([]);
+  const [sites, setSites]                   = React.useState<SiteRow[]>([]);
   const [templates, setTemplates]           = React.useState<TemplateRow[]>([]);
   const [templateId, setTemplateId]         = React.useState('');
   const [templateAnswers, setTemplateAnswers] = React.useState<Record<string, string>>({});
@@ -307,10 +309,11 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   }, [showForm]);
 
   React.useEffect(() => {
-    Promise.all([getInspections(), getVehicles(), getActiveTemplates()])
-      .then(([rows, vehs, tpls]) => {
+    Promise.all([getInspections(), getVehicles(), getActiveTemplates(), getSites()])
+      .then(([rows, vehs, tpls, sts]) => {
         setTemplates(tpls);
         setVehicles(vehs);
+        setSites(sts);
         setInspections(rows.map((r): InspectionRecord => ({
           id: r.id,
           ...((r.answers as unknown as Omit<InspectionRecord, 'id' | 'result'>) ?? defaultForm()),
@@ -423,6 +426,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
       const result = computeResult();
       const formWithDeviations = { ...form, deviations: computedDeviations };
       const vehicle = vehicles.find(v => v.id === selectedVehicleId) ?? vehicles.find(v => v.registration.toLowerCase() === form.registrationNumber.toLowerCase());
+      const selectedTemplate = templates.find(t => t.id === templateId);
       const payload = {
         vehicle_id: vehicle?.id ?? form.registrationNumber,
         vehicle_reg: form.registrationNumber || null,
@@ -432,7 +436,13 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
         started_at: form.inspectionDate ? new Date(form.inspectionDate).toISOString() : new Date().toISOString(),
         completed_at: new Date().toISOString(),
         status: result,
-        answers: { ...formWithDeviations, templateId, templateAnswers } as any,
+        answers: {
+          ...formWithDeviations,
+          templateId,
+          templateAnswers,
+          templateName: selectedTemplate?.name ?? '',
+          templateQuestions: selectedTemplate?.questions ?? [],
+        } as any,
         notes: computedDeviations.map(d => `${d.item}: ${d.deviation}`).join('; ') || null,
         odometer: form.currentHours ? parseInt(form.currentHours) || null : null,
         hour_meter: null as number | null,
@@ -443,6 +453,10 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
       const record: InspectionRecord = {
         id: saved.id,
         ...(formWithDeviations),
+        templateId,
+        templateAnswers,
+        templateName: selectedTemplate?.name,
+        templateQuestions: selectedTemplate?.questions,
         result,
       };
       setInspections(prev => [record, ...prev]);
@@ -575,12 +589,26 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
           ))}
         </div>
       </div>
+      {/* Site Allocation dropdown */}
+      <div className="mb-2">
+        <label className="block text-xs font-medium text-gray-700 mb-1">Site Allocation</label>
+        <select
+          value={form.siteAllocation}
+          onChange={(e: React.ChangeEvent<HTMLSelectElement>) => set('siteAllocation', e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">— Select site —</option>
+          {sites.filter((s: SiteRow) => s.status === 'Active').map((s: SiteRow) => (
+            <option key={s.id} value={s.name}>{s.name}{s.location ? ` — ${s.location}` : ''}</option>
+          ))}
+        </select>
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {([
           ['Previous Inspection Date', 'previousInspectionDate', 'date'],
           ['Inspection Date *', 'inspectionDate', 'date'],
           ['Inspected By *', 'inspectedBy', 'text'],
-          ['Site Allocation', 'siteAllocation', 'text'],
           ['Vehicle Make & Model *', 'vehicleMakeModel', 'text'],
           ['Registration Number *', 'registrationNumber', 'text'],
           ['Current Hours / Odometer', 'currentHours', 'text'],

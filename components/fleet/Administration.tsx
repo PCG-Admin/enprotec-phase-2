@@ -57,6 +57,9 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
   const [auditLog, setAuditLog]           = React.useState<AuditRow[]>([]);
   const [auditLoading, setAuditLoading]   = React.useState(false);
   const [auditLoaded, setAuditLoaded]     = React.useState(false);
+  const [auditSearch, setAuditSearch]     = React.useState('');
+  const [auditModule, setAuditModule]     = React.useState('All');
+  const [auditAction, setAuditAction]     = React.useState('All');
 
   // ── Settings state (persisted to localStorage) ────────────────────────────
   const [settings, setSettings] = React.useState(() => {
@@ -70,6 +73,11 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
       companyPhone:        '',
       companyAddress:      '',
       companyWebsite:      '',
+      officeLabel:         '',
+      poBox:               '',
+      directors:           '',
+      companyReg:          '',
+      vatNumber:           '',
       notifyOverdue:       true,
       notifyLicenseExpiry: true,
       notifyCostThreshold: false,
@@ -81,6 +89,11 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
     };
   });
   const [settingsSaved, setSettingsSaved] = React.useState(false);
+
+  // Auto-save settings to localStorage whenever they change
+  React.useEffect(() => {
+    localStorage.setItem('enprotec_settings', JSON.stringify(settings));
+  }, [settings]);
 
   const saveSettings = () => {
     localStorage.setItem('enprotec_settings', JSON.stringify(settings));
@@ -432,26 +445,46 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
           {/* Company Details */}
           <div className="bg-white rounded-lg shadow p-6 space-y-4">
             <h3 className="font-semibold text-gray-900">Company Details</h3>
+            <p className="text-xs text-gray-500">These appear on every inspection PDF report.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {([
                 { key: 'companyName',    label: 'Company Name',    type: 'text'  },
+                { key: 'officeLabel',    label: 'Office Label',    type: 'text',  placeholder: 'e.g. South African Head Office' },
                 { key: 'companyEmail',   label: 'Email Address',   type: 'email' },
                 { key: 'companyPhone',   label: 'Phone Number',    type: 'tel'   },
-                { key: 'companyWebsite', label: 'Website',         type: 'url'   },
-              ] as { key: keyof typeof settings; label: string; type: string }[]).map(({ key, label, type }) => (
+                { key: 'companyWebsite', label: 'Website',         type: 'text'  },
+                { key: 'companyReg',     label: 'Company Reg No.', type: 'text'  },
+                { key: 'vatNumber',      label: 'VAT Number',      type: 'text'  },
+              ] as { key: keyof typeof settings; label: string; type: string; placeholder?: string }[]).map(({ key, label, type, placeholder }) => (
                 <div key={key}>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
                   <input type={type} value={settings[key] as string}
+                    placeholder={placeholder ?? ''}
                     onChange={e => setSettings(p => ({ ...p, [key]: e.target.value }))}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
                 </div>
               ))}
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Company Address</label>
-              <textarea rows={2} value={settings.companyAddress}
+              <label className="block text-sm font-medium text-gray-700 mb-1">Street Address</label>
+              <input type="text" value={settings.companyAddress}
                 onChange={e => setSettings(p => ({ ...p, companyAddress: e.target.value }))}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 resize-none" />
+                placeholder="e.g. 13 Insimbi St, Industria, Middelburg, 1050"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">PO Box</label>
+              <input type="text" value={settings.poBox ?? ''}
+                onChange={e => setSettings(p => ({ ...p, poBox: e.target.value }))}
+                placeholder="e.g. PO Box 14945, Mineralia, Middelburg, 1050"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Directors</label>
+              <input type="text" value={settings.directors ?? ''}
+                onChange={e => setSettings(p => ({ ...p, directors: e.target.value }))}
+                placeholder="e.g. JR Fourie (Managing) | BN Ditsepu (Executive)"
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Default Inspection Frequency</label>
@@ -528,54 +561,98 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
       )}
 
       {/* ── Audit Log Tab ─────────────────────────────────────────────────── */}
-      {activeTab === 3 && (
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-200">
-            <h3 className="font-semibold text-gray-900">System Audit Log</h3>
-            <p className="text-xs text-gray-500 mt-0.5">Read-only record of all system actions</p>
+      {activeTab === 3 && (() => {
+        const modules = ['All', ...Array.from(new Set(auditLog.map(e => e.module))).sort()];
+        const actions = ['All', ...Array.from(new Set(auditLog.map(e => e.action))).sort()];
+        const filtered = auditLog.filter(e => {
+          if (auditModule !== 'All' && e.module !== auditModule) return false;
+          if (auditAction !== 'All' && e.action !== auditAction) return false;
+          if (auditSearch) {
+            const q = auditSearch.toLowerCase();
+            return e.user_name.toLowerCase().includes(q) || (e.details ?? '').toLowerCase().includes(q);
+          }
+          return true;
+        });
+        return (
+          <div className="space-y-3">
+            {/* Filter bar */}
+            <div className="bg-white rounded-lg shadow p-3 flex flex-wrap gap-3 items-center">
+              <div className="relative flex-1 min-w-48">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search user or details…"
+                  value={auditSearch}
+                  onChange={e => setAuditSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <select value={auditModule} onChange={e => setAuditModule(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-blue-500">
+                {modules.map(m => <option key={m}>{m}</option>)}
+              </select>
+              <select value={auditAction} onChange={e => setAuditAction(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-700 focus:ring-2 focus:ring-blue-500">
+                {actions.map(a => <option key={a}>{a}</option>)}
+              </select>
+              <span className="text-xs text-gray-400 whitespace-nowrap">
+                {filtered.length} of {auditLog.length} entries
+              </span>
+            </div>
+
+            <div className="bg-white rounded-lg shadow overflow-hidden">
+              <div className="px-6 py-3 border-b border-gray-200 flex justify-between items-center">
+                <div>
+                  <h3 className="font-semibold text-gray-900">System Audit Log</h3>
+                  <p className="text-xs text-gray-500">Read-only record of all system actions</p>
+                </div>
+              </div>
+              {auditLoading ? (
+                <div className="flex items-center justify-center h-32">
+                  <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                  <span className="ml-2 text-gray-500">Loading audit log…</span>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timestamp</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Module</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Details</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-100">
+                      {filtered.map(entry => (
+                        <tr key={entry.id} className="hover:bg-gray-50">
+                          <td className="px-6 py-3 text-xs text-gray-500 whitespace-nowrap font-mono">
+                            {new Date(entry.created_at).toLocaleString('en-ZA')}
+                          </td>
+                          <td className="px-6 py-3 text-sm font-medium text-gray-800">{entry.user_name}</td>
+                          <td className="px-6 py-3">
+                            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ACTION_COLORS[entry.action] ?? 'bg-gray-100 text-gray-600'}`}>
+                              {entry.action}
+                            </span>
+                          </td>
+                          <td className="px-6 py-3 text-sm text-gray-600">{entry.module}</td>
+                          <td className="px-6 py-3 text-sm text-gray-500">{entry.details}</td>
+                        </tr>
+                      ))}
+                      {filtered.length === 0 && (
+                        <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-400 text-sm">
+                          {auditLog.length === 0 ? 'No audit entries yet.' : 'No entries match the current filters.'}
+                        </td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
-          {auditLoading ? (
-            <div className="flex items-center justify-center h-32">
-              <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
-              <span className="ml-2 text-gray-500">Loading audit log…</span>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Timestamp</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">User</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Action</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Module</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Details</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-100">
-                  {auditLog.map(entry => (
-                    <tr key={entry.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-3 text-xs text-gray-500 whitespace-nowrap font-mono">
-                        {new Date(entry.created_at).toLocaleString('en-ZA')}
-                      </td>
-                      <td className="px-6 py-3 text-sm font-medium text-gray-800">{entry.user_name}</td>
-                      <td className="px-6 py-3">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${ACTION_COLORS[entry.action] ?? 'bg-gray-100 text-gray-600'}`}>
-                          {entry.action}
-                        </span>
-                      </td>
-                      <td className="px-6 py-3 text-sm text-gray-600">{entry.module}</td>
-                      <td className="px-6 py-3 text-sm text-gray-500">{entry.details}</td>
-                    </tr>
-                  ))}
-                  {auditLog.length === 0 && (
-                    <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-400 text-sm">No audit entries yet.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── User Modal ────────────────────────────────────────────────────── */}
       {showUserModal && (

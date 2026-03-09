@@ -21,10 +21,10 @@ const DRIVER_TYPES  = ["Driver's Licence", 'PDP', 'Other'];
 const daysLeft = (exp: string) =>
   Math.ceil((new Date(exp).getTime() - Date.now()) / 86_400_000);
 
-const StatusBadge: React.FC<{ expiry: string }> = ({ expiry }) => {
+const StatusBadge: React.FC<{ expiry: string; notifyEnabled: boolean }> = ({ expiry, notifyEnabled }) => {
   const days = daysLeft(expiry);
-  const urgency = licenseUrgency(expiry);
-  type Urgency = typeof urgency;
+  const urgency = notifyEnabled ? licenseUrgency(expiry) : 'active';
+  type Urgency = ReturnType<typeof licenseUrgency>;
   const cfg: Record<Urgency, { cls: string; Icon: React.FC<{ className?: string }>; label: string }> = {
     expired:  { cls: 'bg-red-100 text-red-800',       Icon: AlertCircle, label: 'Expired' },
     critical: { cls: 'bg-red-100 text-red-900',       Icon: AlertCircle, label: `${days}d — Critical` },
@@ -61,6 +61,10 @@ const EMPTY_D_FORM = {
 };
 
 const Licenses: React.FC<{ user: User | null }> = ({ user }) => {
+  const notifyLicenseExpiry: boolean = React.useMemo(() => {
+    try { const s = JSON.parse(localStorage.getItem('enprotec_settings') ?? '{}'); return s.notifyLicenseExpiry !== false; } catch { return true; }
+  }, []);
+
   const [licenses, setLicenses]     = React.useState<LicenseRow[]>([]);
   const [vehicles, setVehicles]     = React.useState<VehicleRow[]>([]);
   const [loading, setLoading]       = React.useState(true);
@@ -400,8 +404,8 @@ const Licenses: React.FC<{ user: User | null }> = ({ user }) => {
                       <td className="px-5 py-3 text-zinc-600 font-mono">{l.license_number}</td>
                       <td className="px-5 py-3 text-zinc-600">{l.issue_date}</td>
                       <td className="px-5 py-3 text-zinc-600">{l.expiry_date}</td>
-                      <td className="px-5 py-3"><StatusBadge expiry={l.expiry_date} /></td>
-                      <td className={`px-5 py-3 font-medium ${days <= 0 ? 'text-red-600' : days <= 30 ? 'text-amber-600' : 'text-zinc-600'}`}>
+                      <td className="px-5 py-3"><StatusBadge expiry={l.expiry_date} notifyEnabled={notifyLicenseExpiry} /></td>
+                      <td className={`px-5 py-3 font-medium ${notifyLicenseExpiry && days <= 0 ? 'text-red-600' : notifyLicenseExpiry && days <= 30 ? 'text-amber-600' : 'text-zinc-600'}`}>
                         {days <= 0 ? 'Expired' : `${days}d`}
                       </td>
                       <td className="px-5 py-3 text-right space-x-3">

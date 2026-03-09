@@ -133,12 +133,45 @@ export interface InspectionRecord {
   deviations: Deviation[];
   inspectionType: 'General' | 'Forklift' | 'Generator';
   result: 'pass' | 'fail' | 'requires_attention';
+  // Custom checklist template
+  templateId?: string;
+  templateName?: string;
+  templateAnswers?: Record<string, string>;
+  templateQuestions?: Array<{ id: string; text: string; type: string; options?: string[] }>;
 }
 
 // ─── Print / PDF Function ─────────────────────────────────────────────────────
 
 /** Opens a formatted print window for the given inspection record */
 const generateInspectionDownload = async (insp: InspectionRecord) => {
+  /* Read company settings from localStorage */
+  let companyName    = 'Enprotec';
+  let officeLabel    = 'South African Head Office';
+  let companyAddress = '';
+  let poBox          = '';
+  let companyPhone   = '';
+  let companyEmail   = '';
+  let companyWebsite = '';
+  let directors      = '';
+  let companyReg     = '';
+  let vatNumber      = '';
+  try {
+    const raw = localStorage.getItem('enprotec_settings');
+    if (raw) {
+      const s = JSON.parse(raw);
+      if (s.companyName)    companyName    = s.companyName;
+      if (s.officeLabel)    officeLabel    = s.officeLabel;
+      if (s.companyAddress) companyAddress = s.companyAddress;
+      if (s.poBox)          poBox          = s.poBox;
+      if (s.companyPhone)   companyPhone   = s.companyPhone;
+      if (s.companyEmail)   companyEmail   = s.companyEmail;
+      if (s.companyWebsite) companyWebsite = s.companyWebsite;
+      if (s.directors)      directors      = s.directors;
+      if (s.companyReg)     companyReg     = s.companyReg;
+      if (s.vatNumber)      vatNumber      = s.vatNumber;
+    }
+  } catch { /* ignore */ }
+
   /* Fetch Enprotec logo → base64 so it renders in the new window */
   let logoSrc = '';
   try {
@@ -166,7 +199,7 @@ const generateInspectionDownload = async (insp: InspectionRecord) => {
   const fullTitle  = `MONTHLY ${typeLabel} INSPECTION REPORT`;
   const entityWord = insp.inspectionType === 'Generator' ? 'Generator' : 'Vehicle';
   const isGen      = insp.inspectionType === 'Generator';
-  const logoHtml   = logoSrc ? `<img src="${logoSrc}" class="logo-img" alt="Enprotec"/>` : `<div class="logo-text">ENPROTEC</div>`;
+  const logoHtml   = logoSrc ? `<img src="${logoSrc}" class="logo-img" alt="${companyName}"/>` : `<div class="logo-text">${companyName.toUpperCase()}</div>`;
   const resultClass = insp.result === 'pass' ? 'result-pass' : insp.result === 'fail' ? 'result-fail' : 'result-attention';
   const resultLabel = insp.result === 'requires_attention' ? 'REQUIRES ATTENTION' : insp.result.toUpperCase();
 
@@ -186,6 +219,24 @@ const generateInspectionDownload = async (insp: InspectionRecord) => {
   const devRows = (insp.deviations ?? []).map((d, i) =>
     `<tr><td>${i+1}</td><td>${d.item}</td><td>${d.deviation}</td></tr>`
   ).join('') || '<tr><td colspan="3" class="empty-row">No deviations recorded</td></tr>';
+
+  const templateQuestions = insp.templateQuestions ?? [];
+  const templateAnswers   = insp.templateAnswers   ?? {};
+  const customChecklistHtml = templateQuestions.length > 0 ? `
+  <div class="section">
+    <div class="section-title">Custom Checklist — ${insp.templateName || 'Template'}</div>
+    <table>
+      <thead><tr><th style="width:60%">Question</th><th>Answer</th></tr></thead>
+      <tbody>
+        ${templateQuestions.map(q => {
+          const ans = templateAnswers[q.id] ?? '—';
+          const cls = (ans === 'Yes' || ans === 'Pass' || ans === 'OK') ? 'chk-pass'
+                    : (ans === 'No'  || ans === 'Fail')                 ? 'chk-fail' : '';
+          return `<tr><td>${q.text}</td><td class="${cls}">${ans}</td></tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>` : '';
 
   /* ── equipment checks HTML ── */
   const e = insp.equipment;
@@ -313,16 +364,14 @@ const generateInspectionDownload = async (insp: InspectionRecord) => {
   body{font-family:Arial,sans-serif;font-size:11px;color:#1a1a1a;background:#fff}
 
   /* cover */
-  .cover-header{display:flex;align-items:stretch;border-bottom:3px solid #1d4ed8}
-  .cover-left{flex:1;padding:20px 24px;display:flex;flex-direction:column;justify-content:center;gap:10px}
-  .logo-img{max-width:220px;max-height:80px;object-fit:contain}
-  .logo-text{font-size:28px;font-weight:900;color:#1d4ed8;letter-spacing:2px}
-  .company-line{font-size:10px;color:#6b7280}
-  .title-block h1{font-size:19px;font-weight:800;color:#1d4ed8;text-transform:uppercase;line-height:1.2}
-  .title-block .subtitle{font-size:10px;color:#6b7280;margin-top:3px}
-  .cover-right{width:260px;flex-shrink:0;overflow:hidden}
-  .front-photo{width:100%;height:100%;min-height:200px;object-fit:cover;display:block}
-  .no-photo-cover{width:100%;min-height:200px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;text-align:center;padding:16px}
+  .cover-header{display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid #1d4ed8;padding:16px 24px}
+  .logo-img{max-width:200px;max-height:70px;object-fit:contain}
+  .logo-text{font-size:26px;font-weight:900;color:#1d4ed8;letter-spacing:2px}
+  .addr-block{text-align:right;font-size:9px;color:#374151;line-height:1.6}
+  .addr-block .office-label{font-weight:700;font-size:10px;color:#1d4ed8;text-transform:uppercase;letter-spacing:0.5px}
+  .title-banner{background:#1d4ed8;color:#fff;padding:10px 24px;font-size:20px;font-weight:800;text-transform:uppercase;letter-spacing:1px}
+  .cover-vehicle-photo{width:100%;max-height:260px;object-fit:cover;display:block}
+  .no-photo-cover{width:100%;height:180px;background:#f3f4f6;display:flex;align-items:center;justify-content:center;color:#9ca3af;font-size:13px;text-align:center;padding:16px}
 
   /* result banner */
   .result-banner{padding:8px 24px;display:flex;align-items:center;gap:12px;font-size:12px;font-weight:700}
@@ -372,22 +421,24 @@ const generateInspectionDownload = async (insp: InspectionRecord) => {
   <button onclick="window.print()" style="background:#1d4ed8;color:#fff;border:none;padding:8px 18px;border-radius:6px;font-size:13px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,0.18)">Save as PDF</button>
 </div>
 
-<!-- Cover -->
+<!-- Cover letterhead -->
 <div class="cover-header">
-  <div class="cover-left">
-    ${logoHtml}
-    <p class="company-line">enquiries@enprotec.com &nbsp;|&nbsp; www.enprotec.com</p>
-    <div class="title-block">
-      <h1>${fullTitle}</h1>
-      <p class="subtitle">Inspection Date: ${insp.inspectionDate||'—'} &nbsp;|&nbsp; Site: ${insp.siteAllocation||'—'}</p>
-    </div>
-  </div>
-  <div class="cover-right">
-    ${insp.vehicleFrontPhoto
-      ? `<img src="${insp.vehicleFrontPhoto}" class="front-photo" alt="${entityWord} front"/>`
-      : `<div class="no-photo-cover">${entityWord} front photo not captured</div>`}
+  ${logoHtml}
+  <div class="addr-block">
+    <div class="office-label">${officeLabel}</div>
+    ${companyAddress ? `<div>${companyAddress}</div>` : ''}
+    ${poBox          ? `<div>${poBox}</div>`          : ''}
+    <div>${[companyEmail, companyWebsite].filter(Boolean).join(' &nbsp;|&nbsp; ') || 'enquiries@enprotec.com &nbsp;|&nbsp; enprotec.com'}</div>
   </div>
 </div>
+
+<!-- Title banner -->
+<div class="title-banner">${fullTitle}</div>
+
+<!-- Vehicle cover photo -->
+${insp.vehicleFrontPhoto
+  ? `<img src="${insp.vehicleFrontPhoto}" class="cover-vehicle-photo" alt="${entityWord} front"/>`
+  : `<div class="no-photo-cover">${entityWord} front photo not captured</div>`}
 
 <!-- Result Banner -->
 <div class="result-banner ${resultClass}">
@@ -459,8 +510,13 @@ const generateInspectionDownload = async (insp: InspectionRecord) => {
     <tbody>${devRows}</tbody>
   </table>
 
+  <!-- 8. Custom Checklist (if template was used) -->
+  ${customChecklistHtml}
+
   <div class="footer">
-    Generated by Enprotec Fleet Management System &nbsp;|&nbsp; ${new Date().toLocaleString('en-ZA')}
+    ${directors ? `<div style="font-weight:600;color:#374151">DIRECTORS: ${directors}</div>` : ''}
+    ${(companyReg || vatNumber) ? `<div>${[companyReg ? `Company Reg: ${companyReg}` : '', vatNumber ? `VAT no: ${vatNumber}` : ''].filter(Boolean).join(' &nbsp;|&nbsp; ')}</div>` : ''}
+    <div style="margin-top:4px">${[companyEmail, companyWebsite].filter(Boolean).join(' &nbsp;|&nbsp; ') || 'enquiries@enprotec.com &nbsp;|&nbsp; enprotec.com'} &nbsp;|&nbsp; ${new Date().toLocaleString('en-ZA')}</div>
   </div>
 </div>
 
