@@ -992,9 +992,14 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
 
         <SectionHeader title="Windscreen & Wipers" />
         <CheckRow label="Windscreen Condition">
-          <div className="flex items-center gap-2">
-            <ConditionSelect value={e.windscreenCondition} onChange={(v) => setEquip('windscreenCondition', v)} />
-            <div className="w-16"><PhotoUpload label="Photo" value={e.windscreenPhoto} onChange={(v) => setEquip('windscreenPhoto', v)} /></div>
+          <div className="flex flex-col items-end gap-2">
+            <ConditionSelect value={e.windscreenCondition} onChange={(v) => { setEquip('windscreenCondition', v); if (v === 'Good') setEquip('windscreenPhoto', ''); }} />
+            {e.windscreenCondition !== 'Good' && (
+              <div className="w-full">
+                <p className="text-xs text-red-600 font-medium mb-1">Photo required — attach evidence of damage</p>
+                <PhotoUpload label="Windscreen Photo" value={e.windscreenPhoto} onChange={(v) => setEquip('windscreenPhoto', v)} />
+              </div>
+            )}
           </div>
         </CheckRow>
         <CheckRow label="Wipers effectively wipe windscreen">
