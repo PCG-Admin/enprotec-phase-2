@@ -204,6 +204,8 @@ const compressImage = (file: File): Promise<string> =>
 
 const PhotoUpload: React.FC<{ label: string; value: string; onChange: (v: string) => void }> = ({ label, value, onChange }) => {
   const [processing, setProcessing] = React.useState(false);
+  const cameraRef  = React.useRef<HTMLInputElement>(null);
+  const galleryRef = React.useRef<HTMLInputElement>(null);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -214,12 +216,12 @@ const PhotoUpload: React.FC<{ label: string; value: string; onChange: (v: string
       onChange(compressed);
     } finally {
       setProcessing(false);
-      e.target.value = '';   // allow re-selecting same file
+      e.target.value = '';
     }
   };
 
   return (
-    <div className="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center hover:border-blue-400 transition-colors">
+    <div className="border-2 border-dashed border-gray-300 rounded-lg p-3 text-center">
       {value ? (
         <div className="relative">
           <img src={value} alt={label} className="max-h-32 mx-auto rounded object-cover" />
@@ -231,27 +233,35 @@ const PhotoUpload: React.FC<{ label: string; value: string; onChange: (v: string
             <X className="h-3 w-3" />
           </button>
         </div>
+      ) : processing ? (
+        <div className="flex flex-col items-center gap-1 py-2">
+          <Loader2 className="h-6 w-6 text-blue-500 animate-spin" />
+          <p className="text-xs text-gray-500">Processing…</p>
+        </div>
       ) : (
-        <label className="cursor-pointer flex flex-col items-center gap-1">
-          {processing ? (
-            <Loader2 className="h-6 w-6 text-blue-500 animate-spin" />
-          ) : (
-            <Camera className="h-6 w-6 text-gray-400" />
-          )}
-          <p className="text-xs text-gray-500 leading-tight">
-            {processing ? 'Processing…' : label}
-          </p>
-          {!processing && (
-            <p className="text-[10px] text-gray-400">Tap to take photo or choose from gallery</p>
-          )}
-          {/* No `capture` attribute — mobile OS shows native picker (camera + gallery) and handles permissions */}
-          <input
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={handleFile}
-          />
-        </label>
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-xs text-gray-500 font-medium">{label}</p>
+          <div className="flex gap-2">
+            {/* Take Photo — opens camera directly on all phones */}
+            <button
+              type="button"
+              onClick={() => cameraRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs rounded-lg hover:bg-blue-700"
+            >
+              <Camera className="h-3.5 w-3.5" />Take Photo
+            </button>
+            {/* Choose from Gallery */}
+            <button
+              type="button"
+              onClick={() => galleryRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-1.5 border border-gray-300 text-gray-600 text-xs rounded-lg hover:bg-gray-50"
+            >
+              Gallery
+            </button>
+          </div>
+          <input ref={cameraRef}  type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
+          <input ref={galleryRef} type="file" accept="image/*" className="hidden" onChange={handleFile} />
+        </div>
       )}
     </div>
   );
