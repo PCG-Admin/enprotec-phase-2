@@ -100,6 +100,18 @@ const newWeekRow = (): WeekRow => ({
   findingsCommunicated: 'No',
 });
 
+const currentWeekRow = (): WeekRow => {
+  const today = new Date();
+  const dow = today.getDay();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - ((dow + 6) % 7));
+  const sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  const fmt = (dt: Date) => dt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' });
+  const id = monday.toISOString().slice(0, 10);
+  return { ...newWeekRow(), weekLabel: `${fmt(monday)} – ${fmt(sunday)}`, id };
+};
+
 const defaultForm = (): Omit<InspectionRecord, 'id' | 'result'> => ({
   previousInspectionDate: '',
   inspectionDate: new Date().toISOString().split('T')[0],
@@ -127,7 +139,7 @@ const defaultForm = (): Omit<InspectionRecord, 'id' | 'result'> => ({
   serviceStickerDate: '',
   inspectionType: 'General',
   generatorEquipment: defaultGeneratorEquipment(),
-  weeklyUse: [newWeekRow()],
+  weeklyUse: [currentWeekRow()],
   checklistFindings: [],
   monthlyBreakdowns: [],
   equipment: defaultEquipment(),
@@ -310,6 +322,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   const [viewInspection, setViewInspection] = React.useState<InspectionRecord | null>(null);
   const [selectedVehicleId, setSelectedVehicleId] = React.useState('');
   const [form, setForm] = React.useState(defaultForm());
+  const [weekCalMonth, setWeekCalMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
 
   // Auto-populate inspectedBy with the logged-in user's name when the form opens
   React.useEffect(() => {
@@ -679,92 +692,163 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
     </div>
   );
 
-  const renderTab1 = () => (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <p className="text-sm text-gray-600">Track weekly operational hours and pre-use checklist compliance.</p>
+  const renderTab1 = () => {
+    const year  = weekCalMonth.getFullYear();
+    const month = weekCalMonth.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const monthLabel = weekCalMonth.toLocaleString('en-ZA', { month: 'long', year: 'numeric' });
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    // Calendar click → always updates the LAST row's week (never adds a new row)
+    const pickWeekForDay = (d: number) => {
+      const clicked = new Date(year, month, d);
+      const dow = clicked.getDay();
+      const monday = new Date(clicked);
+      monday.setDate(clicked.getDate() - ((dow + 6) % 7));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      const weekKey = monday.toISOString().slice(0, 10);
+      const fmt = (dt: Date) => dt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' });
+      const label = `${fmt(monday)} – ${fmt(sunday)}`;
+      const updated = [...form.weeklyUse];
+      if (updated.length === 0) {
+        updated.push({ ...newWeekRow(), weekLabel: label, id: weekKey });
+      } else {
+        updated[updated.length - 1] = { ...updated[updated.length - 1], weekLabel: label, id: weekKey };
+      }
+      set('weeklyUse', updated);
+    };
+
+    // Highlight calendar: locked weeks (all except last) vs active (last row)
+    const lockedDays = new Set<string>();
+    const activeDays = new Set<string>();
+    form.weeklyUse.forEach((r: WeekRow, idx: number) => {
+      const mon = new Date(r.id);
+      if (isNaN(mon.getTime())) return;
+      const target = idx === form.weeklyUse.length - 1 ? activeDays : lockedDays;
+      for (let i = 0; i < 7; i++) {
+        const d2 = new Date(mon);
+        d2.setDate(mon.getDate() + i);
+        target.add(d2.toISOString().slice(0, 10));
+      }
+    });
+
+    const cells = Array.from({ length: firstDay }, (_, i) => <div key={`e${i}`} />);
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+      const isToday = dateStr === todayStr;
+      const isActive = activeDays.has(dateStr);
+      const isLocked = lockedDays.has(dateStr);
+      cells.push(
         <button
+          key={dateStr}
           type="button"
-          onClick={() => set('weeklyUse', [...form.weeklyUse, newWeekRow()])}
-          className="flex items-center text-sm bg-blue-600 text-white px-3 py-1.5 rounded-lg hover:bg-blue-700"
+          onClick={() => pickWeekForDay(d)}
+          title="Click to set this week"
+          className={`h-9 w-full rounded text-xs font-medium transition-colors
+            ${isLocked ? 'bg-gray-300 text-gray-600 cursor-default' : isActive ? 'bg-blue-600 text-white ring-2 ring-blue-400' : isToday ? 'bg-blue-50 border border-blue-300 text-blue-700 hover:bg-blue-100' : 'bg-white border border-gray-200 text-gray-700 hover:bg-blue-50 hover:border-blue-300'}
+          `}
         >
-          <Plus className="h-4 w-4 mr-1" /> Add Week
+          {d}
         </button>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Week</th>
-              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Operational Hours</th>
-              {form.inspectionType !== 'Generator' && <>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Checklists Completed?</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Findings?</th>
-                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Findings Addressed?</th>
-              </>}
-              <th className="px-3 py-2"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {form.weeklyUse.map((row, idx) => (
-              <tr key={row.id} className="bg-white">
-                <td className="px-3 py-2">
-                  <input
-                    type="text"
-                    value={row.weekLabel}
-                    onChange={(e) => {
-                      const updated = [...form.weeklyUse];
-                      updated[idx] = { ...row, weekLabel: e.target.value };
-                      set('weeklyUse', updated);
-                    }}
-                    placeholder="e.g. Dec 26-30"
-                    className="w-28 border rounded px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500"
-                  />
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="text"
-                    value={row.operationalHours}
-                    onChange={(e) => {
-                      const updated = [...form.weeklyUse];
-                      updated[idx] = { ...row, operationalHours: e.target.value };
-                      set('weeklyUse', updated);
-                    }}
-                    placeholder="e.g. 3Hrs"
-                    className="w-20 border rounded px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500"
-                  />
-                </td>
-                {form.inspectionType !== 'Generator' && (['checklistsCompleted', 'findingsOnChecklists', 'findingsCommunicated'] as const).map((f) => (
-                  <td key={f} className="px-3 py-2">
-                    <YesNoSelect
-                      value={row[f]}
-                      onChange={(v) => {
+      );
+    }
+
+    return (
+      <div className="space-y-4">
+        {/* Mini calendar */}
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+          <div className="flex items-center justify-between mb-3">
+            <button type="button" onClick={() => setWeekCalMonth((m: Date) => new Date(m.getFullYear(), m.getMonth() - 1, 1))}
+              className="p-1 rounded hover:bg-gray-200"><ChevronLeft className="h-4 w-4"/></button>
+            <span className="text-sm font-semibold text-gray-700">{monthLabel}</span>
+            <button type="button" onClick={() => setWeekCalMonth((m: Date) => new Date(m.getFullYear(), m.getMonth() + 1, 1))}
+              className="p-1 rounded hover:bg-gray-200"><ChevronRight className="h-4 w-4"/></button>
+          </div>
+          <div className="grid grid-cols-7 gap-1 mb-1">
+            {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d => (
+              <div key={d} className="text-center text-[10px] font-semibold text-gray-400">{d}</div>
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-1">{cells}</div>
+          <p className="text-[11px] text-gray-400 mt-2 text-center">Click any day to set the <span className="text-blue-600 font-medium">active</span> week row — use + to track additional weeks</p>
+        </div>
+
+        {/* Week rows table */}
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm border border-gray-200 rounded-lg overflow-hidden">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Week</th>
+                <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Operational Hours</th>
+                {form.inspectionType !== 'Generator' && <>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Checklists Completed?</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Findings?</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500">Findings Addressed?</th>
+                </>}
+                <th className="px-3 py-2 text-right">
+                  <button type="button"
+                    onClick={() => set('weeklyUse', [...form.weeklyUse, newWeekRow()])}
+                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium">
+                    <Plus className="h-3.5 w-3.5" />Add week
+                  </button>
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {form.weeklyUse.map((row: WeekRow, idx: number) => {
+                const isLastRow = idx === form.weeklyUse.length - 1;
+                return (
+                <tr key={row.id} className={isLastRow ? 'bg-blue-50' : 'bg-white'}>
+                  <td className="px-3 py-2 text-xs font-medium text-gray-700 whitespace-nowrap">
+                    {row.weekLabel || <span className="text-gray-400 italic">← pick on calendar</span>}
+                  </td>
+                  <td className="px-3 py-2">
+                    <input
+                      type="text"
+                      value={row.operationalHours}
+                      onChange={(e) => {
                         const updated = [...form.weeklyUse];
-                        updated[idx] = { ...row, [f]: v };
+                        updated[idx] = { ...row, operationalHours: e.target.value };
                         set('weeklyUse', updated);
                       }}
+                      placeholder="e.g. 3Hrs"
+                      className="w-20 border rounded px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500"
                     />
                   </td>
-                ))}
-                <td className="px-3 py-2">
-                  <button
-                    type="button"
-                    onClick={() => set('weeklyUse', form.weeklyUse.filter((_, i) => i !== idx))}
-                    className="text-red-500 hover:text-red-700"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-            {form.weeklyUse.length === 0 && (
-              <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400 text-sm">No weeks added yet</td></tr>
-            )}
-          </tbody>
-        </table>
+                  {form.inspectionType !== 'Generator' && (['checklistsCompleted', 'findingsOnChecklists', 'findingsCommunicated'] as const).map((f) => (
+                    <td key={f} className="px-3 py-2">
+                      <YesNoSelect
+                        value={row[f]}
+                        onChange={(v: YesNo) => {
+                          const updated = [...form.weeklyUse];
+                          updated[idx] = { ...row, [f]: v };
+                          set('weeklyUse', updated);
+                        }}
+                      />
+                    </td>
+                  ))}
+                  <td className="px-3 py-2">
+                    <button
+                      type="button"
+                      onClick={() => set('weeklyUse', form.weeklyUse.filter((_: WeekRow, i: number) => i !== idx))}
+                      className="text-red-500 hover:text-red-700"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </td>
+                </tr>
+              ); })}
+              {form.weeklyUse.length === 0 && (
+                <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400 text-sm">Click a day above to add weeks</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const renderTab2 = () => (
     <div className="space-y-6">

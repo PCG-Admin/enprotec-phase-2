@@ -132,9 +132,9 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
     setForm(p => ({ ...p, vehicle_id: v?.id ?? '', vehicle_registration: reg }));
   };
 
-  const openModal = () => {
+  const openModal = (prefillDate?: string) => {
     setSaveError(null);
-    setForm({ ...EMPTY_FORM });
+    setForm({ ...EMPTY_FORM, ...(prefillDate ? { due_date: prefillDate } : {}) });
     setShowModal(true);
   };
 
@@ -319,7 +319,8 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
           const items   = byDate[dateStr] ?? [];
           const isToday = dateStr === today;
           cells.push(
-            <div key={dateStr} className={`min-h-[80px] border border-gray-200 rounded p-1 ${isToday ? 'bg-blue-50 border-blue-300' : 'bg-white'}`}>
+            <div key={dateStr} onClick={() => openModal(dateStr)}
+              className={`min-h-[80px] border border-gray-200 rounded p-1 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors ${isToday ? 'bg-blue-50 border-blue-300' : 'bg-white'}`}>
               <p className={`text-xs font-bold mb-1 ${isToday ? 'text-blue-600' : 'text-gray-500'}`}>{d}</p>
               {items.slice(0, 3).map(item => (
                 <div key={item.id} className={`text-[10px] rounded px-1 py-0.5 mb-0.5 text-white truncate ${statusDot[item.status] ?? 'bg-gray-400'}`}
