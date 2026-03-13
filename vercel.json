@@ -1,0 +1,15 @@
+{
+  "buildCommand": "cd enprotec-main && npm install && npm run build",
+  "outputDirectory": "enprotec-main/dist",
+  "installCommand": "echo skip",
+  "rewrites": [
+    {
+      "source": "/reset-password",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
