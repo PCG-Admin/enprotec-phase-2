@@ -11,13 +11,11 @@ interface LoginProps {
 }
 
 const IS_DEV = import.meta.env.VITE_APP_ENV === 'dev';
-const PHASE2_URL = import.meta.env.VITE_PHASE2_URL ?? 'http://localhost:3003';
 
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS   = 15 * 60 * 1000;
 
 const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
-  const [selectedModule, setSelectedModule] = useState<'operations' | null>(null);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -289,63 +287,9 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               </span>
             )}
           </div>
-
-          {/* ── Module selector ── */}
-          {!selectedModule && (
-            <>
-              <h2 className="text-xl font-bold text-gray-900 mb-1 text-center">Welcome to Enprotec</h2>
-              <p className="text-gray-500 text-sm mb-6 text-center">Select the system you want to access</p>
-              <div className="space-y-3">
-                <button
-                  onClick={() => setSelectedModule('operations')}
-                  className="w-full flex items-start gap-4 p-4 border-2 border-gray-200 rounded-xl hover:border-sky-400 hover:bg-sky-50 transition-colors text-left group"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-sky-100 flex items-center justify-center flex-shrink-0 group-hover:bg-sky-200 transition-colors">
-                    <span className="text-sky-700 font-bold text-sm">P1</span>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900 text-sm">Operations</p>
-                    <p className="text-gray-400 text-xs mt-0.5">Workflows, deliveries, stock management &amp; inspections</p>
-                  </div>
-                </button>
-
-                <button
-                  onClick={() => { window.location.href = `${PHASE2_URL}?module=fleet`; }}
-                  className="w-full flex items-start gap-4 p-4 border-2 border-gray-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-colors text-left group"
-                >
-                  <div className="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0 group-hover:bg-blue-200 transition-colors">
-                    <span className="text-blue-700 font-bold text-sm">P2</span>
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900 text-sm">Fleet Management</p>
-                    <p className="text-gray-400 text-xs mt-0.5">Vehicle inspections, compliance, costs &amp; fleet tracking</p>
-                  </div>
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* ── Operations login ── */}
-          {selectedModule === 'operations' && (
-            <>
-              <button
-                onClick={() => { setSelectedModule(null); setError(''); setResetMode(false); }}
-                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600 mb-5"
-              >
-                ← Back
-              </button>
-              <div className="flex items-center gap-3 mb-6">
-                <div className="w-9 h-9 rounded-lg bg-sky-100 flex items-center justify-center flex-shrink-0">
-                  <span className="text-sky-700 font-bold text-xs">P1</span>
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900 leading-tight">Operations</h2>
-                  <p className="text-gray-500 text-xs">Sign in to access the Operations portal</p>
-                </div>
-              </div>
-              {loginForm}
-            </>
-          )}
+          <h2 className="text-xl font-bold text-gray-900 mb-1 text-center">Sign in to Enprotec</h2>
+          <p className="text-gray-500 text-sm mb-6 text-center">Enter your credentials to continue</p>
+          {loginForm}
         </div>
         <p className="text-center text-xs text-gray-400 mt-4">© 2025 Enprotec. All rights reserved.</p>
       </div>

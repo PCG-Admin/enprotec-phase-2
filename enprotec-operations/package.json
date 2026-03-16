@@ -14,6 +14,8 @@
   "dependencies": {
     "@google/genai": "^1.15.0",
     "@supabase/supabase-js": "2",
+    "lucide-react": "^0.511.0",
+    "recharts": "^2.15.3",
     "@tanstack/react-query": "^5.90.21",
     "@vercel/node": "^3.0.39",
     "dotenv": "^17.2.3",

@@ -22,7 +22,19 @@ import SalvagePage from './components/SalvagePage';
 import InspectionReport from './components/InspectionReport';
 import MyInspections from './components/MyInspections';
 import StockReports from './components/StockReports';
-import { View, FormType, User, UserRole, WorkflowRequest, StockItem, getMappedRole } from './types';
+import ModuleChooser from './components/ModuleChooser';
+import FleetSidebar from './components/fleet/FleetSidebar';
+import FleetHeader from './components/fleet/FleetHeader';
+import FleetDashboard from './components/fleet/FleetDashboard';
+import Vehicles from './components/fleet/Vehicles';
+import Inspections from './components/fleet/Inspections';
+import Costs from './components/fleet/Costs';
+import Licenses from './components/fleet/Licenses';
+import FleetReports from './components/fleet/FleetReports';
+import Templates from './components/fleet/Templates';
+import Compliance from './components/fleet/Compliance';
+import Administration from './components/fleet/Administration';
+import { View, FleetView, FormType, User, UserRole, WorkflowRequest, StockItem, getMappedRole, getModuleAccess } from './types';
 import PRForm from './components/forms/PRForm';
 import GateReleaseForm from './components/forms/GateReleaseForm';
 import StockRequestForm from './components/forms/StockRequestForm';
@@ -128,6 +140,8 @@ const canAccessView = (role: UserRole, view: View): boolean => {
   return viewPermissions[getMappedRole(role)]?.includes(view) ?? false;
 };
 
+type ActiveModule = 'fleet' | 'operations';
+
 const App: React.FC = () => {
   // When embedded inside the Phase 2 portal, always start in a clean loading state
   // so cached localStorage never causes a flash of the login page before postMessage arrives.
@@ -148,6 +162,10 @@ const App: React.FC = () => {
 
     return storedView ?? 'Dashboard';
   });
+  const [activeModule, setActiveModule] = useState<ActiveModule | null>(null);
+  const [fleetView, setFleetView] = useState<FleetView>('FleetDashboard');
+  const [isFleetMobileOpen, setFleetMobileOpen] = useState(false);
+  const [isFleetSidebarCollapsed, setFleetSidebarCollapsed] = useState(false);
   const [activeForm, setActiveForm] = useState<{ type: FormType; context?: any } | null>(null);
   const [showInspectionToast, setShowInspectionToast] = useState(false);
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -157,6 +175,10 @@ const App: React.FC = () => {
     const defaultView = getDefaultViewForRole(user.role);
     setLoggedInUser(user);
     setCurrentView(defaultView);
+    const access = getModuleAccess(user);
+    if (access === 'fleet') setActiveModule('fleet');
+    else if (access === 'operations') setActiveModule('operations');
+    else setActiveModule(null); // chooser
     if (typeof window !== 'undefined') {
       window.localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(user));
       window.localStorage.setItem(STORAGE_VIEW_KEY, defaultView);
@@ -197,6 +219,8 @@ const App: React.FC = () => {
     } finally {
       setLoggedInUser(null);
       setCurrentView('Dashboard');
+      setActiveModule(null);
+      setFleetView('FleetDashboard');
       setShowInspectionToast(false);
       if (typeof window !== 'undefined') {
         window.localStorage.removeItem(STORAGE_USER_KEY);
@@ -239,6 +263,8 @@ const App: React.FC = () => {
       const profile = profileResult.profile;
       setLoggedInUser(profile);
       setCurrentView(prev => canAccessView(profile.role, prev) ? prev : getDefaultViewForRole(profile.role));
+      const access = getModuleAccess(profile);
+      setActiveModule(access === 'fleet' ? 'fleet' : access === 'operations' ? 'operations' : null);
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(profile));
       }
@@ -355,6 +381,8 @@ const App: React.FC = () => {
         }
         return getDefaultViewForRole(profile.role);
       });
+      const access = getModuleAccess(profile);
+      setActiveModule(access === 'fleet' ? 'fleet' : access === 'operations' ? 'operations' : null);
       if (typeof window !== 'undefined') {
         window.localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(profile));
       }
@@ -524,6 +552,66 @@ const App: React.FC = () => {
     return <Login onLoginSuccess={handleLoginSuccess} />;
   }
 
+  // ── Module chooser ───────────────────────────────────────────────────────────
+  if (activeModule === null) {
+    return (
+      <ModuleChooser
+        user={loggedInUser}
+        onSelect={(m) => setActiveModule(m)}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  // ── Fleet module ─────────────────────────────────────────────────────────────
+  if (activeModule === 'fleet') {
+    const renderFleetView = () => {
+      switch (fleetView) {
+        case 'FleetDashboard':  return <FleetDashboard user={loggedInUser} />;
+        case 'Vehicles':        return <Vehicles user={loggedInUser} />;
+        case 'Inspections':     return <Inspections user={loggedInUser} />;
+        case 'Costs':           return <Costs user={loggedInUser} />;
+        case 'Licenses':        return <Licenses user={loggedInUser} />;
+        case 'FleetReports':    return <FleetReports />;
+        case 'Templates':       return <Templates user={loggedInUser} />;
+        case 'Compliance':      return <Compliance user={loggedInUser} />;
+        case 'Administration':  return <Administration currentUser={loggedInUser} />;
+        default:                return <FleetDashboard user={loggedInUser} />;
+      }
+    };
+
+    const canSwitchToOps = loggedInUser.role === 'Admin' || loggedInUser.fleet_role != null;
+
+    return (
+      <div className="flex h-screen bg-zinc-100 font-sans overflow-hidden">
+        {isFleetMobileOpen && (
+          <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setFleetMobileOpen(false)} />
+        )}
+        <FleetSidebar
+          user={loggedInUser}
+          currentView={fleetView}
+          setCurrentView={(v) => { setFleetView(v); setFleetMobileOpen(false); }}
+          collapsed={isFleetSidebarCollapsed}
+          onToggle={() => setFleetSidebarCollapsed(prev => !prev)}
+          mobileOpen={isFleetMobileOpen}
+          onMobileClose={() => setFleetMobileOpen(false)}
+        />
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <FleetHeader
+            user={loggedInUser}
+            onLogout={handleLogout}
+            onMobileMenuToggle={() => setFleetMobileOpen(prev => !prev)}
+            onSwitchToOperations={canSwitchToOps ? () => setActiveModule('operations') : undefined}
+          />
+          <main className="flex-1 overflow-x-hidden overflow-y-auto bg-zinc-100 p-4 md:p-8">
+            {renderFleetView()}
+          </main>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Operations module ────────────────────────────────────────────────────────
   return (
     <QueryClientProvider client={queryClient}>
       <div className="flex h-screen bg-zinc-100 font-sans">
@@ -535,7 +623,15 @@ const App: React.FC = () => {
           onToggle={() => setSidebarCollapsed(prev => !prev)}
         />
         <div className="flex-1 flex flex-col overflow-hidden">
-          <Header user={loggedInUser} onLogout={handleLogout} />
+          <Header
+            user={loggedInUser}
+            onLogout={handleLogout}
+            onSwitchToFleet={
+              (loggedInUser.role === 'Admin' || loggedInUser.fleet_role != null)
+                ? () => setActiveModule('fleet')
+                : undefined
+            }
+          />
           <main className="flex-1 overflow-x-hidden overflow-y-auto bg-zinc-100 p-8">
             {renderView()}
           </main>

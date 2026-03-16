@@ -7,16 +7,10 @@ import { User } from '../types';
 interface HeaderProps {
     user: User | null;
     onLogout: () => void;
+    onSwitchToFleet?: () => void;
 }
 
-const switchToFleet = () => {
-  // If running inside the Phase 2 portal iframe, notify the parent to switch modules
-  if (window !== window.parent) {
-    window.parent.postMessage({ type: 'SWITCH_TO_FLEET' }, '*');
-  }
-};
-
-const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
+const Header: React.FC<HeaderProps> = ({ user, onLogout, onSwitchToFleet }) => {
   return (
     <header className="bg-white border-b border-zinc-200 h-20 px-8 flex justify-between items-center z-10 flex-shrink-0">
       <div>
@@ -25,7 +19,7 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
       </div>
 
       {/* Module switcher — Admin or dual-role (fleet_role) users only */}
-      {(user?.role === 'Admin' || user?.fleet_role != null) && (
+      {onSwitchToFleet && (
         <div className="hidden sm:flex items-center gap-1 bg-zinc-100 rounded-lg p-1">
           <button
             className="text-xs font-medium px-3 py-1.5 rounded-md bg-white text-zinc-900 shadow-sm"
@@ -34,7 +28,7 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
             Operations
           </button>
           <button
-            onClick={switchToFleet}
+            onClick={onSwitchToFleet}
             className="text-xs font-medium px-3 py-1.5 rounded-md text-zinc-500 hover:text-zinc-900 hover:bg-white transition-colors"
           >
             Fleet Management
