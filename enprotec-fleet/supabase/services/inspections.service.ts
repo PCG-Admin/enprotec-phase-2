@@ -1,47 +1,49 @@
 import { supabase } from '../client';
 import type { InspectionRow } from '../database.types';
 
-export type InspectionInsert = Omit<InspectionRow, 'id' | 'created_at' | 'updated_at'>;
+export type InspectionInsert = Omit<InspectionRow, 'id' | 'created_at' | 'updated_at' | 'vehicle' | 'inspector'>;
 export type InspectionUpdate = Partial<InspectionInsert>;
+
+const INSPECTION_SELECT = '*, vehicle:vehicles(id, registration, make, model), inspector:en_users(id, name, email)';
 
 export async function getInspections(limit = 100): Promise<InspectionRow[]> {
   const { data, error } = await supabase
     .from('inspections')
-    .select('*')
+    .select(INSPECTION_SELECT)
     .order('started_at', { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as InspectionRow[];
 }
 
 export async function getInspectionsByVehicle(vehicleId: string): Promise<InspectionRow[]> {
   const { data, error } = await supabase
     .from('inspections')
-    .select('*')
+    .select(INSPECTION_SELECT)
     .eq('vehicle_id', vehicleId)
     .order('started_at', { ascending: false });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as InspectionRow[];
 }
 
 export async function getInspection(id: string): Promise<InspectionRow | null> {
   const { data, error } = await supabase
     .from('inspections')
-    .select('*')
+    .select(INSPECTION_SELECT)
     .eq('id', id)
     .single();
   if (error) throw error;
-  return data;
+  return data as InspectionRow | null;
 }
 
 export async function createInspection(inspection: InspectionInsert): Promise<InspectionRow> {
   const { data, error } = await supabase
     .from('inspections')
     .insert(inspection)
-    .select()
+    .select(INSPECTION_SELECT)
     .single();
   if (error) throw error;
-  return data;
+  return data as InspectionRow;
 }
 
 export async function updateInspection(id: string, updates: InspectionUpdate): Promise<InspectionRow> {
@@ -49,10 +51,10 @@ export async function updateInspection(id: string, updates: InspectionUpdate): P
     .from('inspections')
     .update(updates)
     .eq('id', id)
-    .select()
+    .select(INSPECTION_SELECT)
     .single();
   if (error) throw error;
-  return data;
+  return data as InspectionRow;
 }
 
 export async function deleteInspection(id: string): Promise<void> {
@@ -66,11 +68,11 @@ export async function getRecentInspections(days = 7): Promise<InspectionRow[]> {
   since.setDate(since.getDate() - days);
   const { data, error } = await supabase
     .from('inspections')
-    .select('*')
+    .select(INSPECTION_SELECT)
     .gte('started_at', since.toISOString())
     .order('started_at', { ascending: false });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as InspectionRow[];
 }
 
 /** Dashboard helper: inspections by a specific inspector in the last N days */
@@ -79,34 +81,23 @@ export async function getRecentInspectionsByInspector(inspectorId: string, days 
   since.setDate(since.getDate() - days);
   const { data, error } = await supabase
     .from('inspections')
-    .select('*')
+    .select(INSPECTION_SELECT)
     .eq('inspector_id', inspectorId)
     .gte('started_at', since.toISOString())
     .order('started_at', { ascending: false });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as InspectionRow[];
 }
 
-/** All inspections by a specific inspector (for vehicle list) */
+/** All inspections by a specific inspector */
 export async function getInspectionsByInspector(inspectorId: string): Promise<InspectionRow[]> {
   const { data, error } = await supabase
     .from('inspections')
-    .select('*')
+    .select(INSPECTION_SELECT)
     .eq('inspector_id', inspectorId)
     .order('started_at', { ascending: false });
   if (error) throw error;
-  return data ?? [];
-}
-
-/** All inspections by inspector_name (used when inspector_id is null) */
-export async function getInspectionsByName(inspectorName: string): Promise<InspectionRow[]> {
-  const { data, error } = await supabase
-    .from('inspections')
-    .select('*')
-    .eq('inspector_name', inspectorName)
-    .order('started_at', { ascending: false });
-  if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as InspectionRow[];
 }
 
 /** Count overdue (in_progress past 24h) inspections */

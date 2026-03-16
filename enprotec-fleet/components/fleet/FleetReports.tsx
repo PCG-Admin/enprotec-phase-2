@@ -62,7 +62,7 @@ function groupByMonth(inspections: InspectionRow[]) {
 function groupByVehicle(inspections: InspectionRow[]) {
   const buckets: Record<string, number> = {};
   inspections.forEach(i => {
-    const reg = i.vehicle_reg ?? i.vehicle_id;
+    const reg = i.vehicle?.registration ?? i.vehicle_id;
     buckets[reg] = (buckets[reg] ?? 0) + 1;
   });
   return Object.entries(buckets)
@@ -77,7 +77,7 @@ function groupCostsByVehicle(costs: CostRow[], months: number) {
   const filtered = costs.filter(c => new Date(c.date) >= since);
   const map: Record<string, { vehicle: string; fuel: number; maintenance: number; other: number; total: number }> = {};
   filtered.forEach(c => {
-    const v = c.vehicle_registration ?? c.vehicle_id ?? 'Unknown';
+    const v = c.vehicle?.registration ?? c.vehicle_id ?? 'Unknown';
     if (!map[v]) map[v] = { vehicle: v, fuel: 0, maintenance: 0, other: 0, total: 0 };
     if (c.category === 'Fuel') map[v].fuel += c.amount;
     else if (c.category === 'Maintenance') map[v].maintenance += c.amount;
@@ -103,7 +103,7 @@ function groupDeviations(inspections: InspectionRow[]) {
       const key = d.item?.trim() || 'Unknown';
       if (!counts[key]) counts[key] = { item: key, count: 0, vehicles: new Set() };
       counts[key].count++;
-      if (insp.vehicle_reg) counts[key].vehicles.add(insp.vehicle_reg);
+      if (insp.vehicle?.registration) counts[key].vehicles.add(insp.vehicle.registration);
     });
   });
   return Object.values(counts)
@@ -142,11 +142,11 @@ function exportCSV(
       const veh = vehicles.find(v => v.id === i.vehicle_id);
       return [
         tsvCell(i.started_at.slice(0, 10)),
-        tsvCell(i.vehicle_reg),
+        tsvCell(i.vehicle?.registration ?? i.vehicle_id),
         tsvCell(veh ? `${veh.make} ${veh.model}` : ''),
         tsvCell(i.inspection_type),
         tsvCell(ans?.siteAllocation),
-        tsvCell(i.inspector_name),
+        tsvCell(i.inspector?.name),
         tsvCell(i.status === 'requires_attention' ? 'Requires Attention' : i.status),
         ans?.deviations?.length ?? 0,
         ans?.monthlyBreakdowns?.length ?? 0,
@@ -158,7 +158,7 @@ function exportCSV(
     header = ['Date','Vehicle Reg','Category','Amount (R)','Description','Supplier','Invoice #','PO #','Quote #','RTO #','KM Reading'].join(T);
     rows = filteredCosts.map(c => [
       tsvCell(c.date),
-      tsvCell(c.vehicle_registration),
+      tsvCell(c.vehicle?.registration ?? c.vehicle_id),
       tsvCell(c.category),
       c.amount.toFixed(2),
       tsvCell(c.description),
@@ -174,12 +174,12 @@ function exportCSV(
     header = ['Inspection Type','Vehicle Reg','Due Date','Scheduled Date','Completed Date','Status','Assigned To','Notes'].join(T);
     rows = compliance.map(c => [
       tsvCell(c.inspection_type),
-      tsvCell(c.vehicle_registration),
+      tsvCell(c.vehicle?.registration ?? c.vehicle_id),
       tsvCell(c.due_date),
       tsvCell(c.scheduled_date),
       tsvCell(c.completed_date),
       tsvCell(c.status),
-      tsvCell(c.assigned_to),
+      tsvCell(c.assignee?.name ?? c.assigned_to),
       tsvCell(c.notes),
     ].join(T));
 
@@ -187,9 +187,9 @@ function exportCSV(
     header = ['Vehicle Reg','Make & Model','Site','Driver','Total Inspections','Pass','Requires Attention','Fail','Pass Rate %','Last Inspection'].join(T);
     const map: Record<string, { reg: string; makeModel: string; site: string; driver: string; total: number; pass: number; attn: number; fail: number; last: string }> = {};
     filteredInsp.forEach(i => {
-      const reg = i.vehicle_reg ?? i.vehicle_id;
+      const reg = i.vehicle?.registration ?? i.vehicle_id;
       const veh = vehicles.find(v => v.id === i.vehicle_id);
-      if (!map[reg]) map[reg] = { reg, makeModel: veh ? `${veh.make} ${veh.model}` : '', site: veh?.site_name ?? '', driver: veh?.assigned_driver ?? '', total: 0, pass: 0, attn: 0, fail: 0, last: '' };
+      if (!map[reg]) map[reg] = { reg, makeModel: veh ? `${veh.make} ${veh.model}` : '', site: veh?.site?.name ?? '', driver: veh?.driver?.name ?? '', total: 0, pass: 0, attn: 0, fail: 0, last: '' };
       map[reg].total++;
       if (i.status === 'pass') map[reg].pass++;
       else if (i.status === 'requires_attention') map[reg].attn++;
@@ -209,7 +209,7 @@ function exportCSV(
       devs.forEach(d => {
         rows.push([
           tsvCell(i.started_at.slice(0, 10)),
-          tsvCell(i.vehicle_reg),
+          tsvCell(i.vehicle?.registration ?? i.vehicle_id),
           tsvCell(veh ? `${veh.make} ${veh.model}` : ''),
           tsvCell(i.inspection_type),
           tsvCell((i.answers as any)?.siteAllocation),
@@ -223,9 +223,9 @@ function exportCSV(
     header = ['Vehicle Reg','Make & Model','Site','Fuel (R)','Maintenance (R)','Other (R)','Total (R)'].join(T);
     const map: Record<string, { reg: string; makeModel: string; site: string; fuel: number; maint: number; other: number }> = {};
     filteredCosts.forEach(c => {
-      const reg = c.vehicle_registration ?? c.vehicle_id;
+      const reg = c.vehicle?.registration ?? c.vehicle_id;
       const veh = vehicles.find(v => v.id === c.vehicle_id);
-      if (!map[reg]) map[reg] = { reg, makeModel: veh ? `${veh.make} ${veh.model}` : '', site: veh?.site_name ?? '', fuel: 0, maint: 0, other: 0 };
+      if (!map[reg]) map[reg] = { reg, makeModel: veh ? `${veh.make} ${veh.model}` : '', site: veh?.site?.name ?? '', fuel: 0, maint: 0, other: 0 };
       if (c.category === 'Fuel') map[reg].fuel += c.amount;
       else if (c.category === 'Maintenance') map[reg].maint += c.amount;
       else map[reg].other += c.amount;
@@ -728,7 +728,7 @@ const FleetReports: React.FC = () => {
             {[
               { label: 'Total Deviations', value: deviationSummary.reduce((s, r) => s + r.count, 0), color: 'bg-red-100', text: 'text-red-600' },
               { label: 'Unique Defect Types', value: deviationSummary.length, color: 'bg-orange-100', text: 'text-orange-600' },
-              { label: 'Vehicles Affected', value: new Set(filteredInsp.filter(i => ((i.answers as any)?.deviations?.length ?? 0) > 0).map(i => i.vehicle_reg)).size, color: 'bg-yellow-100', text: 'text-yellow-600' },
+              { label: 'Vehicles Affected', value: new Set(filteredInsp.filter(i => ((i.answers as any)?.deviations?.length ?? 0) > 0).map(i => i.vehicle?.registration ?? i.vehicle_id)).size, color: 'bg-yellow-100', text: 'text-yellow-600' },
             ].map(s => (
               <div key={s.label} className="bg-white rounded-lg shadow p-5 flex items-center gap-4">
                 <div className={`${s.color} p-3 rounded-full`}>

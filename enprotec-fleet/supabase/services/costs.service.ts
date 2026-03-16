@@ -1,58 +1,60 @@
 import { supabase } from '../client';
 import type { CostRow, CostCat } from '../database.types';
 
-export type CostInsert = Omit<CostRow, 'id' | 'created_at' | 'updated_at'>;
+export type CostInsert = Omit<CostRow, 'id' | 'created_at' | 'updated_at' | 'vehicle'>;
 export type CostUpdate = Partial<CostInsert>;
+
+const COST_SELECT = '*, vehicle:vehicles(id, registration, make, model)';
 
 export async function getCosts(limit = 200): Promise<CostRow[]> {
   const { data, error } = await supabase
     .from('costs')
-    .select('*')
+    .select(COST_SELECT)
     .order('date', { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as CostRow[];
 }
 
 export async function getCostsByVehicle(vehicleId: string): Promise<CostRow[]> {
   const { data, error } = await supabase
     .from('costs')
-    .select('*')
+    .select(COST_SELECT)
     .eq('vehicle_id', vehicleId)
     .order('date', { ascending: false });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as CostRow[];
 }
 
 export async function getCostsByDateRange(from: string, to: string): Promise<CostRow[]> {
   const { data, error } = await supabase
     .from('costs')
-    .select('*')
+    .select(COST_SELECT)
     .gte('date', from)
     .lte('date', to)
     .order('date', { ascending: false });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as CostRow[];
 }
 
 export async function getCostsByCategory(category: CostCat): Promise<CostRow[]> {
   const { data, error } = await supabase
     .from('costs')
-    .select('*')
+    .select(COST_SELECT)
     .eq('category', category)
     .order('date', { ascending: false });
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as CostRow[];
 }
 
 export async function createCost(cost: CostInsert): Promise<CostRow> {
   const { data, error } = await supabase
     .from('costs')
     .insert(cost)
-    .select()
+    .select(COST_SELECT)
     .single();
   if (error) throw error;
-  return data;
+  return data as CostRow;
 }
 
 export async function updateCost(id: string, updates: CostUpdate): Promise<CostRow> {
@@ -60,10 +62,10 @@ export async function updateCost(id: string, updates: CostUpdate): Promise<CostR
     .from('costs')
     .update(updates)
     .eq('id', id)
-    .select()
+    .select(COST_SELECT)
     .single();
   if (error) throw error;
-  return data;
+  return data as CostRow;
 }
 
 export async function deleteCost(id: string): Promise<void> {

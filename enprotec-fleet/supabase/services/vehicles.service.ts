@@ -1,36 +1,38 @@
 import { supabase } from '../client';
 import type { VehicleRow } from '../database.types';
 
-export type VehicleInsert = Omit<VehicleRow, 'id' | 'created_at' | 'updated_at'>;
+export type VehicleInsert = Omit<VehicleRow, 'id' | 'created_at' | 'updated_at' | 'site' | 'driver'>;
 export type VehicleUpdate = Partial<VehicleInsert>;
+
+const VEHICLE_SELECT = '*, site:en_sites(id, name), driver:en_users(id, name, email)';
 
 export async function getVehicles(): Promise<VehicleRow[]> {
   const { data, error } = await supabase
     .from('vehicles')
-    .select('*')
+    .select(VEHICLE_SELECT)
     .order('registration');
   if (error) throw error;
-  return data ?? [];
+  return (data ?? []) as VehicleRow[];
 }
 
 export async function getVehicle(id: string): Promise<VehicleRow | null> {
   const { data, error } = await supabase
     .from('vehicles')
-    .select('*')
+    .select(VEHICLE_SELECT)
     .eq('id', id)
     .single();
   if (error) throw error;
-  return data;
+  return data as VehicleRow | null;
 }
 
 export async function createVehicle(vehicle: VehicleInsert): Promise<VehicleRow> {
   const { data, error } = await supabase
     .from('vehicles')
     .insert(vehicle)
-    .select()
+    .select(VEHICLE_SELECT)
     .single();
   if (error) throw error;
-  return data;
+  return data as VehicleRow;
 }
 
 export async function updateVehicle(id: string, updates: VehicleUpdate): Promise<VehicleRow> {
@@ -38,10 +40,10 @@ export async function updateVehicle(id: string, updates: VehicleUpdate): Promise
     .from('vehicles')
     .update(updates)
     .eq('id', id)
-    .select()
+    .select(VEHICLE_SELECT)
     .single();
   if (error) throw error;
-  return data;
+  return data as VehicleRow;
 }
 
 export async function deleteVehicle(id: string): Promise<void> {

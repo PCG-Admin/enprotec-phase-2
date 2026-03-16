@@ -24,8 +24,8 @@ const Header: React.FC<HeaderProps> = ({ user, onLogout }) => {
         <p className="text-sm text-zinc-500">Here's a look at today's operational status.</p>
       </div>
 
-      {/* Module switcher — Admin or dual-role (fleet_access) users only */}
-      {(user?.role === 'Admin' || user?.fleet_access) && (
+      {/* Module switcher — Admin or dual-role (fleet_role) users only */}
+      {(user?.role === 'Admin' || user?.fleet_role != null) && (
         <div className="hidden sm:flex items-center gap-1 bg-zinc-100 rounded-lg p-1">
           <button
             className="text-xs font-medium px-3 py-1.5 rounded-md bg-white text-zinc-900 shadow-sm"

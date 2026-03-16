@@ -1,18 +1,18 @@
 import * as React from 'react';
-import Sidebar          from './components/Sidebar';
-import Header           from './components/Header';
-import Login            from './components/Login';
-import ModuleChooser    from './components/ModuleChooser';
-import OperationsPortal from './components/OperationsPortal';
-import FleetDashboard   from './components/fleet/FleetDashboard';
-import Vehicles         from './components/fleet/Vehicles';
-import Inspections      from './components/fleet/Inspections';
-import Costs            from './components/fleet/Costs';
-import Licenses         from './components/fleet/Licenses';
-import FleetReports     from './components/fleet/FleetReports';
-import Templates        from './components/fleet/Templates';
-import Compliance       from './components/fleet/Compliance';
-import Administration   from './components/fleet/Administration';
+import Sidebar           from './components/Sidebar';
+import Header            from './components/Header';
+import Login             from './components/Login';
+import ModuleChooser     from './components/ModuleChooser';
+import OperationsModule  from './components/operations/OperationsModule';
+import FleetDashboard    from './components/fleet/FleetDashboard';
+import Vehicles          from './components/fleet/Vehicles';
+import Inspections       from './components/fleet/Inspections';
+import Costs             from './components/fleet/Costs';
+import Licenses          from './components/fleet/Licenses';
+import FleetReports      from './components/fleet/FleetReports';
+import Templates         from './components/fleet/Templates';
+import Compliance        from './components/fleet/Compliance';
+import Administration    from './components/fleet/Administration';
 import { FleetView, User, getModuleAccess } from './types';
 import { getCurrentUser, onAuthStateChange, signOut } from './supabase/services/auth.service';
 
@@ -30,19 +30,25 @@ const App: React.FC = () => {
     let loaded = false;
     const stopLoading = () => { if (!loaded) { loaded = true; setLoading(false); } };
     const t = setTimeout(stopLoading, 4000);
-
     getCurrentUser()
       .then(u => { setUser(u); stopLoading(); })
       .catch(() => stopLoading());
-
     const unsub = onAuthStateChange(u => { setUser(u); stopLoading(); });
     return () => { unsub(); clearTimeout(t); };
   }, []);
 
-  const navigate = (view: FleetView) => {
-    setCurrentView(view);
-    setMobileOpen(false);
-  };
+  // ── Session inactivity timeout (30 min) ──────────────────────────────────────
+  React.useEffect(() => {
+    if (!user) return;
+    const TIMEOUT_MS = 30 * 60 * 1000;
+    let timer = setTimeout(handleLogout, TIMEOUT_MS);
+    const reset = () => { clearTimeout(timer); timer = setTimeout(handleLogout, TIMEOUT_MS); };
+    const events = ['mousemove', 'keydown', 'mousedown', 'touchstart', 'scroll'];
+    events.forEach(e => window.addEventListener(e, reset, { passive: true }));
+    return () => { clearTimeout(timer); events.forEach(e => window.removeEventListener(e, reset)); };
+  }, [user]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const navigate = (view: FleetView) => { setCurrentView(view); setMobileOpen(false); };
 
   const handleLogout = async () => {
     await signOut();
@@ -54,13 +60,12 @@ const App: React.FC = () => {
   const handleLogin = (u: User) => {
     setUser(u);
     const access = getModuleAccess(u);
-    // Auto-route if only one option; show chooser if both available
-    if (access === 'fleet')      setModule('fleet');
+    if (access === 'fleet')           setModule('fleet');
     else if (access === 'operations') setModule('operations');
-    else setModule(null); // 'chooser' — stay on chooser screen
+    else                              setModule(null); // chooser
   };
 
-  // ── Loading ──────────────────────────────────────────────────────────────────
+  // ── Loading ───────────────────────────────────────────────────────────────────
   if (loading) return (
     <div className="flex h-screen items-center justify-center bg-zinc-100">
       <div className="text-center space-y-3">
@@ -70,33 +75,28 @@ const App: React.FC = () => {
     </div>
   );
 
-  // ── Not logged in ────────────────────────────────────────────────────────────
+  // ── Not logged in ─────────────────────────────────────────────────────────────
   if (!user) return <Login onLogin={handleLogin} />;
 
-  // ── Logged in but no module chosen yet (admin / fleet-enabled manager) ───────
+  // ── Module chooser ────────────────────────────────────────────────────────────
   if (module === null) {
-    return (
-      <ModuleChooser
-        user={user}
-        onSelect={(m: ActiveModule) => setModule(m)}
-        onLogout={handleLogout}
-      />
-    );
+    return <ModuleChooser user={user} onSelect={(m: ActiveModule) => setModule(m)} onLogout={handleLogout} />;
   }
 
-  // ── Operations (Phase 1 iframe) ──────────────────────────────────────────────
+  // ── Operations module (direct render — no iframe) ─────────────────────────────
   if (module === 'operations') {
-    const canSwitchToFleet = user.role === 'Admin' || user.fleet_access;
+    const canSwitchToFleet = user.role === 'Admin' || user.fleet_role != null;
     return (
-      <OperationsPortal
+      <OperationsModule
+        user={user}
         onSwitchToFleet={canSwitchToFleet ? () => setModule('fleet') : undefined}
         onLogout={handleLogout}
       />
     );
   }
 
-  // ── Fleet Management ─────────────────────────────────────────────────────────
-  const renderView = () => {
+  // ── Fleet module ──────────────────────────────────────────────────────────────
+  const renderFleetView = () => {
     switch (currentView) {
       case 'FleetDashboard':  return <FleetDashboard user={user} />;
       case 'Vehicles':        return <Vehicles user={user} />;
@@ -111,17 +111,13 @@ const App: React.FC = () => {
     }
   };
 
-  const canSwitchToOps = user.role === 'Admin' || user.fleet_access;
+  const canSwitchToOps = user.role === 'Admin' || user.fleet_role != null;
 
   return (
     <div className="flex h-screen bg-zinc-100 font-sans overflow-hidden">
       {isMobileOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-30 md:hidden"
-          onClick={() => setMobileOpen(false)}
-        />
+        <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setMobileOpen(false)} />
       )}
-
       <Sidebar
         user={user}
         currentView={currentView}
@@ -131,7 +127,6 @@ const App: React.FC = () => {
         mobileOpen={isMobileOpen}
         onMobileClose={() => setMobileOpen(false)}
       />
-
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <Header
           user={user}
@@ -140,7 +135,7 @@ const App: React.FC = () => {
           onSwitchModule={canSwitchToOps ? setModule : undefined}
         />
         <main className="flex-1 overflow-x-hidden overflow-y-auto bg-zinc-100 p-4 md:p-8">
-          {renderView()}
+          {renderFleetView()}
         </main>
       </div>
     </div>

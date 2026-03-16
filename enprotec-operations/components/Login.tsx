@@ -13,6 +13,9 @@ interface LoginProps {
 const IS_DEV = import.meta.env.VITE_APP_ENV === 'dev';
 const PHASE2_URL = import.meta.env.VITE_PHASE2_URL ?? 'http://localhost:3003';
 
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS   = 15 * 60 * 1000;
+
 const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
   const [selectedModule, setSelectedModule] = useState<'operations' | null>(null);
   const [email, setEmail] = useState('');
@@ -27,6 +30,16 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     | { kind: 'error'; message: string }
     | null
   >(null);
+  const attemptsRef  = React.useRef<{ count: number }>({ count: 0 });
+  const [lockedUntil, setLockedUntil] = useState<number | null>(null);
+
+  React.useEffect(() => {
+    if (!lockedUntil) return;
+    const id = setInterval(() => {
+      if (Date.now() >= lockedUntil) { setLockedUntil(null); attemptsRef.current.count = 0; }
+    }, 1000);
+    return () => clearInterval(id);
+  }, [lockedUntil]);
 
   const canSubmitReset = useMemo(
     () => resetEmail.trim().length > 0 && !loading,
@@ -35,19 +48,33 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (lockedUntil && Date.now() < lockedUntil) {
+      const secs = Math.ceil((lockedUntil - Date.now()) / 1000);
+      setError(`Too many failed attempts. Try again in ${secs}s.`);
+      return;
+    }
+
     setError('');
     setLoading(true);
 
     try {
       console.info('[Login] signing in as', email);
       const { error: signInError, data: authData } = await supabase.auth.signInWithPassword({
-        email,
+        email: email.trim(),
         password,
       });
 
       if (signInError || !authData.session) {
         console.error('[Login] sign-in failed:', signInError);
-        setError('Invalid email or password.');
+        attemptsRef.current.count += 1;
+        if (attemptsRef.current.count >= MAX_ATTEMPTS) {
+          setLockedUntil(Date.now() + LOCKOUT_MS);
+          setError('Too many failed attempts. Account locked for 15 minutes.');
+        } else {
+          const remaining = MAX_ATTEMPTS - attemptsRef.current.count;
+          setError(`Invalid email or password. ${remaining} attempt${remaining !== 1 ? 's' : ''} remaining.`);
+        }
         return;
       }
 
@@ -61,6 +88,7 @@ const Login: React.FC<LoginProps> = ({ onLoginSuccess }) => {
         return;
       }
 
+      attemptsRef.current.count = 0;
       console.info('[Login] profile loaded, completing login');
       onLoginSuccess(profile);
     } catch (err) {

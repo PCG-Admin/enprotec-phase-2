@@ -1,9 +1,9 @@
 import { supabase } from '../client';
 import type { ProfileRow, UserStatus } from '../database.types';
 
-export type ProfileUpdate = Partial<Pick<ProfileRow, 'name' | 'role' | 'status' | 'fleet_access'>>;
+export type ProfileUpdate = Partial<Pick<ProfileRow, 'name' | 'role' | 'status' | 'fleet_role'>>;
 
-const SELECT = 'id, name, email, role, status, fleet_access, sites, departments';
+const SELECT = 'id, name, email, role, status, fleet_role, sites, departments';
 
 export async function getProfiles(): Promise<ProfileRow[]> {
   const { data, error } = await supabase
@@ -11,7 +11,7 @@ export async function getProfiles(): Promise<ProfileRow[]> {
     .select(SELECT)
     .order('name');
   if (error) throw error;
-  return (data ?? []).map(r => ({ ...r, fleet_access: r.fleet_access ?? false }));
+  return (data ?? []).map(r => ({ ...r, fleet_role: r.fleet_role ?? null }));
 }
 
 export async function getProfile(id: string): Promise<ProfileRow | null> {
@@ -21,7 +21,7 @@ export async function getProfile(id: string): Promise<ProfileRow | null> {
     .eq('id', id)
     .single();
   if (error) throw error;
-  return data ? { ...data, fleet_access: data.fleet_access ?? false } : null;
+  return data ? { ...data, fleet_role: data.fleet_role ?? null } : null;
 }
 
 export async function updateProfile(id: string, updates: ProfileUpdate): Promise<ProfileRow> {
@@ -32,7 +32,7 @@ export async function updateProfile(id: string, updates: ProfileUpdate): Promise
     .select(SELECT)
     .single();
   if (error) throw error;
-  return { ...data, fleet_access: data.fleet_access ?? false };
+  return { ...data, fleet_role: data.fleet_role ?? null };
 }
 
 export async function setUserStatus(id: string, status: UserStatus): Promise<void> {
@@ -40,7 +40,7 @@ export async function setUserStatus(id: string, status: UserStatus): Promise<voi
   if (error) throw error;
 }
 
-export async function setFleetAccess(id: string, fleet_access: boolean): Promise<void> {
-  const { error } = await supabase.from('en_users').update({ fleet_access }).eq('id', id);
+export async function setFleetRole(id: string, fleet_role: string | null): Promise<void> {
+  const { error } = await supabase.from('en_users').update({ fleet_role }).eq('id', id);
   if (error) throw error;
 }

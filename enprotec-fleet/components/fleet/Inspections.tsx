@@ -305,7 +305,7 @@ const TABS = [
 const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   const isDriver     = user?.role === UserRole.Driver;
   const isAdmin      = user?.role === UserRole.Admin;
-  const isCoordinator = !isAdmin && (isDriver || !!user?.fleet_access); // vehicle-filtered users
+  const isCoordinator = !isAdmin && (isDriver || user?.fleet_role != null); // vehicle-filtered users
   const [inspections, setInspections]       = React.useState<InspectionRecord[]>([]);
   const [vehicles, setVehicles]             = React.useState<VehicleRow[]>([]);
   const [sites, setSites]                   = React.useState<SiteRow[]>([]);
@@ -453,9 +453,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
       const selectedTemplate = templates.find(t => t.id === templateId);
       const payload = {
         vehicle_id: vehicle?.id ?? form.registrationNumber,
-        vehicle_reg: form.registrationNumber || null,
-        inspector_id: null as string | null,
-        inspector_name: form.inspectedBy || null,
+        inspector_id: user?.id ?? null,
         inspection_type: form.inspectionType,
         started_at: form.inspectionDate ? new Date(form.inspectionDate).toISOString() : new Date().toISOString(),
         completed_at: new Date().toISOString(),
@@ -519,12 +517,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
 
   // For drivers and fleet coordinators: filter to vehicles assigned to the user
   const visibleVehicles = isCoordinator
-    ? vehicles.filter(v =>
-        v.assigned_driver
-          ?.split('/')
-          .map(n => n.trim().toLowerCase())
-          .includes(user?.name?.toLowerCase() ?? '')
-      )
+    ? vehicles.filter(v => v.assigned_driver_id === user?.id)
     : vehicles;
 
   // Filter inspections: non-admin users only see their own submitted inspections
@@ -1985,7 +1978,6 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
                     for (const b of breakdownCostModal.breakdowns) {
                       await createCost({
                         vehicle_id: breakdownCostModal.vehicleId,
-                        vehicle_registration: breakdownCostModal.vehicleReg || null,
                         date: today,
                         category: 'Maintenance',
                         amount: parseFloat(b.costToRepair) || 0,

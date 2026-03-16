@@ -226,7 +226,7 @@ export interface User {
   sites: string[] | null;
   status: UserStatus;
   departments: Store[] | null;
-  fleet_access?: boolean;
+  fleet_role?: string | null;
 }
 
 export enum SiteStatus {

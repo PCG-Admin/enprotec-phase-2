@@ -384,6 +384,17 @@ const App: React.FC = () => {
     window.localStorage.setItem(STORAGE_VIEW_KEY, currentView);
   }, [currentView, loggedInUser]);
 
+  // ── Session inactivity timeout (30 min) ──────────────────────────────────
+  useEffect(() => {
+    if (!loggedInUser || isEmbedded) return; // embedded — timeout managed by fleet shell
+    const TIMEOUT_MS = 30 * 60 * 1000;
+    let timer = setTimeout(handleLogout, TIMEOUT_MS);
+    const reset = () => { clearTimeout(timer); timer = setTimeout(handleLogout, TIMEOUT_MS); };
+    const events = ['mousemove', 'keydown', 'mousedown', 'touchstart', 'scroll'];
+    events.forEach(e => window.addEventListener(e, reset, { passive: true }));
+    return () => { clearTimeout(timer); events.forEach(e => window.removeEventListener(e, reset)); };
+  }, [loggedInUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const isResetPasswordRoute = useMemo(() => {
     if (typeof window === 'undefined') {
       return false;
