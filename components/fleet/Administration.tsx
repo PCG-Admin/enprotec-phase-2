@@ -6,7 +6,7 @@ import {
 import type { User } from '../../types';
 import { UserRole } from '../../types';
 import type { ProfileRow, SiteRow, AuditRow, UserStatus } from '../../supabase/database.types';
-import { getProfiles, updateProfile, setUserStatus, setFleetAccess } from '../../supabase/services/profiles.service';
+import { getProfiles, updateProfile, setUserStatus } from '../../supabase/services/profiles.service';
 import { createFleetUser, deleteFleetUser } from '../../supabase/services/auth.service';
 import { getSites, createSite, updateSite, deleteSite } from '../../supabase/services/sites.service';
 import { getAuditLog, logAction } from '../../supabase/services/audit.service';
@@ -197,16 +197,6 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
     }
   };
 
-  const toggleFleetAccess = async (profile: ProfileRow) => {
-    const next = !profile.fleet_access;
-    try {
-      await setFleetAccess(profile.id, next);
-      setProfiles(p => p.map(u => u.id === profile.id ? { ...u, fleet_access: next } : u));
-    } catch (e: any) {
-      alert('Failed to update Fleet access: ' + e.message);
-    }
-  };
-
   const handleDeleteUser = async (profile: ProfileRow) => {
     if (profile.id === currentUser.id) {
       alert('You cannot delete your own account.');
@@ -341,7 +331,6 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Fleet Access</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                   </tr>
                 </thead>
@@ -355,15 +344,6 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
                           user.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
                         }`}>{user.status}</span>
-                      </td>
-                      <td className="px-6 py-4">
-                        <button
-                          onClick={() => toggleFleetAccess(user)}
-                          title={user.fleet_access ? 'Revoke Fleet access' : 'Grant Fleet access'}
-                          className={user.fleet_access ? 'text-sky-600 hover:text-sky-800' : 'text-gray-300 hover:text-gray-500'}
-                        >
-                          {user.fleet_access ? <ToggleRight className="h-5 w-5" /> : <ToggleLeft className="h-5 w-5" />}
-                        </button>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3">
@@ -385,7 +365,7 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
                     </tr>
                   ))}
                   {filteredUsers.length === 0 && (
-                    <tr><td colSpan={6} className="px-6 py-8 text-center text-gray-400 text-sm">No users found.</td></tr>
+                    <tr><td colSpan={5} className="px-6 py-8 text-center text-gray-400 text-sm">No users found.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -435,7 +415,6 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
                       site.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'
                     }`}>{site.status}</span>
                   </div>
-                  {site.contact && <p className="text-xs text-gray-500 mb-3">Contact: {site.contact}</p>}
                   <div className="flex items-center justify-end gap-3">
                     <button onClick={() => openSiteModal(site)} className="text-blue-600 hover:text-blue-800 text-sm flex items-center">
                       <Edit2 className="h-3.5 w-3.5 mr-1" />Edit
@@ -472,7 +451,7 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
                 { key: 'companyReg',     label: 'Company Reg No.', type: 'text'  },
                 { key: 'vatNumber',      label: 'VAT Number',      type: 'text'  },
               ] as { key: keyof typeof settings; label: string; type: string; placeholder?: string }[]).map(({ key, label, type, placeholder }) => (
-                <div key={key}>
+                <div key={String(key)}>
                   <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
                   <input type={type} value={settings[key] as string}
                     placeholder={placeholder ?? ''}
@@ -523,7 +502,7 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
                 { key: 'notifyLicenseExpiry', label: 'License expiry reminders',     desc: 'Show warnings when licenses are nearing expiry' },
                 { key: 'notifyCostThreshold', label: 'Monthly cost threshold alerts', desc: 'Alert when vehicle costs exceed a set monthly limit' },
               ] as { key: keyof typeof settings; label: string; desc: string }[]).map(({ key, label, desc }) => (
-                <div key={key} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+                <div key={String(key)} className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
                   <div>
                     <p className="text-sm font-medium text-gray-800">{label}</p>
                     <p className="text-xs text-gray-500">{desc}</p>
@@ -542,7 +521,7 @@ const Administration: React.FC<AdministrationProps> = ({ currentUser }) => {
                   { key: 'licenseWarnDays14', label: '14 days before expiry', color: 'orange' },
                   { key: 'licenseWarnDays7',  label: '7 days before expiry',  color: 'red'    },
                 ] as { key: keyof typeof settings; label: string; color: string }[]).map(({ key, label }) => (
-                  <label key={key} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                  <label key={String(key)} className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
                     <input type="checkbox" checked={!!settings[key]}
                       onChange={() => setSettings(p => ({ ...p, [key]: !p[key] }))}
                       className="rounded border-gray-300 text-blue-600 focus:ring-blue-500" />

@@ -1,4 +1,4 @@
-import { supabase, supabaseAdmin } from '../client';
+import { supabase } from '../client';
 import { User, UserRole, UserStatus } from '../../types';
 
 // ─── Row shape returned by en_users ──────────────────────────────────────────
@@ -8,20 +8,20 @@ interface EnUserRow {
   email:        string;
   role:         string;
   status:       string;
-  fleet_access: boolean;
+  fleet_role:   string | null;
   sites?:       string[] | null;
   departments?: string[] | null;
 }
 
 const toUser = (row: EnUserRow): User => ({
-  id:           row.id,
-  name:         row.name,
-  email:        row.email,
-  role:         row.role,
-  status:       (row.status as UserStatus) ?? UserStatus.Active,
-  fleet_access: row.fleet_access ?? false,
-  sites:        row.sites ?? null,
-  departments:  row.departments ?? null,
+  id:          row.id,
+  name:        row.name,
+  email:       row.email,
+  role:        row.role,
+  status:      (row.status as UserStatus) ?? UserStatus.Active,
+  fleet_role:  row.fleet_role ?? null,
+  sites:       row.sites ?? null,
+  departments: row.departments ?? null,
 });
 
 /** Build a minimal User from Supabase auth metadata (fallback when DB is unavailable) */
@@ -31,12 +31,12 @@ const userFromMeta = (
   const meta = authUser.user_metadata ?? {};
   if (!meta.name && !authUser.email) return null;
   return {
-    id:           authUser.id,
-    name:         (meta.name as string) ?? authUser.email ?? 'User',
-    email:        authUser.email ?? '',
-    role:         (meta.role as string) ?? UserRole.Admin,
-    status:       UserStatus.Active,
-    fleet_access: false,
+    id:         authUser.id,
+    name:       (meta.name as string) ?? authUser.email ?? 'User',
+    email:      authUser.email ?? '',
+    role:       (meta.role as string) ?? UserRole.Admin,
+    status:     UserStatus.Active,
+    fleet_role: null,
   };
 };
 
@@ -44,7 +44,7 @@ const userFromMeta = (
 export async function fetchProfile(userId: string): Promise<User | null> {
   const dbFetch = supabase
     .from('en_users')
-    .select('id, name, email, role, status, fleet_access, sites, departments')
+    .select('id, name, email, role, status, fleet_role, sites, departments')
     .eq('id', userId)
     .maybeSingle()
     .then(({ data, error }) => (error || !data ? null : toUser(data as EnUserRow)));
@@ -88,7 +88,7 @@ export function onAuthStateChange(callback: (user: User | null) => void) {
   return () => subscription.unsubscribe();
 }
 
-// ─── Get session (for cross-app token passing) ────────────────────────────────
+// ─── Get session ──────────────────────────────────────────────────────────────
 export async function getSession() {
   const { data: { session } } = await supabase.auth.getSession();
   return session;
@@ -102,47 +102,46 @@ export async function getCurrentUser(): Promise<User | null> {
   return profile ?? userFromMeta(session.user as Parameters<typeof userFromMeta>[0]);
 }
 
-// ─── Admin: create a fleet/ops user in en_users ───────────────────────────────
+// ─── Admin: create user — calls server-side API (SUPABASE_SERVICE_ROLE_KEY) ──
 export async function createFleetUser(
   email: string,
   password: string,
   name: string,
   role: string,
-  fleet_access = false,
+  fleet_role: string | null = null,
 ): Promise<{ error: string | null }> {
-  if (!supabaseAdmin) {
-    return { error: 'Service role key not configured. Add VITE_SUPABASE_SERVICE_ROLE_KEY to .env' };
-  }
-
-  const { data, error } = await supabaseAdmin.auth.admin.createUser({
-    email,
-    password,
-    user_metadata: { name, role },
-    email_confirm: true,
-  });
-
-  if (error) return { error: error.message };
-  if (!data.user) return { error: 'User creation failed.' };
-
-  // Give the DB trigger a moment, then upsert the en_users record
-  await new Promise(r => setTimeout(r, 500));
-  await supabaseAdmin
-    .from('en_users')
-    .upsert({
-      id:           data.user.id,
-      name,
-      email,
-      role,
-      status:       'Active',
-      fleet_access,
+  try {
+    const res = await fetch('/api/create-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password, name, role, fleet_role, sites: [], departments: [] }),
     });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: body?.error ?? `Failed to create user (${res.status})` };
 
-  return { error: null };
+    // If fleet_role is set, patch it via a separate update (create-user endpoint handles basic fields)
+    if (fleet_role && body.id) {
+      await supabase.from('en_users').update({ fleet_role }).eq('id', body.id);
+    }
+
+    return { error: null };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to create user' };
+  }
 }
 
-// ─── Admin: delete a user ─────────────────────────────────────────────────────
+// ─── Admin: delete user — calls server-side API (SUPABASE_SERVICE_ROLE_KEY) ──
 export async function deleteFleetUser(userId: string): Promise<{ error: string | null }> {
-  if (!supabaseAdmin) return { error: 'Service role key not configured.' };
-  const { error } = await supabaseAdmin.auth.admin.deleteUser(userId);
-  return { error: error?.message ?? null };
+  try {
+    const res = await fetch('/api/delete-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: body?.error ?? `Failed to delete user (${res.status})` };
+    return { error: null };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to delete user' };
+  }
 }

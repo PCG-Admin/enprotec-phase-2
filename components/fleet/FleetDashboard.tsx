@@ -10,7 +10,7 @@ import {
 import type { User } from '../../types';
 import { UserRole } from '../../types';
 import { getVehicles } from '../../supabase/services/vehicles.service';
-import { getInspections, getInspectionsByName } from '../../supabase/services/inspections.service';
+import { getInspections, getInspectionsByInspector } from '../../supabase/services/inspections.service';
 import { downloadInspection, type InspectionRecord } from '../../utils/printInspection';
 import { getMonthlyCostTotals } from '../../supabase/services/costs.service';
 import { getComplianceSchedule } from '../../supabase/services/compliance.service';
@@ -54,27 +54,22 @@ const FleetDashboard: React.FC<Props> = ({ user }) => {
     const today = new Date().toISOString().slice(0, 10);
 
     if (isDriver && user) {
-      // Driver view: assigned vehicles + their own inspections (matched by inspector_name)
+      // Driver view: assigned vehicles + their own inspections (by inspector_id)
       Promise.all([
-        getInspectionsByName(user.name),
+        getInspectionsByInspector(user.id),
         getVehicles(),
       ]).then(([all, allVehicles]) => {
-        // Filter assigned vehicles — supports slash-separated e.g. "Dumisane/Jabu/Sam"
-        const myVehicles = allVehicles.filter(v =>
-          v.assigned_driver
-            ?.split('/')
-            .map((n: string) => n.trim().toLowerCase())
-            .includes(user.name.toLowerCase())
-        );
-        const vehicleRegs = myVehicles.length > 0
-          ? myVehicles.map(v => v.registration)
-          : [...new Set(all.map(i => i.vehicle_reg).filter(Boolean))];
-        setTotalVehicles(vehicleRegs.length);
+        // Filter vehicles assigned to this driver by FK
+        const myVehicles = allVehicles.filter(v => v.assigned_driver_id === user.id);
+        const vehicleIds = myVehicles.length > 0
+          ? myVehicles.map(v => v.id)
+          : [...new Set(all.map(i => i.vehicle_id).filter(Boolean))];
+        setTotalVehicles(vehicleIds.length);
 
         // Status breakdown from their inspections (most recent per vehicle)
         const statusCounts: Record<string, number> = {};
-        vehicleRegs.forEach(reg => {
-          const latest = all.find(i => i.vehicle_reg === reg);
+        vehicleIds.forEach(vid => {
+          const latest = all.find(i => i.vehicle_id === vid);
           const s = latest?.status ?? 'pass';
           statusCounts[s] = (statusCounts[s] ?? 0) + 1;
         });
@@ -392,8 +387,8 @@ const FleetDashboard: React.FC<Props> = ({ user }) => {
                 const header = ['Date', 'Vehicle', 'Inspector', 'Type', 'Status'];
                 const rows = recentInspections.map(i => [
                   i.started_at.slice(0, 10),
-                  i.vehicle_reg ?? i.vehicle_id ?? '',
-                  i.inspector_name ?? '',
+                  i.vehicle?.registration ?? i.vehicle_id ?? '',
+                  i.inspector?.name ?? '',
                   i.inspection_type ?? '',
                   i.status,
                 ]);
@@ -421,9 +416,9 @@ const FleetDashboard: React.FC<Props> = ({ user }) => {
                     insp.status === 'fail' ? 'bg-red-500' : 'bg-yellow-500'
                   }`} />
                   <div>
-                    <p className="font-medium text-gray-900">{insp.vehicle_reg ?? insp.vehicle_id}</p>
+                    <p className="font-medium text-gray-900">{insp.vehicle?.registration ?? insp.vehicle_id}</p>
                     <p className="text-sm text-gray-500">
-                      {insp.inspector_name ? `Inspected by ${insp.inspector_name}` : insp.inspection_type}
+                      {insp.inspector?.name ? `Inspected by ${insp.inspector.name}` : insp.inspection_type}
                     </p>
                   </div>
                 </div>

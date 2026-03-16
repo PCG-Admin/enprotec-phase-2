@@ -7,15 +7,15 @@ import {
 import {
   getComplianceSchedule, createComplianceEntry, updateComplianceEntry,
   markCompleted, syncComplianceStatuses,
+  type ComplianceInsert,
 } from '../../supabase/services/compliance.service';
 import { getVehicles } from '../../supabase/services/vehicles.service';
 import { getInspections } from '../../supabase/services/inspections.service';
+import { getProfiles } from '../../supabase/services/profiles.service';
 import { logAction } from '../../supabase/services/audit.service';
-import type { ComplianceRow, CompStatus, InspectionRow } from '../../supabase/database.types';
+import type { ComplianceRow, CompStatus, InspectionRow, ProfileRow } from '../../supabase/database.types';
 import type { VehicleRow } from '../../supabase/database.types';
 import type { User } from '../../types';
-
-type ComplianceInsert = Omit<ComplianceRow, 'id' | 'created_at' | 'updated_at'>;
 
 const STATUS_FILTERS = [
   { key: 'all',       label: 'All' },
@@ -64,14 +64,15 @@ const StatusBadge: React.FC<{ status: CompStatus; due_date: string; notifyOverdu
   }
 };
 
+// vehicleRegDisplay is local UI state only — not sent to DB
 const EMPTY_FORM = {
-  vehicle_id: '',
-  vehicle_registration: '',
-  inspection_type: INSPECTION_TYPES[0],
-  due_date: '',
-  scheduled_date: '',
-  notes: '',
-  assigned_to: '',
+  vehicle_id:         '',
+  vehicleRegDisplay:  '',
+  inspection_type:    INSPECTION_TYPES[0],
+  due_date:           '',
+  scheduled_date:     '',
+  notes:              '',
+  assigned_to:        '',   // UUID of assignee
 };
 
 const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
@@ -81,6 +82,7 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
 
   const [schedule, setSchedule]           = React.useState<ComplianceRow[]>([]);
   const [vehicles, setVehicles]           = React.useState<VehicleRow[]>([]);
+  const [profiles, setProfiles]           = React.useState<ProfileRow[]>([]);
   const [inspectionRecs, setInspectionRecs] = React.useState<InspectionRow[]>([]);
   const [loading, setLoading]           = React.useState(true);
   const [error, setError]               = React.useState<string | null>(null);
@@ -98,10 +100,11 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
     setError(null);
     try {
       if (sync) await syncComplianceStatuses();
-      const [s, v, insp] = await Promise.all([getComplianceSchedule(), getVehicles(), getInspections()]);
+      const [s, v, insp, p] = await Promise.all([getComplianceSchedule(), getVehicles(), getInspections(), getProfiles()]);
       setSchedule(s);
       setVehicles(v);
       setInspectionRecs(insp);
+      setProfiles(p);
     } catch (e: any) {
       setError(e.message ?? 'Failed to load compliance data');
     } finally {
@@ -120,16 +123,18 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
   const filtered = schedule.filter(s => {
     const matchStatus = filterStatus === 'all' || s.status === filterStatus;
     const q = searchTerm.toLowerCase();
+    const reg = s.vehicle?.registration ?? '';
+    const assigneeName = s.assignee?.name ?? '';
     const matchSearch = !q ||
-      (s.vehicle_registration ?? '').toLowerCase().includes(q) ||
+      reg.toLowerCase().includes(q) ||
       s.inspection_type.toLowerCase().includes(q) ||
-      (s.assigned_to ?? '').toLowerCase().includes(q);
+      assigneeName.toLowerCase().includes(q);
     return matchStatus && matchSearch;
   });
 
   const handleVehicleInput = (reg: string) => {
     const v = vehicles.find(v => v.registration === reg);
-    setForm(p => ({ ...p, vehicle_id: v?.id ?? '', vehicle_registration: reg }));
+    setForm(p => ({ ...p, vehicle_id: v?.id ?? '', vehicleRegDisplay: reg }));
   };
 
   const openModal = (prefillDate?: string) => {
@@ -151,19 +156,19 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
       else if (days <= 14) status = 'Due Soon';
 
       const payload: ComplianceInsert = {
-        vehicle_id: form.vehicle_id || null,
-        vehicle_registration: form.vehicle_registration || null,
+        vehicle_id:     form.vehicle_id || null,
         inspection_type: form.inspection_type,
-        due_date: form.due_date,
+        due_date:       form.due_date,
         scheduled_date: form.scheduled_date || null,
         completed_date: null,
         status,
-        notes: form.notes || null,
-        assigned_to: form.assigned_to || null,
+        notes:          form.notes || null,
+        assigned_to:    form.assigned_to || null,
       };
       const created = await createComplianceEntry(payload);
       setSchedule(p => [...p, created].sort((a, b) => a.due_date.localeCompare(b.due_date)));
-      if (user) logAction(user.id, user.name, 'Created', 'Compliance', `Scheduled ${payload.inspection_type} for ${payload.vehicle_registration ?? 'vehicle'} — due ${payload.due_date}`);
+      const vReg = form.vehicleRegDisplay || 'vehicle';
+      if (user) logAction(user.id, user.name, 'Created', 'Compliance', `Scheduled ${payload.inspection_type} for ${vReg} — due ${payload.due_date}`);
       setShowModal(false);
     } catch (e: any) {
       setSaveError(e.message ?? 'Save failed');
@@ -274,7 +279,7 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
               <div key={entry.id} className="flex items-center justify-between bg-white rounded-lg px-4 py-2.5 border border-red-100">
                 <div>
                   <span className="font-medium text-gray-900">{entry.inspection_type}</span>
-                  <span className="text-gray-400 text-sm ml-2">({entry.vehicle_registration ?? 'Unknown'})</span>
+                  <span className="text-gray-400 text-sm ml-2">({entry.vehicle?.registration ?? 'Unknown'})</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <span className="text-red-600 text-sm font-medium">
@@ -324,8 +329,8 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
               <p className={`text-xs font-bold mb-1 ${isToday ? 'text-blue-600' : 'text-gray-500'}`}>{d}</p>
               {items.slice(0, 3).map(item => (
                 <div key={item.id} className={`text-[10px] rounded px-1 py-0.5 mb-0.5 text-white truncate ${statusDot[item.status] ?? 'bg-gray-400'}`}
-                  title={`${item.vehicle_registration} — ${item.inspection_type}`}>
-                  {item.vehicle_registration}: {item.inspection_type}
+                  title={`${item.vehicle?.registration ?? '?'} — ${item.inspection_type}`}>
+                  {item.vehicle?.registration ?? '?'}: {item.inspection_type}
                 </div>
               ))}
               {items.length > 3 && <p className="text-[10px] text-gray-400">+{items.length - 3} more</p>}
@@ -411,19 +416,19 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
                 {filtered.map(entry => (
                   <tr key={entry.id} className={`hover:bg-gray-50 ${entry.status === 'Overdue' ? 'bg-red-50' : ''}`}>
                     <td className="px-6 py-4 font-medium text-gray-900 text-sm">
-                      {entry.vehicle_registration ?? '—'}
+                      {entry.vehicle?.registration ?? '—'}
                     </td>
                     <td className="px-6 py-4 text-gray-700 text-sm">{entry.inspection_type}</td>
                     <td className="px-6 py-4 text-gray-600 text-sm font-medium">{entry.due_date}</td>
                     <td className="px-6 py-4">
                       <StatusBadge status={entry.status} due_date={entry.due_date} notifyOverdue={notifyOverdue} />
                     </td>
-                    <td className="px-6 py-4 text-gray-500 text-sm">{entry.assigned_to ?? '—'}</td>
+                    <td className="px-6 py-4 text-gray-500 text-sm">{entry.assignee?.name ?? '—'}</td>
                     <td className="px-6 py-4 text-gray-400 text-sm max-w-xs truncate">{entry.notes ?? '—'}</td>
                     <td className="px-6 py-4">
                       {(() => {
                         const vehicleInspections = inspectionRecs
-                          .filter(r => r.vehicle_reg === entry.vehicle_registration && r.completed_at)
+                          .filter(r => r.vehicle_id === entry.vehicle_id && r.completed_at)
                           .sort((a, b) => b.completed_at!.localeCompare(a.completed_at!));
                         const match = vehicleInspections[0];
                         return (
@@ -466,7 +471,7 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle</label>
                 <select
-                  value={form.vehicle_registration}
+                  value={form.vehicleRegDisplay}
                   onChange={e => handleVehicleInput(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
                   <option value="">— Select vehicle —</option>
@@ -499,10 +504,14 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Assigned To</label>
-                <input type="text" value={form.assigned_to}
+                <select value={form.assigned_to}
                   onChange={e => setForm(p => ({ ...p, assigned_to: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-                  placeholder="Inspector name" />
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+                  <option value="">— Not assigned —</option>
+                  {profiles.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>

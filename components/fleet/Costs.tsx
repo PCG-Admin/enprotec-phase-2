@@ -9,14 +9,13 @@ import {
 } from 'recharts';
 import {
   getCosts, createCost, updateCost, deleteCost, getMonthlyCostTotals,
+  type CostInsert,
 } from '../../supabase/services/costs.service';
 import { getVehicles } from '../../supabase/services/vehicles.service';
 import { logAction } from '../../supabase/services/audit.service';
 import type { CostRow, CostCat } from '../../supabase/database.types';
 import type { VehicleRow } from '../../supabase/database.types';
 import type { User } from '../../types';
-
-type CostInsert = Omit<CostRow, 'id' | 'created_at' | 'updated_at'>;
 
 const CATEGORIES: CostCat[] = ['Fuel', 'Maintenance', 'Tyres', 'Insurance', 'Licensing', 'Other'];
 
@@ -31,9 +30,10 @@ const CATEGORY_COLORS: Record<string, string> = {
 
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#f97316', '#6b7280'];
 
+// vehicleRegDisplay is local UI state only — not sent to DB
 const EMPTY_FORM = {
   vehicle_id: '',
-  vehicle_registration: '',
+  vehicleRegDisplay: '',
   date: new Date().toISOString().split('T')[0],
   category: 'Fuel' as CostCat,
   amount: '',
@@ -48,9 +48,10 @@ const EMPTY_FORM = {
 };
 
 const exportCSV = (data: CostRow[]) => {
-  const header = ['DATE', 'RTO NUMBER', 'PO NUMBER', 'INVOICE NUMBER', 'QUOTE NUMBER', 'SUPPLIER', 'DESCRIPTION', 'KM', 'TYPE', 'AMOUNT EXCL'];
+  const header = ['DATE', 'VEHICLE', 'RTO NUMBER', 'PO NUMBER', 'INVOICE NUMBER', 'QUOTE NUMBER', 'SUPPLIER', 'DESCRIPTION', 'KM', 'TYPE', 'AMOUNT EXCL'];
   const rows = data.map(c => [
     c.date,
+    c.vehicle?.registration ?? c.vehicle_id,
     c.rto_number ?? '',
     c.po_number ?? '',
     c.invoice_number ?? '',
@@ -102,13 +103,14 @@ const Costs: React.FC<{ user: User | null }> = ({ user }) => {
   React.useEffect(() => { load(); }, [load]);
 
   const filteredCosts = costs.filter(c => {
+    const reg = c.vehicle?.registration ?? '';
     const q = searchTerm.toLowerCase();
     const matchSearch = !q ||
-      (c.vehicle_registration ?? '').toLowerCase().includes(q) ||
+      reg.toLowerCase().includes(q) ||
       c.description.toLowerCase().includes(q) ||
       (c.supplier ?? '').toLowerCase().includes(q);
     const matchCat = filterCat === 'All' || c.category === filterCat;
-    const matchVeh = filterVeh === 'All' || c.vehicle_registration === filterVeh;
+    const matchVeh = filterVeh === 'All' || reg === filterVeh;
     return matchSearch && matchCat && matchVeh;
   });
 
@@ -123,7 +125,7 @@ const Costs: React.FC<{ user: User | null }> = ({ user }) => {
     value: costs.filter(c => c.category === cat).reduce((s, c) => s + c.amount, 0),
   })).filter(d => d.value > 0);
 
-  const uniqueVehicleRegs = [...new Set(costs.map(c => c.vehicle_registration).filter(Boolean))].sort();
+  const uniqueVehicleRegs = [...new Set(costs.map(c => c.vehicle?.registration).filter(Boolean) as string[])].sort();
 
   const openModal = (cost?: CostRow) => {
     setSaveError(null);
@@ -131,7 +133,7 @@ const Costs: React.FC<{ user: User | null }> = ({ user }) => {
       setEditId(cost.id);
       setForm({
         vehicle_id: cost.vehicle_id,
-        vehicle_registration: cost.vehicle_registration ?? '',
+        vehicleRegDisplay: cost.vehicle?.registration ?? '',
         date: cost.date,
         category: cost.category,
         amount: cost.amount.toString(),
@@ -146,14 +148,14 @@ const Costs: React.FC<{ user: User | null }> = ({ user }) => {
       });
     } else {
       setEditId(null);
-      setForm({ ...EMPTY_FORM });
+      setForm({ ...EMPTY_FORM, created_by: user?.id ?? null });
     }
     setShowModal(true);
   };
 
   const handleVehicleSelect = (reg: string) => {
     const v = vehicles.find(v => v.registration === reg);
-    setForm(p => ({ ...p, vehicle_id: v?.id ?? '', vehicle_registration: reg }));
+    setForm(p => ({ ...p, vehicle_id: v?.id ?? '', vehicleRegDisplay: reg }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -163,7 +165,6 @@ const Costs: React.FC<{ user: User | null }> = ({ user }) => {
     try {
       const payload: CostInsert = {
         vehicle_id: form.vehicle_id,
-        vehicle_registration: form.vehicle_registration || null,
         date: form.date,
         category: form.category,
         amount: parseFloat(form.amount) || 0,
@@ -175,16 +176,17 @@ const Costs: React.FC<{ user: User | null }> = ({ user }) => {
         quote_number: form.quote_number || null,
         km_reading: form.km_reading || null,
         receipt_url: null,
-        created_by: null,
+        created_by: form.created_by,
       };
+      const vReg = form.vehicleRegDisplay || 'vehicle';
       if (editId) {
         const updated = await updateCost(editId, payload);
         setCosts(p => p.map(c => c.id === editId ? updated : c));
-        if (user) logAction(user.id, user.name, 'Updated', 'Costs', `Updated ${payload.category} cost for ${payload.vehicle_registration ?? 'vehicle'} — R${payload.amount}`);
+        if (user) logAction(user.id, user.name, 'Updated', 'Costs', `Updated ${payload.category} cost for ${vReg} — R${payload.amount}`);
       } else {
         const created = await createCost(payload);
         setCosts(p => [created, ...p]);
-        if (user) logAction(user.id, user.name, 'Created', 'Costs', `Added ${payload.category} cost for ${payload.vehicle_registration ?? 'vehicle'} — R${payload.amount}`);
+        if (user) logAction(user.id, user.name, 'Created', 'Costs', `Added ${payload.category} cost for ${vReg} — R${payload.amount}`);
       }
       setShowModal(false);
     } catch (e: any) {
@@ -316,9 +318,10 @@ const Costs: React.FC<{ user: User | null }> = ({ user }) => {
             <select value={filterVeh} onChange={e => setFilterVeh(e.target.value)}
               className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
               <option value="All">All Vehicles</option>
-              {vehicles.filter(v => uniqueVehicleRegs.includes(v.registration)).map(v => (
-                <option key={v.id} value={v.registration}>{v.registration} — {v.make} {v.model}</option>
-              ))}
+              {uniqueVehicleRegs.map(reg => {
+                const v = vehicles.find(v => v.registration === reg);
+                return <option key={reg} value={reg}>{reg}{v ? ` — ${v.make} ${v.model}` : ''}</option>;
+              })}
             </select>
           </div>
         </div>
@@ -347,7 +350,7 @@ const Costs: React.FC<{ user: User | null }> = ({ user }) => {
                 {filteredCosts.map(cost => (
                   <tr key={cost.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900 text-sm">
-                      {cost.vehicle_registration ?? '—'}
+                      {cost.vehicle?.registration ?? '—'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-600 text-sm">{cost.date}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -391,7 +394,7 @@ const Costs: React.FC<{ user: User | null }> = ({ user }) => {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Vehicle *</label>
-                  <select required value={form.vehicle_registration}
+                  <select required value={form.vehicleRegDisplay}
                     onChange={e => handleVehicleSelect(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
                     <option value="">Select vehicle</option>

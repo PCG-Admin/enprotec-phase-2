@@ -5,8 +5,9 @@ import {
   type VehicleInsert,
 } from '../../supabase/services/vehicles.service';
 import { getSites } from '../../supabase/services/sites.service';
+import { getProfiles } from '../../supabase/services/profiles.service';
 import { logAction } from '../../supabase/services/audit.service';
-import type { VehicleRow, SiteRow } from '../../supabase/database.types';
+import type { VehicleRow, SiteRow, ProfileRow } from '../../supabase/database.types';
 import type { User } from '../../types';
 
 const STATUS_COLORS: Record<string, string> = {
@@ -20,7 +21,7 @@ const EMPTY_FORM: VehicleInsert = {
   registration: '', make: '', model: '', vehicle_type: '', year: null,
   vin: null, serial_number: null, fuel_type: 'Diesel',
   current_hours: 0, current_mileage: 0,
-  site_id: null, site_name: null, assigned_driver: null,
+  site_id: null, assigned_driver_id: null,
   purchase_date: null, acquisition_cost: null,
   last_inspection_date: null, next_inspection_date: null,
   status: 'Active', photo_url: null, notes: null,
@@ -38,6 +39,7 @@ const F: React.FC<{ label: string; children: React.ReactNode }> = ({ label, chil
 const Vehicles: React.FC<{ user: User | null }> = ({ user }) => {
   const [vehicles, setVehicles]     = React.useState<VehicleRow[]>([]);
   const [sites, setSites]           = React.useState<SiteRow[]>([]);
+  const [drivers, setDrivers]       = React.useState<ProfileRow[]>([]);
   const [loading, setLoading]       = React.useState(true);
   const [error, setError]           = React.useState('');
   const [search, setSearch]         = React.useState('');
@@ -52,9 +54,10 @@ const Vehicles: React.FC<{ user: User | null }> = ({ user }) => {
 
   const load = async () => {
     try {
-      const [v, s] = await Promise.all([getVehicles(), getSites()]);
+      const [v, s, p] = await Promise.all([getVehicles(), getSites(), getProfiles()]);
       setVehicles(v);
       setSites(s);
+      setDrivers(p);
     } catch (e: any) {
       setError(e.message ?? 'Failed to load vehicles.');
     } finally {
@@ -77,7 +80,7 @@ const Vehicles: React.FC<{ user: User | null }> = ({ user }) => {
       vehicle_type: v.vehicle_type, year: v.year, vin: v.vin,
       serial_number: v.serial_number, fuel_type: v.fuel_type,
       current_hours: v.current_hours, current_mileage: v.current_mileage,
-      site_id: v.site_id, site_name: v.site_name, assigned_driver: v.assigned_driver,
+      site_id: v.site_id, assigned_driver_id: v.assigned_driver_id,
       purchase_date: v.purchase_date, acquisition_cost: v.acquisition_cost,
       last_inspection_date: v.last_inspection_date, next_inspection_date: v.next_inspection_date,
       status: v.status, photo_url: v.photo_url, notes: v.notes,
@@ -93,11 +96,6 @@ const Vehicles: React.FC<{ user: User | null }> = ({ user }) => {
     const reader = new FileReader();
     reader.onload = ev => setPreview(ev.target?.result as string);
     reader.readAsDataURL(file);
-  };
-
-  const handleSiteChange = (siteId: string) => {
-    const site = sites.find(s => s.id === siteId);
-    setForm(f => ({ ...f, site_id: siteId || null, site_name: site?.name ?? null }));
   };
 
   const field = (key: keyof VehicleInsert, value: any) =>
@@ -150,8 +148,8 @@ const Vehicles: React.FC<{ user: User | null }> = ({ user }) => {
       v.registration.toLowerCase().includes(q) ||
       v.make.toLowerCase().includes(q) ||
       v.model.toLowerCase().includes(q) ||
-      (v.site_name ?? '').toLowerCase().includes(q) ||
-      (v.assigned_driver ?? '').toLowerCase().includes(q);
+      (v.site?.name ?? '').toLowerCase().includes(q) ||
+      (v.driver?.name ?? '').toLowerCase().includes(q);
     const matchStatus = filterStatus === 'All' || v.status === filterStatus;
     return matchSearch && matchStatus;
   });
@@ -236,8 +234,8 @@ const Vehicles: React.FC<{ user: User | null }> = ({ user }) => {
                   <td className="px-4 py-3 font-semibold text-zinc-900">{v.registration}</td>
                   <td className="px-4 py-3 text-zinc-600">{v.make} {v.model}</td>
                   <td className="px-4 py-3 text-zinc-500">{v.vehicle_type || '—'}</td>
-                  <td className="px-4 py-3 text-zinc-500">{v.site_name || '—'}</td>
-                  <td className="px-4 py-3 text-zinc-500 max-w-[140px] truncate">{v.assigned_driver || '—'}</td>
+                  <td className="px-4 py-3 text-zinc-500">{v.site?.name || '—'}</td>
+                  <td className="px-4 py-3 text-zinc-500 max-w-[140px] truncate">{v.driver?.name || '—'}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[v.status] ?? 'bg-zinc-100 text-zinc-600'}`}>
                       {v.status}
@@ -318,12 +316,17 @@ const Vehicles: React.FC<{ user: User | null }> = ({ user }) => {
                   <F label="Current Mileage (km)"><input type="number" value={form.current_mileage ?? 0} onChange={e => field('current_mileage', +e.target.value)} className={INPUT} min={0} /></F>
                   <F label="Current Hours"><input type="number" value={form.current_hours ?? 0} onChange={e => field('current_hours', +e.target.value)} className={INPUT} min={0} /></F>
                   <F label="Site">
-                    <select value={form.site_id ?? ''} onChange={e => handleSiteChange(e.target.value)} className={INPUT}>
+                    <select value={form.site_id ?? ''} onChange={e => field('site_id', e.target.value || null)} className={INPUT}>
                       <option value="">— Select site —</option>
                       {sites.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                     </select>
                   </F>
-                  <F label="Assigned Driver"><input value={form.assigned_driver ?? ''} onChange={e => field('assigned_driver', e.target.value)} className={INPUT} placeholder="Driver name" /></F>
+                  <F label="Assigned Driver">
+                    <select value={form.assigned_driver_id ?? ''} onChange={e => field('assigned_driver_id', e.target.value || null)} className={INPUT}>
+                      <option value="">— No driver assigned —</option>
+                      {drivers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                  </F>
                   <F label="Purchase Date"><input type="date" value={form.purchase_date ?? ''} onChange={e => field('purchase_date', e.target.value)} className={INPUT} /></F>
                   <F label="Acquisition Cost (R)"><input type="number" value={form.acquisition_cost ?? ''} onChange={e => field('acquisition_cost', e.target.value ? +e.target.value : null)} className={INPUT} min={0} /></F>
                   <F label="Last Inspection Date"><input type="date" value={form.last_inspection_date ?? ''} onChange={e => field('last_inspection_date', e.target.value)} className={INPUT} /></F>
