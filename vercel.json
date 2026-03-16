@@ -1,6 +1,6 @@
 {
-  "buildCommand": "cd enprotec-main && npm install && npm run build",
-  "outputDirectory": "enprotec-main/dist",
+  "buildCommand": "cd enprotec-operations && npm install && npm run build",
+  "outputDirectory": "enprotec-operations/dist",
   "installCommand": "echo skip",
   "rewrites": [
     {
