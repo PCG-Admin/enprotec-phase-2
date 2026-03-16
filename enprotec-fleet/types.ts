@@ -156,6 +156,7 @@ export interface User {
   name:         string;
   email:        string;
   role:         string;          // raw string from en_users (covers all role variants)
+  fleet_role?:  string | null;
   status:       UserStatus;
   sites?:       string[] | null;
   departments?: Store[] | null;
