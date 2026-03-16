@@ -89,7 +89,7 @@ export const handleCreateUser = async (
 
   const profileResponse = await supabaseAdmin
     .from('en_users')
-    .insert({
+    .upsert({
       id: authUser.id,
       name: payload.name,
       email: payload.email,
@@ -98,7 +98,7 @@ export const handleCreateUser = async (
       departments: payload.departments,
       password: PASSWORD_PLACEHOLDER,
       status: payload.status ?? UserStatus.Active,
-    })
+    }, { onConflict: 'id' })
     .select('*')
     .single()
 
