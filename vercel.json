@@ -1,7 +1,7 @@
 {
   "buildCommand": "cd enprotec-operations && npm install && npm run build",
   "outputDirectory": "enprotec-operations/dist",
-  "installCommand": "echo skip",
+  "installCommand": "cd enprotec-operations && npm install",
   "rewrites": [
     {
       "source": "/reset-password",
