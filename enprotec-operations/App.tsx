@@ -169,6 +169,7 @@ const App: React.FC = () => {
   const [activeForm, setActiveForm] = useState<{ type: FormType; context?: any } | null>(null);
   const [showInspectionToast, setShowInspectionToast] = useState(false);
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [isMobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [initialisingAuth, setInitialisingAuth] = useState(() => isEmbedded || !readStoredUser());
 
   const handleLoginSuccess = (user: User) => {
@@ -618,21 +619,24 @@ const App: React.FC = () => {
         <Sidebar
           user={loggedInUser}
           currentView={currentView}
-          setCurrentView={navigateTo}
+          setCurrentView={(view) => { navigateTo(view); setMobileMenuOpen(false); }}
           collapsed={isSidebarCollapsed}
           onToggle={() => setSidebarCollapsed(prev => !prev)}
+          mobileOpen={isMobileMenuOpen}
+          onMobileClose={() => setMobileMenuOpen(false)}
         />
         <div className="flex-1 flex flex-col overflow-hidden">
           <Header
             user={loggedInUser}
             onLogout={handleLogout}
+            onMobileMenuToggle={() => setMobileMenuOpen(prev => !prev)}
             onSwitchToFleet={
               (loggedInUser.role === 'Admin' || loggedInUser.fleet_role != null)
                 ? () => setActiveModule('fleet')
                 : undefined
             }
           />
-          <main className="flex-1 overflow-x-hidden overflow-y-auto bg-zinc-100 p-8">
+          <main className="flex-1 overflow-x-hidden overflow-y-auto bg-zinc-100 p-4 md:p-8">
             {renderView()}
           </main>
           {activeForm && (

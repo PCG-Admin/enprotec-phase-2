@@ -23,6 +23,8 @@ interface SidebarProps {
   setCurrentView: (view: View) => void;
   collapsed: boolean;
   onToggle: () => void;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }
 
 const viewPermissions: Partial<Record<UserRole, View[]>> = {
@@ -69,7 +71,7 @@ const NavItem: React.FC<{
   </li>
 );
 
-const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView, collapsed, onToggle }) => {
+const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView, collapsed, onToggle, mobileOpen, onMobileClose }) => {
   const allNavItems: { label: string; view: View; icon: React.ReactNode }[] = [
     { label: 'Dashboard', view: 'Dashboard', icon: <HomeIcon className="w-5 h-5" /> },
     { label: 'Workflows', view: 'Workflows', icon: <WorkflowIcon className="w-5 h-5" /> },
@@ -93,8 +95,23 @@ const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView, co
   const visibleNavItems = allNavItems.filter(item => allowedViews.includes(item.view));
 
   return (
+    <>
+      {/* Mobile overlay backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-40 z-20 md:hidden"
+          onClick={onMobileClose}
+        />
+      )}
     <aside
-      className={`${collapsed ? 'w-20' : 'w-72'} bg-white text-zinc-800 flex flex-col flex-shrink-0 border-r border-zinc-200 transition-all duration-300`}
+      className={`
+        fixed inset-y-0 left-0 z-30 flex flex-col bg-white text-zinc-800 border-r border-zinc-200
+        transition-transform duration-300
+        ${mobileOpen ? 'translate-x-0' : '-translate-x-full'}
+        md:relative md:translate-x-0 md:flex-shrink-0
+        ${collapsed ? 'md:w-20' : 'md:w-72'}
+        w-72
+      `}
     >
       <div className={`relative border-b border-zinc-200 ${collapsed ? 'px-3 py-4' : 'px-6 py-6'} overflow-visible`}>
         <div className={`flex flex-col items-center ${collapsed ? 'space-y-2' : 'space-y-4'}`}>
@@ -131,6 +148,7 @@ const Sidebar: React.FC<SidebarProps> = ({ user, currentView, setCurrentView, co
         )}
       </div>
     </aside>
+    </>
   );
 };
 
