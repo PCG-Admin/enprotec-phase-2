@@ -1,3 +1,15 @@
+// ─── Fleet views ─────────────────────────────────────────────────────────────
+export type FleetView =
+  | 'FleetDashboard'
+  | 'Vehicles'
+  | 'Inspections'
+  | 'Costs'
+  | 'Licenses'
+  | 'FleetReports'
+  | 'Templates'
+  | 'Compliance'
+  | 'Administration';
+
 export type View =
   | 'Dashboard'
   | 'Workflows'
@@ -227,6 +239,16 @@ export interface User {
   status: UserStatus;
   departments: Store[] | null;
   fleet_role?: string | null;
+}
+
+// ─── Module access ────────────────────────────────────────────────────────────
+export type ModuleAccess = 'fleet' | 'operations' | 'chooser';
+
+export function getModuleAccess(user: User): ModuleAccess {
+  if (user.role === UserRole.Admin) return 'chooser';
+  if (user.role === UserRole.Driver) return 'fleet';
+  if (user.fleet_role != null) return 'chooser';
+  return 'operations';
 }
 
 export enum SiteStatus {
