@@ -35,13 +35,23 @@ const PASSWORD_PLACEHOLDER = 'Supabase-Auth-Managed'
 export const handleCreateUser = async (
   payload: CreateUserPayload | undefined
 ): Promise<HandlerResult> => {
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL
+  const serviceRoleKey =
+    process.env.SUPABASE_SERVICE_ROLE_KEY ||
+    process.env.VITE_SUPABASE_SERVICE_ROLE_KEY
+  const supabaseUrl =
+    process.env.SUPABASE_URL ||
+    process.env.VITE_SUPABASE_URL ||
+    process.env.NEXT_PUBLIC_SUPABASE_URL
 
   if (!serviceRoleKey || !supabaseUrl) {
+    const missing = [
+      !serviceRoleKey && 'SUPABASE_SERVICE_ROLE_KEY',
+      !supabaseUrl && 'SUPABASE_URL',
+    ].filter(Boolean).join(', ')
+    console.error('[create-user] Missing env vars:', missing)
     return {
       status: 500,
-      body: { error: 'Supabase configuration missing on server' },
+      body: { error: `Server misconfiguration: missing ${missing}. Set these in Vercel → Settings → Environment Variables for ALL environments (Production + Preview).` },
     }
   }
 
@@ -103,6 +113,7 @@ export const handleCreateUser = async (
     .single()
 
   if (profileResponse.error || !profileResponse.data) {
+    console.error('[create-user] en_users upsert failed:', profileResponse.error)
     await supabaseAdmin.auth.admin.deleteUser(authUser.id)
     return {
       status: 500,
