@@ -37,9 +37,8 @@ const DRIVER_FLEET_VIEWS: FleetView[] = [
 ];
 
 function getAllowedViews(user: User): FleetView[] {
-  if (user.role === UserRole.Admin) return ALL_FLEET_VIEWS;
-  if (user.fleet_role != null) return MANAGER_FLEET_VIEWS;  // dual-role coordinators
-  return DRIVER_FLEET_VIEWS;                           // drivers
+  if (user.role === UserRole.Admin || user.fleet_role != null) return ALL_FLEET_VIEWS;
+  return DRIVER_FLEET_VIEWS; // pure drivers
 }
 
 const NavItem: React.FC<{
