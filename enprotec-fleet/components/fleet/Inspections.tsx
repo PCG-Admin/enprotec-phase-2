@@ -303,9 +303,9 @@ const TABS = [
 ];
 
 const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
-  const isAdmin      = user?.role === UserRole.Admin;
-  const isDriver     = user?.role === UserRole.Driver || (user?.fleet_role != null && !isAdmin);
-  const isCoordinator = !isAdmin && (isDriver || user?.fleet_role != null); // vehicle-filtered users
+  const isAdmin      = user?.role === UserRole.Admin || user?.fleet_role != null;
+  const isDriver     = user?.role === UserRole.Driver && user?.fleet_role == null; // pure driver only
+  const isCoordinator = isDriver; // only pure drivers get filtered vehicle view
   const [inspections, setInspections]       = React.useState<InspectionRecord[]>([]);
   const [vehicles, setVehicles]             = React.useState<VehicleRow[]>([]);
   const [sites, setSites]                   = React.useState<SiteRow[]>([]);
@@ -554,35 +554,33 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
     <div className="space-y-4">
       <p className="text-sm text-gray-500 flex items-center"><MapPin className="h-4 w-4 mr-1" /> GPS timestamp will be captured on submission.</p>
 
-      {/* Driver: vehicle quick-select */}
-      {isDriver && (
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Select Vehicle
-            {visibleVehicles.length === 0 && (
-              <span className="ml-2 text-orange-500 text-xs font-normal">(no vehicle assigned yet — contact your admin)</span>
-            )}
-          </label>
-          <select
-            value={form.registrationNumber}
-            onChange={e => {
-              const pool = visibleVehicles.length > 0 ? visibleVehicles : vehicles;
-              const v = pool.find(v => v.registration === e.target.value);
-              if (v) {
-                set('registrationNumber', v.registration);
-                set('vehicleMakeModel', `${v.make} ${v.model}`.trim());
-                setSelectedVehicleId(v.id);
-              }
-            }}
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Select vehicle…</option>
-            {(visibleVehicles.length > 0 ? visibleVehicles : vehicles).map(v => (
-              <option key={v.id} value={v.registration}>{v.registration} — {v.make} {v.model}</option>
-            ))}
-          </select>
-        </div>
-      )}
+      {/* Vehicle quick-select — all users */}
+      <div>
+        <label className="block text-sm font-medium text-gray-700 mb-1">
+          Select Vehicle
+          {isDriver && visibleVehicles.length === 0 && (
+            <span className="ml-2 text-orange-500 text-xs font-normal">(no vehicle assigned yet — contact your admin)</span>
+          )}
+        </label>
+        <select
+          value={form.registrationNumber}
+          onChange={e => {
+            const pool = isDriver && visibleVehicles.length > 0 ? visibleVehicles : vehicles;
+            const v = pool.find(v => v.registration === e.target.value);
+            if (v) {
+              set('registrationNumber', v.registration);
+              set('vehicleMakeModel', `${v.make} ${v.model}`.trim());
+              setSelectedVehicleId(v.id);
+            }
+          }}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">Select vehicle…</option>
+          {(isDriver && visibleVehicles.length > 0 ? visibleVehicles : vehicles).map(v => (
+            <option key={v.id} value={v.registration}>{v.registration} — {v.make} {v.model}</option>
+          ))}
+        </select>
+      </div>
 
       {/* Inspection Type */}
       <div>

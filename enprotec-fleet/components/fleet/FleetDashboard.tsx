@@ -28,7 +28,7 @@ const daysLeft = (exp: string) =>
 interface Props { user: User | null; }
 
 const FleetDashboard: React.FC<Props> = ({ user }) => {
-  const isDriver = user?.role === UserRole.Driver || (user?.fleet_role != null && user?.role !== UserRole.Admin);
+  const isDriver = user?.role === UserRole.Driver && user?.fleet_role == null; // pure driver only; dual-role gets full fleet view
   const [loading, setLoading]                   = React.useState(true);
   const [totalVehicles, setTotalVehicles]       = React.useState(0);
   const [vehicleStatusData, setVehicleStatus]   = React.useState<{ name: string; value: number }[]>([]);
