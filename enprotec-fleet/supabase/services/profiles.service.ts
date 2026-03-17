@@ -12,8 +12,8 @@ export async function getProfiles(): Promise<ProfileRow[]> {
     .order('name');
   if (error) throw error;
   const rows = (data ?? []).map(r => ({ ...r, fleet_role: r.fleet_role ?? null }));
-  // Deduplicate by email — keeps first occurrence (DB may have duplicate rows from failed creates)
-  return rows.filter((r, i, arr) => arr.findIndex(x => x.email === r.email) === i);
+  // Deduplicate by name — orphan rows from failed creates can share a name with different emails
+  return rows.filter((r, i, arr) => arr.findIndex(x => x.name === r.name) === i);
 }
 
 export async function getProfile(id: string): Promise<ProfileRow | null> {
