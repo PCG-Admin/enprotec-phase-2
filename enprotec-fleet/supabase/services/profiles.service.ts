@@ -12,8 +12,8 @@ export async function getProfiles(): Promise<ProfileRow[]> {
     .order('name');
   if (error) throw error;
   const rows = (data ?? []).map(r => ({ ...r, fleet_role: r.fleet_role ?? null }));
-  // Deduplicate by id in case trigger + API both inserted a row
-  return rows.filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i);
+  // Deduplicate by email — keeps first occurrence (DB may have duplicate rows from failed creates)
+  return rows.filter((r, i, arr) => arr.findIndex(x => x.email === r.email) === i);
 }
 
 export async function getProfile(id: string): Promise<ProfileRow | null> {
