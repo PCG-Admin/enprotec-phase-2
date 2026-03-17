@@ -124,7 +124,7 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
     const matchStatus = filterStatus === 'all' || s.status === filterStatus;
     const q = searchTerm.toLowerCase();
     const reg = s.vehicle?.registration ?? '';
-    const assigneeName = s.assignee?.name ?? '';
+    const assigneeName = s.assignee?.name ?? profiles.find(p => p.id === s.assigned_to)?.name ?? '';
     const matchSearch = !q ||
       reg.toLowerCase().includes(q) ||
       s.inspection_type.toLowerCase().includes(q) ||
@@ -423,7 +423,7 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
                     <td className="px-6 py-4">
                       <StatusBadge status={entry.status} due_date={entry.due_date} notifyOverdue={notifyOverdue} />
                     </td>
-                    <td className="px-6 py-4 text-gray-500 text-sm">{entry.assignee?.name ?? '—'}</td>
+                    <td className="px-6 py-4 text-gray-500 text-sm">{entry.assignee?.name ?? profiles.find(p => p.id === entry.assigned_to)?.name ?? '—'}</td>
                     <td className="px-6 py-4 text-gray-400 text-sm max-w-xs truncate">{entry.notes ?? '—'}</td>
                     <td className="px-6 py-4">
                       {(() => {

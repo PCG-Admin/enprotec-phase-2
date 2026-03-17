@@ -11,7 +11,8 @@ export async function getProfiles(): Promise<ProfileRow[]> {
     .select(SELECT)
     .order('name');
   if (error) throw error;
-  return (data ?? []).map(r => ({ ...r, fleet_role: r.fleet_role ?? null }));
+  const rows = (data ?? []).map(r => ({ ...r, fleet_role: r.fleet_role ?? null }));
+  return rows.filter((r, i, arr) => arr.findIndex(x => x.id === r.id) === i);
 }
 
 export async function getProfile(id: string): Promise<ProfileRow | null> {

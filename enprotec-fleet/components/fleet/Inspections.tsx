@@ -303,8 +303,8 @@ const TABS = [
 ];
 
 const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
-  const isDriver     = user?.role === UserRole.Driver;
   const isAdmin      = user?.role === UserRole.Admin;
+  const isDriver     = user?.role === UserRole.Driver || (user?.fleet_role != null && !isAdmin);
   const isCoordinator = !isAdmin && (isDriver || user?.fleet_role != null); // vehicle-filtered users
   const [inspections, setInspections]       = React.useState<InspectionRecord[]>([]);
   const [vehicles, setVehicles]             = React.useState<VehicleRow[]>([]);
