@@ -12,8 +12,14 @@ export async function getProfiles(): Promise<ProfileRow[]> {
     .order('name');
   if (error) throw error;
   const rows = (data ?? []).map(r => ({ ...r, fleet_role: r.fleet_role ?? null }));
-  // Deduplicate by name — orphan rows from failed creates can share a name with different emails
-  return rows.filter((r, i, arr) => arr.findIndex(x => x.name === r.name) === i);
+  // Deduplicate by normalised name (trim + lowercase) — catches "John " vs "john" etc.
+  const seen = new Set<string>();
+  return rows.filter(r => {
+    const key = (r.name ?? '').trim().toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export async function getProfile(id: string): Promise<ProfileRow | null> {
