@@ -519,9 +519,10 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   const handleDeleteInspection = async (id: string) => {
     if (!confirm('Delete this inspection?')) return;
     try {
+      const record = inspections.find(i => i.id === id);
       await deleteInspection(id);
       setInspections(prev => prev.filter(i => i.id !== id));
-      if (user) logAction(user.id, user.name, 'Deleted', 'Inspections', `Deleted inspection ${id}`);
+      if (user) logAction(user.id, user.name, 'Deleted', 'Inspections', `Deleted ${record?.inspectionType ?? 'inspection'} for ${record?.registrationNumber ?? 'unknown vehicle'}`);
     } catch (e: any) {
       alert('Delete failed: ' + e.message);
     }
