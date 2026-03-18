@@ -186,19 +186,20 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
   const handleMarkCompleted = async (id: string) => {
     try {
       const updated = await markCompleted(id);
+      const entry = schedule.find(s => s.id === id);
       setSchedule(p => p.map(s => s.id === id ? updated : s));
-      if (user) logAction(user.id, user.name, 'Completed', 'Compliance', `Marked compliance entry ${id} as completed`);
+      if (user) logAction(user.id, user.name, 'Completed', 'Compliance', `Marked ${entry?.inspection_type ?? 'entry'} for ${entry?.vehicle?.registration ?? '—'} as completed`);
     } catch (e: any) {
       alert('Failed to mark as completed: ' + e.message);
     }
   };
 
-  const handleDelete = async (id: string, vehicle: string) => {
+  const handleDelete = async (id: string, vehicle: string, inspectionType: string) => {
     if (!window.confirm(`Delete compliance entry for ${vehicle}?`)) return;
     try {
       await deleteComplianceEntry(id);
       setSchedule(p => p.filter(s => s.id !== id));
-      if (user) logAction(user.id, user.name, 'Deleted', 'Compliance', `Deleted compliance entry ${id}`);
+      if (user) logAction(user.id, user.name, 'Deleted', 'Compliance', `Deleted ${inspectionType} for ${vehicle}`);
     } catch (e: any) {
       alert('Failed to delete: ' + e.message);
     }
@@ -446,32 +447,18 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
                     <td className="px-6 py-4 text-gray-500 text-sm">{entry.assignee?.name ?? profiles.find(p => p.id === entry.assigned_to)?.name ?? '—'}</td>
                     <td className="px-6 py-4 text-gray-400 text-sm max-w-xs truncate">{entry.notes ?? '—'}</td>
                     <td className="px-6 py-4">
-                      {(() => {
-                        const vehicleInspections = inspectionRecs
-                          .filter(r => r.vehicle_id === entry.vehicle_id && r.completed_at)
-                          .sort((a, b) => b.completed_at!.localeCompare(a.completed_at!));
-                        const match = vehicleInspections[0];
-                        return (
-                          <div className="flex flex-col gap-1.5">
-                            {match && (
-                              <span className="inline-flex items-center gap-1 text-xs text-green-700 bg-green-50 border border-green-200 rounded px-2 py-0.5">
-                                <CheckCircle className="h-3 w-3" />
-                                Inspected {match.completed_at!.slice(0, 10)}
-                              </span>
-                            )}
-                            {entry.status !== 'Completed' && (
-                              <button onClick={() => handleMarkCompleted(entry.id)}
-                                className="text-xs text-green-700 border border-green-300 bg-green-50 px-2.5 py-1 rounded-lg hover:bg-green-100 font-medium">
-                                Mark Done
-                              </button>
-                            )}
-                            <button onClick={() => handleDelete(entry.id, entry.vehicle?.registration ?? entry.id)}
-                              className="inline-flex items-center gap-1 text-xs text-red-600 border border-red-200 bg-red-50 px-2.5 py-1 rounded-lg hover:bg-red-100 font-medium">
-                              <Trash2 className="h-3 w-3" /> Delete
-                            </button>
-                          </div>
-                        );
-                      })()}
+                      <div className="flex flex-col gap-1.5">
+                        {entry.status !== 'Completed' && (
+                          <button onClick={() => handleMarkCompleted(entry.id)}
+                            className="text-xs text-green-700 border border-green-300 bg-green-50 px-2.5 py-1 rounded-lg hover:bg-green-100 font-medium">
+                            Mark Done
+                          </button>
+                        )}
+                        <button onClick={() => handleDelete(entry.id, entry.vehicle?.registration ?? '—', entry.inspection_type)}
+                          className="inline-flex items-center gap-1 text-xs text-red-600 border border-red-200 bg-red-50 px-2.5 py-1 rounded-lg hover:bg-red-100 font-medium">
+                          <Trash2 className="h-3 w-3" /> Delete
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
