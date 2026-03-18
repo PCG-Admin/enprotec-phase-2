@@ -12,7 +12,8 @@ import { getSites } from '../../supabase/services/sites.service';
 import { createCost } from '../../supabase/services/costs.service';
 import { getActiveTemplates } from '../../supabase/services/templates.service';
 import { logAction } from '../../supabase/services/audit.service';
-import type { InspectionRow, VehicleRow, TemplateRow, DbQuestion, SiteRow } from '../../supabase/database.types';
+import { getComplianceSchedule } from '../../supabase/services/compliance.service';
+import type { InspectionRow, VehicleRow, TemplateRow, DbQuestion, SiteRow, ComplianceRow } from '../../supabase/database.types';
 import type { User } from '../../types';
 import { UserRole } from '../../types';
 import {
@@ -324,6 +325,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   const [selectedVehicleId, setSelectedVehicleId] = React.useState('');
   const [form, setForm] = React.useState(defaultForm());
   const [weekCalMonth, setWeekCalMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
+  const [complianceDue, setComplianceDue] = React.useState<ComplianceRow[]>([]);
 
   // Auto-populate inspectedBy with the logged-in user's name when the form opens
   React.useEffect(() => {
@@ -333,8 +335,8 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   }, [showForm]);
 
   React.useEffect(() => {
-    Promise.all([getInspections(), getVehicles(), getActiveTemplates(), getSites()])
-      .then(([rows, vehs, tpls, sts]) => {
+    Promise.all([getInspections(), getVehicles(), getActiveTemplates(), getSites(), getComplianceSchedule()])
+      .then(([rows, vehs, tpls, sts, compliance]) => {
         setTemplates(tpls);
         setVehicles(vehs);
         setSites(sts);
@@ -343,6 +345,16 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
           ...((r.answers as unknown as Omit<InspectionRecord, 'id' | 'result'>) ?? defaultForm()),
           result: (r.status as InspectionRecord['result']) ?? 'pass',
         })));
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const soon = new Date(today);
+        soon.setDate(soon.getDate() + 7);
+        setComplianceDue(compliance.filter(c => {
+          if (c.status === 'Completed') return false;
+          const due = c.due_date ? new Date(c.due_date) : null;
+          const sched = c.scheduled_date ? new Date(c.scheduled_date) : null;
+          return (due && due <= soon) || (sched && sched <= soon);
+        }));
       })
       .catch(() => {})
       .finally(() => setLoadingList(false));
@@ -1477,6 +1489,36 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
           New Inspection
         </button>
       </div>
+
+      {/* Compliance Warning Banner */}
+      {complianceDue.length > 0 && (
+        <div className="bg-amber-50 border border-amber-300 rounded-lg p-4">
+          <div className="flex items-start gap-3">
+            <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber-800">
+                {complianceDue.length} vehicle{complianceDue.length > 1 ? 's have' : ' has'} compliance inspections due or scheduled within 7 days
+              </p>
+              <ul className="mt-2 space-y-1">
+                {complianceDue.map(c => {
+                  const reg = c.vehicle?.registration ?? 'Unknown vehicle';
+                  const due = c.due_date ? new Date(c.due_date).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
+                  const sched = c.scheduled_date ? new Date(c.scheduled_date).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : null;
+                  const isOverdue = c.due_date && new Date(c.due_date) < new Date();
+                  return (
+                    <li key={c.id} className="text-xs text-amber-700 flex items-center gap-1.5">
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${isOverdue ? 'bg-red-500' : 'bg-amber-400'}`} />
+                      <span><strong>{reg}</strong> — {c.inspection_type}</span>
+                      {sched && <span className="text-amber-600">(Scheduled: {sched})</span>}
+                      {due && <span className={`font-medium ${isOverdue ? 'text-red-600' : 'text-amber-700'}`}>· Due: {due}</span>}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Search + Type filter */}
       <div className="bg-white rounded-lg shadow p-4">
