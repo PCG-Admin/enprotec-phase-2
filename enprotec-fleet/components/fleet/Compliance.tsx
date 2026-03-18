@@ -38,24 +38,26 @@ const INSPECTION_TYPES = [
 const daysRemaining = (dueDate: string) =>
   Math.round((new Date(dueDate).getTime() - Date.now()) / (1000 * 86400));
 
+const fmtDate = (d: string) => new Date(d + 'T00:00:00').toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
+
 const StatusBadge: React.FC<{ status: CompStatus; due_date: string; notifyOverdue: boolean }> = ({ status, due_date, notifyOverdue }) => {
   const days = daysRemaining(due_date);
   switch (status) {
     case 'Overdue':
       return notifyOverdue
         ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-            <AlertTriangle className="h-3 w-3 mr-1" />{Math.abs(days)}d overdue
+            <AlertTriangle className="h-3 w-3 mr-1" />Overdue · {fmtDate(due_date)}
           </span>
         : <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-100 text-zinc-600">
-            Overdue
+            Overdue · {fmtDate(due_date)}
           </span>;
     case 'Due Soon':
       return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-        <Clock className="h-3 w-3 mr-1" />Due in {days}d
+        <Clock className="h-3 w-3 mr-1" />Due {fmtDate(due_date)} ({days}d)
       </span>;
     case 'Scheduled':
       return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-        <Calendar className="h-3 w-3 mr-1" />In {days}d
+        <Calendar className="h-3 w-3 mr-1" />Scheduled · {fmtDate(due_date)}
       </span>;
     case 'Completed':
       return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -320,17 +322,20 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
         const monthLabel = calMonth.toLocaleString('en-ZA', { month: 'long', year: 'numeric' });
         const today = new Date().toISOString().slice(0, 10);
 
-        // Map due_date → items
-        const byDate: Record<string, ComplianceRow[]> = {};
-        schedule.forEach(s => {
-          const key = s.due_date.slice(0, 10);
+        // Map items by scheduled_date (if set) AND due_date so both appear on calendar
+        const byDate: Record<string, Array<ComplianceRow & { _calType: 'scheduled' | 'due' }>> = {};
+        const addToDate = (key: string, item: ComplianceRow, type: 'scheduled' | 'due') => {
           if (!byDate[key]) byDate[key] = [];
-          byDate[key].push(s);
+          byDate[key].push({ ...item, _calType: type });
+        };
+        schedule.forEach(s => {
+          if (s.scheduled_date) addToDate(s.scheduled_date.slice(0, 10), s, 'scheduled');
+          addToDate(s.due_date.slice(0, 10), s, 'due');
         });
 
         const statusDot: Record<string, string> = {
           Overdue: 'bg-red-500', 'Due Soon': 'bg-orange-400',
-          Scheduled: 'bg-blue-400', Completed: 'bg-green-500',
+          Scheduled: 'bg-blue-400', Completed: 'bg-green-500', 'Scheduled Date': 'bg-purple-500',
         };
 
         const cells = Array.from({ length: firstDay }, (_, i) => <div key={`e${i}`} />);
@@ -342,10 +347,10 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
             <div key={dateStr} onClick={() => openModal(dateStr)}
               className={`min-h-[80px] border border-gray-200 rounded p-1 cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-colors ${isToday ? 'bg-blue-50 border-blue-300' : 'bg-white'}`}>
               <p className={`text-xs font-bold mb-1 ${isToday ? 'text-blue-600' : 'text-gray-500'}`}>{d}</p>
-              {items.slice(0, 3).map(item => (
-                <div key={item.id} className={`text-[10px] rounded px-1 py-0.5 mb-0.5 text-white truncate ${statusDot[item.status] ?? 'bg-gray-400'}`}
-                  title={`${item.vehicle?.registration ?? '?'} — ${item.inspection_type}`}>
-                  {item.vehicle?.registration ?? '?'}: {item.inspection_type}
+              {items.slice(0, 3).map((item, i) => (
+                <div key={`${item.id}-${i}`} className={`text-[10px] rounded px-1 py-0.5 mb-0.5 text-white truncate ${item._calType === 'scheduled' ? 'bg-purple-500' : (statusDot[item.status] ?? 'bg-gray-400')}`}
+                  title={`${item._calType === 'scheduled' ? 'Scheduled' : 'Due'}: ${item.vehicle?.registration ?? '?'} — ${item.inspection_type}`}>
+                  {item._calType === 'scheduled' ? '📅 ' : ''}{item.vehicle?.registration ?? '?'}: {item.inspection_type}
                 </div>
               ))}
               {items.length > 3 && <p className="text-[10px] text-gray-400">+{items.length - 3} more</p>}
