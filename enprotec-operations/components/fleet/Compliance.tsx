@@ -2,11 +2,11 @@ import * as React from 'react';
 import {
   AlertTriangle, CheckCircle, Clock, Calendar,
   Search, AlertCircle, RefreshCw, Plus, X, Loader2,
-  ChevronLeft, ChevronRight, LayoutList,
+  ChevronLeft, ChevronRight, LayoutList, Trash2,
 } from 'lucide-react';
 import {
   getComplianceSchedule, createComplianceEntry, updateComplianceEntry,
-  markCompleted, syncComplianceStatuses,
+  markCompleted, syncComplianceStatuses, deleteComplianceEntry,
   type ComplianceInsert,
 } from '../../supabase/services/compliance.service';
 import { getVehicles } from '../../supabase/services/vehicles.service';
@@ -184,6 +184,17 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
       if (user) logAction(user.id, user.name, 'Completed', 'Compliance', `Marked compliance entry ${id} as completed`);
     } catch (e: any) {
       alert('Failed to mark as completed: ' + e.message);
+    }
+  };
+
+  const handleDelete = async (id: string, vehicle: string) => {
+    if (!window.confirm(`Delete compliance entry for ${vehicle}?`)) return;
+    try {
+      await deleteComplianceEntry(id);
+      setSchedule(p => p.filter(s => s.id !== id));
+      if (user) logAction(user.id, user.name, 'Deleted', 'Compliance', `Deleted compliance entry ${id}`);
+    } catch (e: any) {
+      alert('Failed to delete: ' + e.message);
     }
   };
 
@@ -445,6 +456,10 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
                                 Mark Done
                               </button>
                             )}
+                            <button onClick={() => handleDelete(entry.id, entry.vehicle?.registration ?? entry.id)}
+                              className="inline-flex items-center gap-1 text-xs text-red-600 border border-red-200 bg-red-50 px-2.5 py-1 rounded-lg hover:bg-red-100 font-medium">
+                              <Trash2 className="h-3 w-3" /> Delete
+                            </button>
                           </div>
                         );
                       })()}
