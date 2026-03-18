@@ -99,7 +99,7 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
     setLoading(true);
     setError(null);
     try {
-      if (sync) await syncComplianceStatuses();
+      await syncComplianceStatuses();
       const [s, v, insp, p] = await Promise.all([getComplianceSchedule(), getVehicles(), getInspections(), getProfiles()]);
       setSchedule(s);
       setVehicles(v);
@@ -167,6 +167,10 @@ const Compliance: React.FC<{ user: User | null }> = ({ user }) => {
       };
       const created = await createComplianceEntry(payload);
       setSchedule(p => [...p, created].sort((a, b) => a.due_date.localeCompare(b.due_date)));
+      // Navigate calendar to the month of the new entry
+      const [y, m] = created.due_date.slice(0, 7).split('-').map(Number);
+      setCalMonth(new Date(y, m - 1, 1));
+      setViewMode('calendar');
       const vReg = form.vehicleRegDisplay || 'vehicle';
       if (user) logAction(user.id, user.name, 'Created', 'Compliance', `Scheduled ${payload.inspection_type} for ${vReg} — due ${payload.due_date}`);
       setShowModal(false);
