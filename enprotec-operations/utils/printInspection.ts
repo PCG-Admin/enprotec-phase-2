@@ -107,6 +107,7 @@ export interface InspectionRecord {
   siteAllocation: string;
   vehicleMakeModel: string;
   registrationNumber: string;
+  currentMileage: string;
   currentHours: string;
   lastServiceHours: string;
   lastServiceDate: string;

@@ -406,7 +406,7 @@ const Licenses: React.FC<{ user: User | null }> = ({ user }) => {
                       <td className="px-5 py-3 text-zinc-600">{l.expiry_date}</td>
                       <td className="px-5 py-3"><StatusBadge expiry={l.expiry_date} notifyEnabled={notifyLicenseExpiry} /></td>
                       <td className={`px-5 py-3 font-medium ${notifyLicenseExpiry && days <= 0 ? 'text-red-600' : notifyLicenseExpiry && days <= 30 ? 'text-amber-600' : 'text-zinc-600'}`}>
-                        {days <= 0 ? 'Expired' : `${days}d`}
+                        {`${days}d`}
                       </td>
                       <td className="px-5 py-3 text-right space-x-3">
                         {l.document_url && (

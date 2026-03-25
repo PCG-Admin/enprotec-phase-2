@@ -120,6 +120,7 @@ const defaultForm = (): Omit<InspectionRecord, 'id' | 'result'> => ({
   siteAllocation: '',
   vehicleMakeModel: '',
   registrationNumber: '',
+  currentMileage: '',
   currentHours: '',
   lastServiceHours: '',
   lastServiceDate: '',
@@ -165,7 +166,6 @@ const YesNoSelect: React.FC<{ value: YesNo; onChange: (v: YesNo) => void; invert
         : ''
     }`}
   >
-    <option value="">—</option>
     <option value="Yes">Yes</option>
     <option value="No">No</option>
   </select>
@@ -182,11 +182,9 @@ const ConditionSelect: React.FC<{ value: Condition; onChange: (v: Condition) => 
         : ''
     }`}
   >
-    <option value="">—</option>
     <option value="Good">Good</option>
     <option value="Damaged">Damaged</option>
     <option value="Not Working">Not Working</option>
-    <option value="N/A">N/A</option>
   </select>
 );
 
@@ -478,6 +476,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
           templateQuestions: selectedTemplate?.questions ?? [],
         } as any,
         notes: computedDeviations.map(d => `${d.item}: ${d.deviation}`).join('; ') || null,
+        current_mileage: form.currentMileage ? parseInt(form.currentMileage) || null : null,
         odometer: form.currentHours ? parseInt(form.currentHours) || null : null,
         hour_meter: null as number | null,
         signature_url: null as string | null,
@@ -639,6 +638,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
           ['Inspected By *', 'inspectedBy', 'text'],
           ['Vehicle Make & Model *', 'vehicleMakeModel', 'text'],
           ['Registration Number *', 'registrationNumber', 'text'],
+          ['Current Mileage (km)', 'currentMileage', 'number'],
           ['Current Hours / Odometer', 'currentHours', 'text'],
           ['Last Service (Hours)', 'lastServiceHours', 'text'],
           ['Last Service (Date)', 'lastServiceDate', 'date'],
@@ -1697,6 +1697,7 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
                       ['Site', viewInspection.siteAllocation],
                       ['Make / Model', viewInspection.vehicleMakeModel],
                       ['Registration', viewInspection.registrationNumber],
+                      ['Current Mileage', viewInspection.currentMileage ? `${viewInspection.currentMileage} km` : '—'],
                       ['Current Hours', viewInspection.currentHours],
                       ['Last Service Date', viewInspection.lastServiceDate],
                       ['Last Service Hours', viewInspection.lastServiceHours],

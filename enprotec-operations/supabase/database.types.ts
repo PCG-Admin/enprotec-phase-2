@@ -89,6 +89,7 @@ export interface InspectionRow {
   status:          InspResult;
   answers:         Json;
   notes:           string | null;
+  current_mileage: number | null;
   odometer:        number | null;
   hour_meter:      number | null;
   signature_url:   string | null;

@@ -48,14 +48,14 @@ const createUserDevPlugin = (): PluginOption => ({
             console.error('create-user dev handler failed:', error);
             res.statusCode = 500;
             res.setHeader('Content-Type', 'application/json');
-            res.end(JSON.stringify({ error: 'Failed to process request' }));
+            res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Failed to process request' }));
           }
         });
       } catch (error) {
         console.error('create-user dev handler error:', error);
         res.statusCode = 500;
         res.setHeader('Content-Type', 'application/json');
-        res.end(JSON.stringify({ error: 'Failed to process request' }));
+        res.end(JSON.stringify({ error: error instanceof Error ? error.message : 'Failed to process request' }));
       }
     });
   },

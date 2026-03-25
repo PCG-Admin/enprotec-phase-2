@@ -15,6 +15,7 @@ type CreateUserPayload = {
   role: string
   sites: string[]
   departments: string[]
+  fleet_role?: string | null
   status?: UserStatusValue
 }
 
@@ -84,6 +85,7 @@ export const handleCreateUser = async (
       role: payload.role,
       sites: payload.sites,
       departments: payload.departments,
+      fleet_role: payload.fleet_role ?? null,
       status: payload.status ?? UserStatus.Active,
     },
   })
@@ -104,9 +106,9 @@ export const handleCreateUser = async (
       name: payload.name,
       email: payload.email,
       role: payload.role,
-      sites: payload.sites,
-      departments: payload.departments,
-      password: PASSWORD_PLACEHOLDER,
+      sites: payload.sites ?? [],
+      departments: payload.departments ?? [],
+      fleet_role: payload.fleet_role ?? null,
       status: payload.status ?? UserStatus.Active,
     }, { onConflict: 'id' })
     .select('*')
