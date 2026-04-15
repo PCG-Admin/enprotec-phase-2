@@ -12,6 +12,8 @@ import { getSites } from '../../supabase/services/sites.service';
 import { createCost } from '../../supabase/services/costs.service';
 import { getActiveTemplates } from '../../supabase/services/templates.service';
 import { logAction } from '../../supabase/services/audit.service';
+import { createOpenActions, getOpenActionsByInspection, getActionSummaries } from '../../supabase/services/openActions.service';
+import type { OpenActionRow } from '../../supabase/database.types';
 import { getComplianceSchedule } from '../../supabase/services/compliance.service';
 import type { InspectionRow, VehicleRow, TemplateRow, DbQuestion, SiteRow, ComplianceRow } from '../../supabase/database.types';
 import type { User } from '../../types';
@@ -320,10 +322,25 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   const [searchTerm, setSearchTerm] = React.useState('');
   const [typeFilter, setTypeFilter] = React.useState<'All' | 'General' | 'Forklift' | 'Generator'>('All');
   const [viewInspection, setViewInspection] = React.useState<InspectionRecord | null>(null);
+  const [viewActions, setViewActions] = React.useState<OpenActionRow[]>([]);
+  const [loadingActions, setLoadingActions] = React.useState(false);
+  const [actionSummaries, setActionSummaries] = React.useState<Map<string, { total: number; resolved: number }>>(new Map());
   const [selectedVehicleId, setSelectedVehicleId] = React.useState('');
   const [form, setForm] = React.useState(defaultForm());
   const [weekCalMonth, setWeekCalMonth] = React.useState(() => { const d = new Date(); d.setDate(1); return d; });
   const [complianceDue, setComplianceDue] = React.useState<ComplianceRow[]>([]);
+
+  // Fetch open actions when viewing an inspection
+  React.useEffect(() => {
+    if (!viewInspection) { setViewActions([]); return; }
+    let cancelled = false;
+    setLoadingActions(true);
+    getOpenActionsByInspection(viewInspection.id)
+      .then(data => { if (!cancelled) setViewActions(data); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingActions(false); });
+    return () => { cancelled = true; };
+  }, [viewInspection?.id]);
 
   // Auto-populate inspectedBy with the logged-in user's name when the form opens
   React.useEffect(() => {
@@ -333,8 +350,9 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   }, [showForm]);
 
   React.useEffect(() => {
-    Promise.all([getInspections(), getVehicles(), getActiveTemplates(), getSites(), getComplianceSchedule()])
-      .then(([rows, vehs, tpls, sts, compliance]) => {
+    Promise.all([getInspections(), getVehicles(), getActiveTemplates(), getSites(), getComplianceSchedule(), getActionSummaries()])
+      .then(([rows, vehs, tpls, sts, compliance, summaries]) => {
+        setActionSummaries(summaries);
         setTemplates(tpls);
         setVehicles(vehs);
         setSites(sts);
@@ -493,6 +511,14 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
         result,
       };
       setInspections(prev => [record, ...prev]);
+      // Create open actions for any deviations found
+      if (computedDeviations.length > 0 && saved.vehicle_id) {
+        try {
+          await createOpenActions(saved.id, saved.vehicle_id, computedDeviations);
+        } catch (e) {
+          console.error('Failed to create open actions:', e);
+        }
+      }
       if (user) logAction(user.id, user.name, 'Created', 'Inspections', `Submitted ${form.inspectionType} inspection for ${form.registrationNumber} — result: ${result}`);
       setShowForm(false);
       setActiveTab(0);
@@ -1632,7 +1658,22 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
                     <td className="px-3 py-2 whitespace-nowrap text-gray-600">{insp.inspectionDate}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-600">{insp.siteAllocation}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-gray-600">{insp.inspectedBy}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-center text-gray-600">{insp.deviations?.length || '—'}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-center text-gray-600">
+                      {(() => {
+                        const devCount = insp.deviations?.length || 0;
+                        if (!devCount) return '—';
+                        const summary = actionSummaries.get(insp.id);
+                        if (!summary) return devCount;
+                        const allDone = summary.resolved === summary.total;
+                        return (
+                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium ${
+                            allDone ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                          }`}>
+                            {allDone ? '✓' : `${summary.resolved}/${summary.total}`}
+                          </span>
+                        );
+                      })()}
+                    </td>
                     <td className="px-3 py-2 whitespace-nowrap"><ResultBadge result={insp.result} /></td>
                     <td className="px-3 py-2 whitespace-nowrap">
                       <div className="flex items-center justify-end gap-2">
@@ -1940,30 +1981,83 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
                   );
                 })()}
 
-                {/* Deviations */}
+                {/* Deviations with resolution status */}
                 {viewInspection.deviations?.length > 0 && (
                   <section>
-                    <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Deviations ({viewInspection.deviations.length})</h3>
-                    <div className="overflow-x-auto">
-                      <table className="min-w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-3 py-2 text-left font-medium text-gray-500 w-8">#</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-500">Item</th>
-                            <th className="px-3 py-2 text-left font-medium text-gray-500">Deviation</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100">
-                          {viewInspection.deviations.map((d, i) => (
-                            <tr key={i} className="bg-white">
-                              <td className="px-3 py-1.5 text-gray-500">{i + 1}</td>
-                              <td className="px-3 py-1.5 font-medium text-gray-800">{d.item || '—'}</td>
-                              <td className="px-3 py-1.5 text-gray-600">{d.deviation || '—'}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    {(() => {
+                      const resolvedCount = viewActions.filter(a => a.status === 'resolved').length;
+                      const totalActions = viewActions.length;
+                      const allResolved = totalActions > 0 && resolvedCount === totalActions;
+                      return (
+                        <>
+                          <div className="flex items-center gap-3 mb-3">
+                            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                              Deviations ({viewInspection.deviations.length})
+                            </h3>
+                            {totalActions > 0 && (
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                                allResolved
+                                  ? 'bg-green-100 text-green-700'
+                                  : 'bg-orange-100 text-orange-700'
+                              }`}>
+                                {allResolved ? '✓ All Resolved' : `${resolvedCount}/${totalActions} Resolved`}
+                              </span>
+                            )}
+                          </div>
+                          <div className="overflow-x-auto">
+                            <table className="min-w-full text-xs border border-gray-200 rounded-lg overflow-hidden">
+                              <thead className="bg-gray-50">
+                                <tr>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-500 w-8">#</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-500">Item</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-500">Deviation</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-500">Status</th>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-500">Proof</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {viewInspection.deviations.map((d, i) => {
+                                  const action = viewActions.find(a => a.deviation_id === d.id);
+                                  return (
+                                    <tr key={i} className="bg-white">
+                                      <td className="px-3 py-1.5 text-gray-500">{i + 1}</td>
+                                      <td className="px-3 py-1.5 font-medium text-gray-800">{d.item || '—'}</td>
+                                      <td className="px-3 py-1.5 text-gray-600">{d.deviation || '—'}</td>
+                                      <td className="px-3 py-1.5">
+                                        {loadingActions ? (
+                                          <span className="text-gray-400">…</span>
+                                        ) : action?.status === 'resolved' ? (
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-700">
+                                            ✓ Resolved
+                                          </span>
+                                        ) : action ? (
+                                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
+                                            Open
+                                          </span>
+                                        ) : (
+                                          <span className="text-gray-400">—</span>
+                                        )}
+                                      </td>
+                                      <td className="px-3 py-1.5">
+                                        {action?.status === 'resolved' && action.proof_url ? (
+                                          <a href={action.proof_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">
+                                            View proof
+                                          </a>
+                                        ) : action?.resolution_notes ? (
+                                          <span className="text-xs text-gray-500 truncate max-w-[100px] block" title={action.resolution_notes}>{action.resolution_notes}</span>
+                                        ) : (
+                                          <span className="text-gray-400">—</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </>
+                      );
+                    })()}
                   </section>
                 )}
 

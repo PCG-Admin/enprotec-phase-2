@@ -34,6 +34,7 @@ import FleetReports from './components/fleet/FleetReports';
 import Templates from './components/fleet/Templates';
 import Compliance from './components/fleet/Compliance';
 import Administration from './components/fleet/Administration';
+import OpenActions from './components/fleet/OpenActions';
 import { View, FleetView, FormType, User, UserRole, WorkflowRequest, StockItem, getMappedRole, getModuleAccess } from './types';
 import PRForm from './components/forms/PRForm';
 import GateReleaseForm from './components/forms/GateReleaseForm';
@@ -571,6 +572,7 @@ const App: React.FC = () => {
         case 'FleetDashboard':  return <FleetDashboard user={loggedInUser} />;
         case 'Vehicles':        return <Vehicles user={loggedInUser} />;
         case 'Inspections':     return <Inspections user={loggedInUser} />;
+        case 'OpenActions':     return <OpenActions user={loggedInUser} />;
         case 'Costs':           return <Costs user={loggedInUser} />;
         case 'Licenses':        return <Licenses user={loggedInUser} />;
         case 'FleetReports':    return <FleetReports />;

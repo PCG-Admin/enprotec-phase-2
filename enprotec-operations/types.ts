@@ -3,6 +3,7 @@ export type FleetView =
   | 'FleetDashboard'
   | 'Vehicles'
   | 'Inspections'
+  | 'OpenActions'
   | 'Costs'
   | 'Licenses'
   | 'FleetReports'

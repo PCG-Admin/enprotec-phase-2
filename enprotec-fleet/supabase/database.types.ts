@@ -179,6 +179,29 @@ export interface ComplianceRow {
   assignee?: JoinedUser   | null;
 }
 
+export type OpenActionStatus = 'open' | 'resolved';
+
+export interface OpenActionRow {
+  id:               string;
+  inspection_id:    string;
+  vehicle_id:       string;
+  deviation_id:     string;
+  item:             string;
+  deviation:        string;
+  status:           OpenActionStatus;
+  resolution_notes: string | null;
+  proof_url:        string | null;
+  proof_type:       string | null;
+  resolved_by:      string | null;
+  resolved_at:      string | null;
+  created_at:       string;
+  updated_at:       string;
+  // Joined relations
+  vehicle?:    JoinedVehicle | null;
+  inspection?: { id: string; inspection_type: string; started_at: string; inspector_id: string | null } | null;
+  resolver?:   JoinedUser | null;
+}
+
 export interface AuditRow {
   id:         string;
   user_id:    string | null;
@@ -232,6 +255,38 @@ export interface Database {
         Row: ComplianceRow;
         Insert: Omit<ComplianceRow, 'id' | 'created_at' | 'updated_at' | 'vehicle' | 'assignee'>;
         Update: Partial<Omit<ComplianceRow, 'id' | 'created_at' | 'updated_at' | 'vehicle' | 'assignee'>>;
+      };
+      open_actions: {
+        Row: OpenActionRow;
+        Insert: {
+          id?: string;
+          inspection_id: string;
+          vehicle_id: string;
+          deviation_id: string;
+          item: string;
+          deviation: string;
+          status?: string;
+          resolution_notes?: string | null;
+          proof_url?: string | null;
+          proof_type?: string | null;
+          resolved_by?: string | null;
+          resolved_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          inspection_id?: string;
+          vehicle_id?: string;
+          deviation_id?: string;
+          item?: string;
+          deviation?: string;
+          status?: string;
+          resolution_notes?: string | null;
+          proof_url?: string | null;
+          proof_type?: string | null;
+          resolved_by?: string | null;
+          resolved_at?: string | null;
+        };
       };
       audit_log: {
         Row: AuditRow;

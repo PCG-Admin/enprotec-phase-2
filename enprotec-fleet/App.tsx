@@ -13,6 +13,7 @@ import FleetReports      from './components/fleet/FleetReports';
 import Templates         from './components/fleet/Templates';
 import Compliance        from './components/fleet/Compliance';
 import Administration    from './components/fleet/Administration';
+import OpenActions       from './components/fleet/OpenActions';
 import { FleetView, User, getModuleAccess } from './types';
 import { getCurrentUser, onAuthStateChange, signOut } from './supabase/services/auth.service';
 
@@ -101,6 +102,7 @@ const App: React.FC = () => {
       case 'FleetDashboard':  return <FleetDashboard user={user} />;
       case 'Vehicles':        return <Vehicles user={user} />;
       case 'Inspections':     return <Inspections user={user} />;
+      case 'OpenActions':     return <OpenActions user={user} />;
       case 'Costs':           return <Costs user={user} />;
       case 'Licenses':        return <Licenses user={user} />;
       case 'FleetReports':    return <FleetReports />;

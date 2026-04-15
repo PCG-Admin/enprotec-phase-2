@@ -8,6 +8,7 @@ import ReportsIcon        from '../icons/ReportsIcon';
 import WrenchIcon         from '../icons/WrenchIcon';
 import CalendarIcon       from '../icons/CalendarIcon';
 import ShieldIcon         from '../icons/ShieldIcon';
+import AlertCircleIcon    from '../icons/AlertCircleIcon';
 import EnprotecLogo       from '../icons/EnprotecLogo';
 import ChevronRightIcon   from '../icons/ChevronRightIcon';
 import { FleetView, User, UserRole } from '../../types';
@@ -23,12 +24,12 @@ interface SidebarProps {
 }
 
 const ALL_FLEET_VIEWS: FleetView[] = [
-  'FleetDashboard', 'Vehicles', 'Inspections', 'Compliance',
+  'FleetDashboard', 'Vehicles', 'Inspections', 'OpenActions', 'Compliance',
   'Costs', 'Licenses', 'FleetReports', 'Templates', 'Administration',
 ];
 
 const MANAGER_FLEET_VIEWS: FleetView[] = [
-  'FleetDashboard', 'Vehicles', 'Inspections', 'Compliance',
+  'FleetDashboard', 'Vehicles', 'Inspections', 'OpenActions', 'Compliance',
   'Costs', 'Licenses', 'FleetReports',
 ];
 
@@ -90,6 +91,7 @@ const FleetSidebar: React.FC<SidebarProps> = ({
     { label: 'Fleet Dashboard', view: 'FleetDashboard', icon: <HomeIcon           className="w-5 h-5" /> },
     { label: 'Vehicles',        view: 'Vehicles',        icon: <TruckIcon          className="w-5 h-5" /> },
     { label: 'Inspections',     view: 'Inspections',     icon: <ClipboardCheckIcon className="w-5 h-5" /> },
+    { label: 'Open Actions',    view: 'OpenActions',     icon: <AlertCircleIcon    className="w-5 h-5" /> },
     { label: 'Compliance',      view: 'Compliance',      icon: <CalendarIcon       className="w-5 h-5" /> },
     { label: 'Costs',           view: 'Costs',           icon: <DollarSignIcon     className="w-5 h-5" /> },
     { label: 'Licenses',        view: 'Licenses',        icon: <FileTextIcon       className="w-5 h-5" /> },
