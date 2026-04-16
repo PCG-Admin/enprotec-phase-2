@@ -14,8 +14,12 @@ import Templates         from './components/fleet/Templates';
 import Compliance        from './components/fleet/Compliance';
 import Administration    from './components/fleet/Administration';
 import OpenActions       from './components/fleet/OpenActions';
+import OfflineBanner     from './components/OfflineBanner';
 import { FleetView, User, getModuleAccess } from './types';
 import { getCurrentUser, onAuthStateChange, signOut } from './supabase/services/auth.service';
+import { getPendingCount, getPendingInspections, removePendingInspection } from './utils/offlineQueue';
+import { createInspection } from './supabase/services/inspections.service';
+import { createOpenActions } from './supabase/services/openActions.service';
 
 type ActiveModule = 'fleet' | 'operations';
 
@@ -26,6 +30,54 @@ const App: React.FC = () => {
   const [currentView, setCurrentView]             = React.useState<FleetView>('FleetDashboard');
   const [isSidebarCollapsed, setSidebarCollapsed] = React.useState(false);
   const [isMobileOpen, setMobileOpen]             = React.useState(false);
+
+  // ── PWA offline / sync state ─────────────────────────────────────────────────
+  const [isOnline, setIsOnline]       = React.useState(navigator.onLine);
+  const [pendingCount, setPendingCount] = React.useState(0);
+  const [syncing, setSyncing]         = React.useState(false);
+
+  React.useEffect(() => {
+    const goOnline  = () => setIsOnline(true);
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online',  goOnline);
+    window.addEventListener('offline', goOffline);
+    getPendingCount().then(setPendingCount).catch(() => {});
+    return () => { window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
+  }, []);
+
+  // Sync queued inspections when back online
+  React.useEffect(() => {
+    if (!isOnline || syncing) return;
+    let cancelled = false;
+    (async () => {
+      const pending = await getPendingInspections();
+      if (pending.length === 0 || cancelled) return;
+      setSyncing(true);
+      for (const item of pending) {
+        try {
+          const saved = await createInspection({
+            vehicle_id: item.vehicleId,
+            inspection_type: item.inspectionType,
+            answers: item.answers,
+            inspector_id: user?.id ?? '',
+            started_at: item.queuedAt,
+          } as any);
+          if (item.deviations.length > 0) {
+            await createOpenActions(saved.id, saved.vehicle_id, item.deviations);
+          }
+          await removePendingInspection(item.id);
+        } catch (err) {
+          console.error('[Sync] Failed to submit queued inspection:', err);
+        }
+      }
+      if (!cancelled) {
+        const remaining = await getPendingCount();
+        setPendingCount(remaining);
+        setSyncing(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isOnline]); // eslint-disable-line react-hooks/exhaustive-deps
 
   React.useEffect(() => {
     let loaded = false;
@@ -117,6 +169,7 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen bg-zinc-100 font-sans overflow-hidden">
+      <OfflineBanner isOnline={isOnline} pendingCount={pendingCount} syncing={syncing} />
       {isMobileOpen && (
         <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setMobileOpen(false)} />
       )}

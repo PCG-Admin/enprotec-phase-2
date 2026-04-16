@@ -18,6 +18,7 @@ import { getComplianceSchedule } from '../../supabase/services/compliance.servic
 import type { InspectionRow, VehicleRow, TemplateRow, DbQuestion, SiteRow, ComplianceRow } from '../../supabase/database.types';
 import type { User } from '../../types';
 import { UserRole } from '../../types';
+import { queueInspection, getPendingCount as getOfflinePendingCount } from '../../utils/offlineQueue';
 import {
   downloadInspection,
   type YesNo, type Condition,
@@ -500,6 +501,35 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
         signature_url: null as string | null,
         template_id: templateId || null,
       };
+      // ── Offline fallback: queue locally if no network ────────────────────────
+      if (!navigator.onLine) {
+        const offlineId = crypto.randomUUID();
+        await queueInspection({
+          id: offlineId,
+          vehicleId: vehicle?.id ?? form.registrationNumber,
+          inspectionType: form.inspectionType,
+          answers: payload.answers as any,
+          photos: [],
+          deviations: computedDeviations,
+          queuedAt: new Date().toISOString(),
+        });
+        const record: InspectionRecord = {
+          id: offlineId,
+          ...(formWithDeviations),
+          templateId,
+          templateAnswers,
+          templateName: selectedTemplate?.name,
+          templateQuestions: selectedTemplate?.questions,
+          result,
+        };
+        setInspections(prev => [record, ...prev]);
+        alert('You are offline. This inspection has been saved and will sync when you reconnect.');
+        setShowForm(false);
+        setActiveTab(0);
+        setSubmitting(false);
+        return;
+      }
+
       const saved = await createInspection(payload);
       const record: InspectionRecord = {
         id: saved.id,

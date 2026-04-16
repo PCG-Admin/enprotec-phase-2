@@ -2,6 +2,7 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import type { PluginOption } from 'vite';
 import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
 import { handleCreateUser } from './api/create-user';
 import { handleSendInspectionWebhook } from './api/send-inspection';
 import { handleUpdateUser } from './api/update-user';
@@ -229,7 +230,49 @@ export default defineConfig(({ mode }) => {
         port: 3002,
         host: '0.0.0.0',
       },
-      plugins: [react(), createUserDevPlugin(), updateUserDevPlugin(), sendInspectionDevPlugin(), deleteUserDevPlugin()],
+      plugins: [
+        react(),
+        VitePWA({
+          registerType: 'autoUpdate',
+          includeAssets: ['favicon-16.png', 'favicon-32.png', 'favicon-192.png', 'favicon-512.png', 'apple-touch-icon.png'],
+          manifest: false,
+          workbox: {
+            maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+            globPatterns: ['**/*.{js,css,html,png,svg,ico,woff2}'],
+            runtimeCaching: [
+              {
+                urlPattern: /^https:\/\/.*\.supabase\.co\/rest\/v1\/.*/i,
+                handler: 'NetworkFirst',
+                options: {
+                  cacheName: 'supabase-api',
+                  expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 },
+                  networkTimeoutSeconds: 5,
+                },
+              },
+              {
+                urlPattern: /^https:\/\/fonts\.(googleapis|gstatic)\.com\/.*/i,
+                handler: 'CacheFirst',
+                options: {
+                  cacheName: 'google-fonts',
+                  expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
+                },
+              },
+              {
+                urlPattern: /^https:\/\/cdn\.tailwindcss\.com\/.*/i,
+                handler: 'CacheFirst',
+                options: {
+                  cacheName: 'tailwind-cdn',
+                  expiration: { maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 * 30 },
+                },
+              },
+            ],
+          },
+        }),
+        createUserDevPlugin(),
+        updateUserDevPlugin(),
+        sendInspectionDevPlugin(),
+        deleteUserDevPlugin(),
+      ],
       define: {
         'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
         'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
