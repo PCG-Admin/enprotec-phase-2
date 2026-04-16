@@ -2,6 +2,7 @@ import path from 'path';
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import tailwindcss from '@tailwindcss/vite';
 import { createClient } from '@supabase/supabase-js';
 
 export default defineConfig(({ mode }) => {
@@ -13,6 +14,7 @@ export default defineConfig(({ mode }) => {
       host: '0.0.0.0',
     },
     plugins: [
+      tailwindcss(),
       react(),
       VitePWA({
         registerType: 'autoUpdate',
@@ -39,15 +41,6 @@ export default defineConfig(({ mode }) => {
               options: {
                 cacheName: 'google-fonts',
                 expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
-              },
-            },
-            {
-              // Cache Tailwind CDN
-              urlPattern: /^https:\/\/cdn\.tailwindcss\.com\/.*/i,
-              handler: 'CacheFirst',
-              options: {
-                cacheName: 'tailwind-cdn',
-                expiration: { maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 * 30 },
               },
             },
           ],
