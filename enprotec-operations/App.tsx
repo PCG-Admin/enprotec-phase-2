@@ -638,7 +638,6 @@ const App: React.FC = () => {
 
     return (
       <div className="flex h-screen bg-zinc-100 font-sans overflow-hidden">
-        <OfflineBanner isOnline={isOnline} pendingCount={pendingCount} syncing={syncing} />
         {isFleetMobileOpen && (
           <div className="fixed inset-0 bg-black/50 z-30 md:hidden" onClick={() => setFleetMobileOpen(false)} />
         )}
@@ -652,6 +651,7 @@ const App: React.FC = () => {
           onMobileClose={() => setFleetMobileOpen(false)}
         />
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+          <OfflineBanner isOnline={isOnline} pendingCount={pendingCount} syncing={syncing} />
           <FleetHeader
             user={loggedInUser}
             onLogout={handleLogout}
@@ -670,7 +670,6 @@ const App: React.FC = () => {
   return (
     <QueryClientProvider client={queryClient}>
       <div className="flex h-screen bg-zinc-100 font-sans">
-        <OfflineBanner isOnline={isOnline} pendingCount={pendingCount} syncing={syncing} />
         <Sidebar
           user={loggedInUser}
           currentView={currentView}
@@ -681,6 +680,7 @@ const App: React.FC = () => {
           onMobileClose={() => setMobileMenuOpen(false)}
         />
         <div className="flex-1 flex flex-col overflow-hidden">
+          <OfflineBanner isOnline={isOnline} pendingCount={pendingCount} syncing={syncing} />
           <Header
             user={loggedInUser}
             onLogout={handleLogout}

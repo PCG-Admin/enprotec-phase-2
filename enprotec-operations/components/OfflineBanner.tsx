@@ -11,7 +11,7 @@ export default function OfflineBanner({ isOnline, pendingCount, syncing }: Offli
 
   return (
     <div
-      className={`fixed top-0 left-0 right-0 z-50 px-4 py-2 text-sm font-medium text-center ${
+      className={`w-full px-4 py-2 text-sm font-medium text-center flex-shrink-0 ${
         isOnline
           ? 'bg-sky-600 text-white'
           : 'bg-amber-500 text-zinc-900'
