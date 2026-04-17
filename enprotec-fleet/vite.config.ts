@@ -23,6 +23,9 @@ export default defineConfig(({ mode }) => {
         workbox: {
           maximumFileSizeToCacheInBytes: 5 * 1024 * 1024, // 5 MB
           globPatterns: ['**/*.{js,css,html,png,svg,ico,woff2}'],
+          skipWaiting: true,
+          clientsClaim: true,
+          cleanupOutdatedCaches: true,
           runtimeCaching: [
             {
               // Cache Supabase API calls (vehicle list, templates, etc.)
