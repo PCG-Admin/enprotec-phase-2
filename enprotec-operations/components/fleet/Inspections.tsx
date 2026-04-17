@@ -646,10 +646,10 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
       fail: { cls: 'bg-red-100 text-red-800', icon: <XCircle className="h-3 w-3 mr-1" />, label: 'Fail' },
       requires_attention: { cls: 'bg-yellow-100 text-yellow-800', icon: <AlertCircle className="h-3 w-3 mr-1" />, label: 'Requires Attention' },
     };
-    const { cls, icon, label } = cfg[result];
+    const entry = cfg[result] ?? cfg.pass;
     return (
-      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>
-        {icon}{label}
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${entry.cls}`}>
+        {entry.icon}{entry.label}
       </span>
     );
   };

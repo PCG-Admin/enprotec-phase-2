@@ -32,10 +32,10 @@ const StatusBadge: React.FC<{ expiry: string; notifyEnabled: boolean }> = ({ exp
     soon:     { cls: 'bg-amber-100 text-amber-800',   Icon: Clock,       label: 'Expiring Soon' },
     active:   { cls: 'bg-green-100 text-green-800',   Icon: CheckCircle, label: 'Active' },
   };
-  const { cls, Icon, label } = cfg[urgency];
+  const entry = cfg[urgency] ?? cfg.active;
   return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${cls}`}>
-      <Icon className="h-3 w-3" />{label}
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${entry.cls}`}>
+      <entry.Icon className="h-3 w-3" />{entry.label}
     </span>
   );
 };
