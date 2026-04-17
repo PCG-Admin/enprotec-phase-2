@@ -1467,7 +1467,8 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
                 requires_attention: { cls: 'bg-yellow-100 border-yellow-300 text-yellow-800', label: `REQUIRES ATTENTION — ${computedDeviations.length} deviation(s) found` },
                 fail: { cls: 'bg-red-100 border-red-300 text-red-800', label: `FAIL — ${computedDeviations.length} deviation(s) found` },
               };
-              return <div className={`border rounded-lg px-4 py-3 font-semibold text-sm ${cfg[r].cls}`}>{cfg[r].label}</div>;
+              const entry = cfg[r] ?? cfg.pass;
+              return <div className={`border rounded-lg px-4 py-3 font-semibold text-sm ${entry.cls}`}>{entry.label}</div>;
             })()}
           </div>
         </div>
