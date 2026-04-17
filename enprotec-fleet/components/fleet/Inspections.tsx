@@ -351,6 +351,34 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   }, [showForm]);
 
   React.useEffect(() => {
+    const CACHE_KEY = 'enprotec_inspections_cache';
+
+    const loadFromCache = () => {
+      try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        if (!raw) return;
+        const cached = JSON.parse(raw);
+        if (cached.vehicles) setVehicles(cached.vehicles);
+        if (cached.templates) setTemplates(cached.templates);
+        if (cached.sites) setSites(cached.sites);
+        if (cached.inspections) setInspections(cached.inspections.map((r: any): InspectionRecord => ({
+          id: r.id,
+          ...((r.answers as unknown as Omit<InspectionRecord, 'id' | 'result'>) ?? defaultForm()),
+          result: (r.status as InspectionRecord['result']) ?? 'pass',
+        })));
+        if (cached.compliance) {
+          const today = new Date(); today.setHours(0, 0, 0, 0);
+          const soon = new Date(today); soon.setDate(soon.getDate() + 7);
+          setComplianceDue(cached.compliance.filter((c: any) => {
+            if (c.status === 'Completed') return false;
+            const due = c.due_date ? new Date(c.due_date) : null;
+            const sched = c.scheduled_date ? new Date(c.scheduled_date) : null;
+            return (due && due <= soon) || (sched && sched <= soon);
+          }));
+        }
+      } catch { /* ignore corrupt cache */ }
+    };
+
     Promise.all([getInspections(), getVehicles(), getActiveTemplates(), getSites(), getComplianceSchedule(), getActionSummaries()])
       .then(([rows, vehs, tpls, sts, compliance, summaries]) => {
         setActionSummaries(summaries);
@@ -372,8 +400,18 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
           const sched = c.scheduled_date ? new Date(c.scheduled_date) : null;
           return (due && due <= soon) || (sched && sched <= soon);
         }));
+        // Cache data for offline use
+        try {
+          localStorage.setItem(CACHE_KEY, JSON.stringify({
+            vehicles: vehs, templates: tpls, sites: sts,
+            inspections: rows, compliance,
+          }));
+        } catch { /* storage full — non-critical */ }
       })
-      .catch(() => {})
+      .catch(() => {
+        // Offline or network error — load from cache
+        loadFromCache();
+      })
       .finally(() => setLoadingList(false));
   }, []);
 
