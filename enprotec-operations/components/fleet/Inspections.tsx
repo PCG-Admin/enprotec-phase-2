@@ -418,6 +418,33 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
   const set = (field: keyof typeof form, value: unknown) =>
     setForm(prev => ({ ...prev, [field]: value }));
 
+  // Pre-fill the form with values carried forward from the most recent inspection
+  // of the selected vehicle. Fields the driver has already typed are preserved.
+  const autofillFromPrevious = (registration: string, makeModel: string) => {
+    const reg = registration.toLowerCase().trim();
+    const prev = inspections
+      .filter(i => (i.registrationNumber ?? '').toLowerCase().trim() === reg)
+      .sort((a, b) => (b.inspectionDate ?? '').localeCompare(a.inspectionDate ?? ''))[0];
+    setForm(curr => {
+      const next = { ...curr, registrationNumber: registration, vehicleMakeModel: makeModel };
+      if (!prev) return next;
+      const carry: (keyof typeof curr)[] = [
+        'currentMileage', 'currentHours',
+        'lastServiceHours', 'lastServiceDate',
+        'nextServiceHours', 'nextServiceDate',
+        'previousLoadTestDate', 'nextLoadTestDate',
+        'totalMaintenanceCost', 'avgMonthlyMaintenanceCost',
+        'serialNumberText', 'serviceStickerDate',
+        'siteAllocation',
+      ];
+      for (const k of carry) {
+        if (!next[k] && prev[k]) (next as any)[k] = prev[k];
+      }
+      if (prev.inspectionDate) next.previousInspectionDate = prev.inspectionDate;
+      return next;
+    });
+  };
+
   const setEquip = (field: keyof EquipmentChecks, value: unknown) =>
     setForm(prev => ({ ...prev, equipment: { ...prev.equipment, [field]: value } }));
 
@@ -674,9 +701,8 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
             const pool = isDriver && visibleVehicles.length > 0 ? visibleVehicles : vehicles;
             const v = pool.find(v => v.registration === e.target.value);
             if (v) {
-              set('registrationNumber', v.registration);
-              set('vehicleMakeModel', `${v.make} ${v.model}`.trim());
               setSelectedVehicleId(v.id);
+              autofillFromPrevious(v.registration, `${v.make} ${v.model}`.trim());
             }
           }}
           className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
@@ -755,7 +781,9 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
                 if (field === 'registrationNumber') {
                   const match = vehicles.find(v => v.registration.toLowerCase() === e.target.value.toLowerCase());
                   setSelectedVehicleId(match?.id ?? '');
-                  if (match && !form.vehicleMakeModel) set('vehicleMakeModel', `${match.make} ${match.model}`.trim());
+                  if (match) {
+                    autofillFromPrevious(match.registration, `${match.make} ${match.model}`.trim());
+                  }
                 }
               }}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500"
@@ -1568,16 +1596,24 @@ const Inspections: React.FC<{ user: User | null }> = ({ user }) => {
         <button
           onClick={() => {
             const base = defaultForm();
+            let prefillVehicle: VehicleRow | undefined;
             if (isDriver && user) {
               base.inspectedBy = user.name;
-              const v = visibleVehicles[0];
-              if (v) { base.registrationNumber = v.registration; base.vehicleMakeModel = `${v.make} ${v.model}`.trim(); setSelectedVehicleId(v.id); }
+              prefillVehicle = visibleVehicles[0];
+              if (prefillVehicle) {
+                base.registrationNumber = prefillVehicle.registration;
+                base.vehicleMakeModel = `${prefillVehicle.make} ${prefillVehicle.model}`.trim();
+                setSelectedVehicleId(prefillVehicle.id);
+              }
             }
             setForm(base);
             setTemplateId('');
             setTemplateAnswers({});
             setActiveTab(0);
             setShowForm(true);
+            if (prefillVehicle) {
+              autofillFromPrevious(prefillVehicle.registration, `${prefillVehicle.make} ${prefillVehicle.model}`.trim());
+            }
           }}
           className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center"
         >
